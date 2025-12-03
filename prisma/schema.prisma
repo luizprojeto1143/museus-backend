@@ -1,0 +1,301 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  MASTER
+  ADMIN
+  VISITOR
+}
+
+enum QRType {
+  WORK
+  TRAIL
+  EVENT
+  SPACE
+  CUSTOM
+}
+
+enum CategoryType {
+  WORK
+  TRAIL
+  EVENT
+  GENERAL
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  
+  // Plan & Limits
+  plan          String   @default("START")
+  maxWorks      Int      @default(50)
+
+  // Settings
+  mission       String?
+  address       String?
+  openingHours  String?
+  whatsapp      String?
+  email         String?
+  website       String?
+  logoUrl       String?
+  coverImageUrl String?
+  appIconUrl    String?
+  bannerUrl     String?
+  
+  // Map Settings
+  mapImageUrl   String?
+  latitude      Float?
+  longitude     Float?
+  
+  // Theme
+  primaryColor   String   @default("#d4af37")
+  secondaryColor String   @default("#cd7f32")
+  theme          String   @default("dark") // "light" | "dark"
+  historicalFont Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users      User[]
+  works      Work[]
+  trails     Trail[]
+  events     Event[]
+  visitors   Visitor[]
+  achievements Achievement[]
+  qrcodes    QRCode[]
+  categories Category[]
+  chatPersona ChatPersona?
+  bookings    Booking[]
+  guestbookEntries GuestbookEntry[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings  Booking[]
+}
+
+model Category {
+  id          String       @id @default(uuid())
+  name        String
+  type        CategoryType
+  description String?
+  active      Boolean      @default(true)
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  works  Work[]
+  trails Trail[]
+  events Event[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Work {
+  id          String   @id @default(uuid())
+  title       String
+  artist      String?
+  year        String?
+  
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  
+  room        String?
+  floor       String?
+  description String?
+  imageUrl    String?
+  audioUrl    String?
+  librasUrl   String?
+  videoUrl    String?
+  
+  // Geo-fencing
+  latitude    Float?
+  longitude   Float?
+  radius      Int      @default(5) // metros
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  visits   VisitorVisit[]
+  stamps   PassportStamp[]
+}
+
+model Trail {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  duration    Int?     // minutos
+  workIds     String[] // lista de IDs de obras na ordem
+  
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  visits VisitorVisit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  location    String?
+  startDate   DateTime
+  endDate     DateTime?
+  
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  visits VisitorVisit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Visitor {
+  id        String   @id @default(uuid())
+  name      String?
+  email     String?
+  age       Int?
+  photoUrl  String?
+  xp        Int      @default(0)
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  visits       VisitorVisit[]
+  achievements VisitorAchievement[]
+  stamps       PassportStamp[]
+  guestbookEntries GuestbookEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, tenantId])
+}
+
+model VisitorVisit {
+  id        String   @id @default(uuid())
+  visitorId String
+  workId    String?
+  trailId   String?
+  eventId   String?
+  source    String? // "QR" | "APP"
+  xpGained  Int      @default(0)
+
+  visitor   Visitor @relation(fields: [visitorId], references: [id])
+  work      Work?   @relation(fields: [workId], references: [id])
+  trail     Trail?  @relation(fields: [trailId], references: [id])
+  event     Event?  @relation(fields: [eventId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  title       String
+  description String?
+  tenantId    String
+  tenant      Tenant @relation(fields: [tenantId], references: [id])
+
+  visitors VisitorAchievement[]
+}
+
+model VisitorAchievement {
+  id           String   @id @default(uuid())
+  visitorId    String
+  achievementId String
+  unlockedAt   DateTime @default(now())
+
+  visitor     Visitor     @relation(fields: [visitorId], references: [id])
+  achievement Achievement @relation(fields: [achievementId], references: [id])
+}
+
+model PassportStamp {
+  id        String   @id @default(uuid())
+  visitorId String
+  workId    String
+  stampedAt DateTime @default(now())
+
+  visitor Visitor @relation(fields: [visitorId], references: [id])
+  work    Work    @relation(fields: [workId], references: [id])
+}
+
+model QRCode {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  type        QRType
+  referenceId String?
+  title       String
+  xpReward    Int      @default(5)
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model ChatPersona {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique
+  systemPrompt String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model Booking {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  date      DateTime
+  status    String   @default("CONFIRMED") // CONFIRMED, CANCELLED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GuestbookEntry {
+  id        String   @id @default(uuid())
+  message   String
+  isVisible Boolean  @default(true)
+  
+  visitorId String
+  visitor   Visitor  @relation(fields: [visitorId], references: [id])
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now())
+}
