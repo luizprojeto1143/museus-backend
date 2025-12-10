@@ -28,12 +28,19 @@ import leaderboardRoutes from "./routes/leaderboard.js";
 
 const app = express();
 
-app.use(helmet());
 app.use(cors({
   origin: "*", // Em produção, restringir para o domínio do frontend
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+// Handle preflight requests explicitly
+app.options("*", cors());
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
