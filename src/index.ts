@@ -29,9 +29,19 @@ import leaderboardRoutes from "./routes/leaderboard.js";
 const app = express();
 
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: "*", // Em produção, restringir para o domínio do frontend
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// Log middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
 
 // Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
