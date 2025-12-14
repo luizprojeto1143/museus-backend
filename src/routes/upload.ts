@@ -3,6 +3,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -97,6 +98,55 @@ router.post("/audio", upload.single("file"), (req: Request, res: Response) => {
 
 router.post("/video", upload.single("file"), (req: Request, res: Response) => {
   return handleUpload(req, res, "video");
+});
+
+// Listar arquivos (apenas local por enquanto, R2 precisaria de outra lógica)
+router.get("/", authMiddleware, async (req, res) => {
+  try {
+    const { tenantId } = req.query;
+    // Como não salvamos metadados dos arquivos no banco, vamos listar do diretório local
+    // Isso é limitado e não funcionará bem com R2 ou múltiplos tenants isolados por pasta
+    // TODO: Criar tabela 'File' no banco para gerenciar uploads corretamente
+
+    if (!fs.existsSync(uploadDir)) {
+      return res.json([]);
+    }
+
+    const files = fs.readdirSync(uploadDir).map(file => {
+      const stats = fs.statSync(path.join(uploadDir, file));
+      return {
+        id: file,
+        filename: file,
+        url: `/uploads/${file}`,
+        type: file.endsWith(".jpg") || file.endsWith(".png") ? "image" : "file",
+        size: stats.size,
+        uploadedAt: stats.birthtime,
+        usedIn: []
+      };
+    });
+
+    return res.json(files);
+  } catch (err) {
+    console.error("Erro listar uploads", err);
+    return res.status(500).json({ message: "Erro ao listar arquivos" });
+  }
+});
+
+router.delete("/:filename", authMiddleware, async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filepath = path.join(uploadDir, filename);
+
+    if (fs.existsSync(filepath)) {
+      fs.unlinkSync(filepath);
+      return res.json({ message: "Arquivo excluído" });
+    }
+
+    return res.status(404).json({ message: "Arquivo não encontrado" });
+  } catch (err) {
+    console.error("Erro excluir upload", err);
+    return res.status(500).json({ message: "Erro ao excluir arquivo" });
+  }
 });
 
 export default router;

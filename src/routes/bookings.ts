@@ -19,7 +19,7 @@ router.get("/my", authMiddleware, async (req, res) => {
         const userId = req.user?.id;
         if (!userId) return res.status(401).json({ message: "Não autorizado" });
 
-        const bookings = await (prisma as any).booking.findMany({
+        const bookings = await prisma.booking.findMany({
             where: { userId },
             include: { tenant: true },
             orderBy: { date: "asc" }
@@ -41,7 +41,7 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
         const { date, tenantId } = req.body;
 
         // Verificar se já existe agendamento no mesmo horário (regra simples)
-        const existing = await (prisma as any).booking.findFirst({
+        const existing = await prisma.booking.findFirst({
             where: {
                 tenantId,
                 date: new Date(date),
@@ -52,7 +52,7 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
         // Regra de negócio simplificada: permitir múltiplos por horário por enquanto, 
         // mas em produção teria limite de capacidade.
 
-        const booking = await (prisma as any).booking.create({
+        const booking = await prisma.booking.create({
             data: {
                 userId,
                 tenantId,
@@ -74,7 +74,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
         const userId = req.user?.id;
         const { id } = req.params;
 
-        const booking = await (prisma as any).booking.findUnique({ where: { id } });
+        const booking = await prisma.booking.findUnique({ where: { id } });
 
         if (!booking) {
             return res.status(404).json({ message: "Agendamento não encontrado" });
@@ -84,7 +84,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
             return res.status(403).json({ message: "Sem permissão" });
         }
 
-        await (prisma as any).booking.update({
+        await prisma.booking.update({
             where: { id },
             data: { status: "CANCELLED" }
         });

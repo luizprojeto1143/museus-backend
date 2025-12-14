@@ -35,12 +35,13 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
 router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
     const user = req.user!;
-    const { type, referenceId, title, xpReward, tenantId: bodyTenantId } = req.body as {
+    const { type, referenceId, title, xpReward, tenantId: bodyTenantId, code: customCode } = req.body as {
       type: QRType;
       referenceId?: string;
       title?: string;
       xpReward?: number;
       tenantId?: string;
+      code?: string;
     };
 
     let tenantId = bodyTenantId;
@@ -56,7 +57,15 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
       return res.status(400).json({ message: "type é obrigatório" });
     }
 
-    const code = crypto.randomBytes(6).toString("hex");
+    // Se customCode foi enviado, verificar unicidade
+    if (customCode) {
+      const existing = await prisma.qRCode.findUnique({ where: { code: customCode } });
+      if (existing) {
+        return res.status(400).json({ message: "Este código já está em uso." });
+      }
+    }
+
+    const code = customCode || crypto.randomBytes(6).toString("hex");
     const qr = await prisma.qRCode.create({
       data: {
         code,

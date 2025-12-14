@@ -60,6 +60,25 @@ router.get("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => 
   }
 });
 
+// Detalhes do Tenant (MASTER)
+router.get("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenant = await prisma.tenant.findUnique({
+      where: { id }
+    });
+
+    if (!tenant) {
+      return res.status(404).json({ message: "Tenant não encontrado" });
+    }
+
+    return res.json(tenant);
+  } catch (err) {
+    console.error("Erro ao buscar tenant", err);
+    return res.status(500).json({ message: "Erro ao buscar tenant" });
+  }
+});
+
 // Cria tenant + admin
 router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
@@ -118,7 +137,46 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
   }
 });
 
-// Atualiza tenant (MASTER)
+// Atualiza configurações do tenant (ADMIN ou MASTER)
+router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+
+    // Se for ADMIN, só pode alterar seu próprio tenant
+    if (user.role === Role.ADMIN && user.tenantId !== id) {
+      return res.status(403).json({ message: "Sem permissão para alterar outro museu" });
+    }
+
+    const {
+      mission, address, openingHours, whatsapp, email, website,
+      logoUrl, coverImageUrl, appIconUrl, bannerUrl,
+      mapImageUrl, latitude, longitude,
+      primaryColor, secondaryColor, theme, historicalFont,
+      name // Admin também pode querer alterar o nome de exibição
+    } = req.body;
+
+    const tenant = await prisma.tenant.update({
+      where: { id },
+      data: {
+        mission, address, openingHours, whatsapp, email, website,
+        logoUrl, coverImageUrl, appIconUrl, bannerUrl,
+        mapImageUrl,
+        latitude: latitude ? parseFloat(latitude) : undefined,
+        longitude: longitude ? parseFloat(longitude) : undefined,
+        primaryColor, secondaryColor, theme, historicalFont,
+        name
+      }
+    });
+
+    return res.json(tenant);
+  } catch (err) {
+    console.error("Erro atualizar settings tenant", err);
+    return res.status(500).json({ message: "Erro ao atualizar configurações" });
+  }
+});
+
+// Atualiza tenant (MASTER) - Apenas dados estruturais/plano
 router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;

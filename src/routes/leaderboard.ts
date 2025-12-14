@@ -5,63 +5,74 @@ import { authMiddleware } from "../middleware/auth.js";
 const router = Router();
 
 // Top visitantes por XP (Leaderboard)
+// Extend Express Request to include user (or import from a definition file if exists)
+interface AuthenticatedRequest extends Request {
+    user?: {
+        id: string;
+        email: string;
+        name: string;
+        tenantId: string;
+        photoUrl?: string;
+    };
+}
+
+// ...
+
 router.get("/", authMiddleware, async (req, res) => {
     try {
-        const userEmail = (req as any).user?.email;
+        const user = (req as unknown as AuthenticatedRequest).user;
+        const userEmail = user?.email;
 
-        // 1. Get Top 50 Global (Aggregated by Email)
-        // We use MAX(name) and MAX(photoUrl) to pick one representative name/photo for the email
-        const topVisitors = await prisma.$queryRaw`
-            SELECT 
-                email, 
-                MAX(name) as name, 
-                MAX("photoUrl") as "photoUrl", 
-                SUM(xp)::int as xp,
-                RANK() OVER (ORDER BY SUM(xp) DESC)::int as rank
-            FROM "Visitor"
-            WHERE email IS NOT NULL
-            GROUP BY email
-            ORDER BY xp DESC
-            LIMIT 50
-        `;
+        // ...
 
-        // 2. Get Current User Rank (if logged in)
-        let myRankData = null;
-        if (userEmail) {
-            // Calculate my total XP
-            const myStats: any[] = await prisma.$queryRaw`
-                SELECT SUM(xp)::int as total_xp FROM "Visitor" WHERE email = ${userEmail}
-            `;
-            const myTotalXp = myStats[0]?.total_xp || 0;
-
-            // Count how many people have more XP than me
-            const rankCount: any[] = await prisma.$queryRaw`
-                SELECT COUNT(*)::int as count 
-                FROM (
-                    SELECT email, SUM(xp) as total_xp 
-                    FROM "Visitor" 
-                    WHERE email IS NOT NULL 
-                    GROUP BY email
-                ) as grouped
-                WHERE total_xp > ${myTotalXp}
-            `;
-
-            const rank = (rankCount[0]?.count || 0) + 1;
-
-            myRankData = {
-                rank: Number(rank),
-                xp: Number(myTotalXp),
-                name: (req as any).user.name,
-                email: userEmail,
-                photoUrl: (req as any).user.photoUrl
-            };
+        if (!user) {
+            return res.status(401).json({ message: "Não autenticado" });
         }
 
-        // Process BigInt serialization if needed (Prisma returns BigInt for some aggregates)
-        const serializedTop = (topVisitors as any[]).map(v => ({
+        // Fetch top visitors
+        const topVisitors = await prisma.visitor.findMany({
+            where: { tenantId: user.tenantId },
+            orderBy: { xp: 'desc' },
+            take: 10,
+            select: {
+                id: true,
+                name: true,
+                photoUrl: true,
+                xp: true
+            }
+        });
+
+        // Calculate my rank
+        const myVisitor = await prisma.visitor.findUnique({
+            where: { id: user.id }
+        });
+
+        let myTotalXp = 0;
+        let rank = 0;
+
+        if (myVisitor) {
+            myTotalXp = Number(myVisitor.xp);
+            const countBetter = await prisma.visitor.count({
+                where: {
+                    tenantId: user.tenantId,
+                    xp: { gt: myTotalXp }
+                }
+            });
+            rank = countBetter + 1;
+        }
+
+        const myRankData = {
+            rank,
+            xp: myTotalXp,
+            name: user.name,
+            email: userEmail,
+            photoUrl: user.photoUrl
+        };
+
+        const serializedTop = topVisitors.map((v, index) => ({
             ...v,
             xp: Number(v.xp),
-            rank: Number(v.rank)
+            rank: index + 1
         }));
 
         return res.json({

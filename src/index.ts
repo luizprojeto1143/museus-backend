@@ -25,11 +25,14 @@ import categoriesRoutes from "./routes/categories.js";
 import bookingsRoutes from "./routes/bookings.js";
 import guestbookRoutes from "./routes/guestbook.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
+import searchRoutes from "./routes/search.js";
 
 const app = express();
 
 app.use(cors({
-  origin: "*", // Em produção, restringir para o domínio do frontend
+  origin: process.env.NODE_ENV === "production"
+    ? (process.env.FRONTEND_URL || "*")
+    : "*",
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -44,11 +47,11 @@ app.use(helmet({
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Log middleware
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
+// Log middleware (disabled for production)
+// app.use((req, res, next) => {
+//   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+//   next();
+// });
 
 // Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
@@ -82,6 +85,10 @@ app.use("/categories", categoriesRoutes);
 app.use("/bookings", bookingsRoutes);
 app.use("/guestbook", guestbookRoutes);
 app.use("/leaderboard", leaderboardRoutes);
+import gamificationRoutes from "./routes/gamification.js";
+
+app.use("/gamification", gamificationRoutes);
+app.use("/search", searchRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

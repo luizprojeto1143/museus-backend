@@ -6,9 +6,22 @@ import bcrypt from "bcrypt";
 
 const router = Router();
 
-router.get("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
+    const user = req.user!;
+    let whereClause: any = {};
+
+    if (user.role === Role.ADMIN) {
+      if (!user.tenantId) {
+        return res.status(403).json({ message: "Admin sem tenantId" });
+      }
+      whereClause.tenantId = user.tenantId;
+    } else if (req.query.tenantId) {
+      whereClause.tenantId = req.query.tenantId as string;
+    }
+
     const users = await prisma.user.findMany({
+      where: whereClause,
       select: {
         id: true,
         email: true,
@@ -21,7 +34,9 @@ router.get("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => 
             slug: true
           }
         },
-        createdAt: true
+        createdAt: true,
+        active: true,
+        lastLogin: true
       },
       orderBy: { createdAt: "desc" }
     });

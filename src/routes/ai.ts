@@ -129,4 +129,80 @@ router.post("/souvenir", async (req, res) => {
   }
 });
 
+// Roteiro Inteligente
+router.post("/itinerary", async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
+    }
+    const { tenantId, preferences } = req.body;
+    if (!tenantId || !preferences) {
+      return res.status(400).json({ message: "tenantId e preferences são obrigatórios" });
+    }
+
+    // Buscar todas as obras do museu para a IA escolher
+    const works = await prisma.work.findMany({
+      where: { tenantId },
+      select: { id: true, title: true, artist: true, category: { select: { name: true } }, room: true, description: true }
+    });
+
+    if (works.length === 0) {
+      return res.json([]);
+    }
+
+    const systemPrompt = `Você é um curador especialista de museu. Crie um roteiro de visita personalizado.
+    Retorne APENAS um JSON válido (sem markdown, sem explicações extras) contendo uma lista de IDs das obras recomendadas, na ordem de visitação.
+    Formato esperado: ["id1", "id2", "id3"]
+    
+    Considere:
+    - Tempo disponível: ${preferences.timeAvailable} minutos (aprox 10-15 min por obra)
+    - Interesses: ${preferences.interests.join(", ")}
+    - Acessibilidade: ${preferences.accessibility.join(", ")}
+    
+    Obras disponíveis:
+    ${JSON.stringify(works.map(w => ({ id: w.id, title: w.title, category: w.category?.name, description: w.description })))}
+    `;
+
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: "Gere o roteiro ideal para mim." }
+      ],
+      response_format: { type: "json_object" }
+    });
+
+    const content = completion.choices[0]?.message?.content || "{}";
+    let recommendedIds: string[] = [];
+
+    try {
+      const parsed = JSON.parse(content);
+      // Tenta extrair a lista de várias formas possíveis que a IA pode retornar
+      if (Array.isArray(parsed)) recommendedIds = parsed;
+      else if (parsed.ids && Array.isArray(parsed.ids)) recommendedIds = parsed.ids;
+      else if (parsed.works && Array.isArray(parsed.works)) recommendedIds = parsed.works;
+      else if (parsed.itinerary && Array.isArray(parsed.itinerary)) recommendedIds = parsed.itinerary;
+    } catch (e) {
+      console.error("Erro ao parsear JSON da IA", e);
+    }
+
+    // Filtra as obras reais baseadas nos IDs retornados
+    const itinerary = recommendedIds
+      .map(id => works.find(w => w.id === id))
+      .filter(w => w !== undefined);
+
+    // Se a IA falhar ou retornar vazio, faz um fallback simples
+    if (itinerary.length === 0) {
+      const fallback = works.slice(0, Math.floor(preferences.timeAvailable / 15));
+      return res.json(fallback);
+    }
+
+    return res.json(itinerary);
+
+  } catch (err) {
+    console.error("Erro IA itinerary", err);
+    return res.status(500).json({ message: "Erro ao gerar roteiro" });
+  }
+});
+
 export default router;

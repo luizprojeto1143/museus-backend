@@ -217,4 +217,39 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
   }
 });
 
+// Analytics Avançado (Heatmap, etc)
+router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const { range } = req.query;
+
+    // TODO: Implementar filtros reais de data baseados no range ('7d', '30d', '90d')
+
+    // Mock data based on real counts where possible
+    const totalVisitors = await prisma.visitor.count({ where: { tenantId } });
+    const recurringVisitors = await prisma.visitor.count({
+      where: {
+        tenantId,
+        visits: { some: {} } // Simplificação: quem tem visitas é recorrente (ajustar lógica depois)
+      }
+    });
+
+    return res.json({
+      totalVisitors,
+      recurringVisitors,
+      averageAge: 0, // Não coletamos idade ainda
+      accessBySource: { qr: 0, app: 0, web: 0 },
+      peakHours: [],
+      hotWorks: [],
+      hotTrails: [],
+      hotEvents: [],
+      visitorsByAge: [],
+      visitorsByDay: []
+    });
+  } catch (err) {
+    console.error("Erro analytics advanced", err);
+    return res.status(500).json({ message: "Erro ao carregar analytics avançado" });
+  }
+});
+
 export default router;

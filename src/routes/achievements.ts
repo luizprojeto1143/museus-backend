@@ -40,12 +40,7 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, res) => {
   try {
-    const { code, title, description, tenantId } = req.body as {
-      code?: string;
-      title?: string;
-      description?: string;
-      tenantId?: string;
-    };
+    const { code, title, description, tenantId, xpReward, iconUrl, condition, autoTrigger, active } = req.body;
 
     if (!code || !title || !tenantId) {
       return res.status(400).json({ message: "code, title e tenantId são obrigatórios" });
@@ -56,7 +51,12 @@ router.post("/", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, r
         code,
         title,
         description: description || null,
-        tenantId
+        tenantId,
+        xpReward: xpReward ? Number(xpReward) : 100,
+        iconUrl: iconUrl || null,
+        condition: condition || null,
+        autoTrigger: autoTrigger ?? false,
+        active: active ?? true
       }
     });
 
@@ -70,18 +70,19 @@ router.post("/", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, r
 router.put("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { code, title, description } = req.body as {
-      code?: string;
-      title?: string;
-      description?: string;
-    };
+    const { code, title, description, xpReward, iconUrl, condition, autoTrigger, active } = req.body;
 
     const achievement = await prisma.achievement.update({
       where: { id },
       data: {
         ...(code && { code }),
         ...(title && { title }),
-        ...(description !== undefined && { description })
+        ...(description !== undefined && { description }),
+        ...(xpReward !== undefined && { xpReward: Number(xpReward) }),
+        ...(iconUrl !== undefined && { iconUrl }),
+        ...(condition !== undefined && { condition }),
+        ...(autoTrigger !== undefined && { autoTrigger }),
+        ...(active !== undefined && { active })
       }
     });
 

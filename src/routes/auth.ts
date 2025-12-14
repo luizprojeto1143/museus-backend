@@ -33,7 +33,7 @@ router.post("/login", validate(loginSchema), async (req, res) => {
         tenantId: user.tenantId
       },
       JWT_SECRET as jwt.Secret,
-      { subject: user.id, expiresIn: JWT_EXPIRES_IN as any }
+      { subject: user.id, expiresIn: JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
     );
 
     return res.json({
@@ -82,7 +82,7 @@ router.post("/register", validate(registerSchema), async (req, res) => {
         tenantId: user.tenantId
       },
       JWT_SECRET as jwt.Secret,
-      { subject: user.id, expiresIn: JWT_EXPIRES_IN as any }
+      { subject: user.id, expiresIn: JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
     );
 
     return res.status(201).json({
@@ -183,7 +183,7 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
         tenantId: targetTenantId
       },
       JWT_SECRET as jwt.Secret,
-      { subject: user.id, expiresIn: JWT_EXPIRES_IN as any }
+      { subject: user.id, expiresIn: JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
     );
 
     return res.json({

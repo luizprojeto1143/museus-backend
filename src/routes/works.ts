@@ -53,9 +53,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
     if (!tenant) return res.status(404).json({ message: "Tenant não encontrado" });
 
     const currentWorks = await prisma.work.count({ where: { tenantId } });
-    if (currentWorks >= (tenant as any).maxWorks) {
+    if (currentWorks >= tenant.maxWorks) {
       return res.status(403).json({
-        message: `Limite de obras atingido para o plano ${(tenant as any).plan}. Atualize seu plano para continuar.`
+        message: `Limite de obras atingido para o plano ${tenant.plan}. Atualize seu plano para continuar.`
       });
     }
     const work = await prisma.work.create({

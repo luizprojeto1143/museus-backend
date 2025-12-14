@@ -1,7 +1,93 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
+import jwt from "jsonwebtoken";
 
 const router = Router();
+
+// Lista visitantes de um tenant
+router.get("/", async (req, res) => {
+  try {
+    const { tenantId } = req.query as { tenantId?: string };
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId é obrigatório" });
+    }
+
+    const visitors = await prisma.visitor.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: {
+          select: { visits: true }
+        }
+      }
+    });
+
+    // Mapear para o formato esperado pelo front
+    const formatted = visitors.map(v => ({
+      id: v.id,
+      name: v.name,
+      email: v.email,
+      xp: v.xp,
+      trailsCompleted: 0, // TODO: Implementar contagem real
+      worksVisited: v._count.visits,
+      eventsAccessed: 0, // TODO: Implementar contagem real
+      firstAccessAt: v.createdAt,
+      lastAccessAt: v.updatedAt // Ou pegar da última visita
+    }));
+
+    return res.json(formatted);
+  } catch (err) {
+    console.error("Erro ao listar visitantes", err);
+    return res.status(500).json({ message: "Erro ao listar visitantes" });
+  }
+});
+
+// Detalhes completos do visitante para o Admin
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Evitar conflito com outras rotas que começam com string fixa se não for UUID
+    // Mas como as outras rotas são /register, /track, /visit-from-qr, /me/summary, elas são fixas e devem vir ANTES de /:id se definidas no mesmo nível.
+    // Como /register, /track etc estão definidas DEPOIS de /, mas ANTES de /:id se eu colocar aqui, o Express resolve na ordem de definição.
+    // Vou mover essa rota para o final do arquivo ou garantir que ela não capture palavras chave.
+    // Melhor estratégia: colocar rotas fixas antes de rotas parametrizadas.
+
+    const visitor = await prisma.visitor.findUnique({
+      where: { id },
+      include: {
+        visits: {
+          include: {
+            work: { select: { title: true } },
+            trail: { select: { title: true } },
+            event: { select: { title: true } }
+          },
+          orderBy: { createdAt: "desc" }
+        },
+        achievements: {
+          include: {
+            achievement: {
+              select: {
+                title: true,
+                iconUrl: true,
+                xpReward: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!visitor) {
+      return res.status(404).json({ message: "Visitante não encontrado" });
+    }
+
+    return res.json(visitor);
+  } catch (err) {
+    console.error("Erro ao buscar detalhes do visitante", err);
+    return res.status(500).json({ message: "Erro ao buscar detalhes do visitante" });
+  }
+});
 
 // Cria visitante anônimo simples vinculado a um tenant
 router.post("/register", async (req, res) => {
@@ -79,7 +165,7 @@ router.post("/track", async (req, res) => {
 // Registra visita vinda do fluxo de QR do front (/visitors/visit-from-qr)
 router.post("/visit-from-qr", async (req, res) => {
   try {
-    const { code } = req.body as { code?: string };
+    const { code, email: bodyEmail } = req.body as { code?: string; email?: string };
     if (!code) {
       return res.status(400).json({ message: "code é obrigatório" });
     }
@@ -89,19 +175,67 @@ router.post("/visit-from-qr", async (req, res) => {
       return res.status(404).json({ message: "QR Code não encontrado" });
     }
 
-    // Busca (ou cria) um visitante anônimo padrão por tenant
-    let visitor = await prisma.visitor.findFirst({
-      where: { tenantId: qr.tenantId, email: null }
-    });
+    // Tentar identificar o visitante
+    let visitorEmail: string | null = null;
 
-    if (!visitor) {
-      visitor = await prisma.visitor.create({
-        data: {
-          tenantId: qr.tenantId,
-          name: "Visitante Anônimo",
-          email: null
+    // 1. Tentar pelo token JWT
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.split(" ")[1];
+      try {
+        const JWT_SECRET = process.env.JWT_SECRET || "secret";
+        const decoded = jwt.verify(token, JWT_SECRET) as { email: string };
+        if (decoded && decoded.email) {
+          visitorEmail = decoded.email;
         }
+      } catch (e) {
+        // Token inválido ou expirado, ignorar e tentar outras formas
+        console.warn("Token inválido em visit-from-qr", e);
+      }
+    }
+
+    // 2. Se não achou no token, tentar pelo body (fallback)
+    if (!visitorEmail && bodyEmail) {
+      visitorEmail = bodyEmail;
+    }
+
+    // Busca (ou cria) o visitante
+    let visitor;
+
+    if (visitorEmail) {
+      // Busca visitante logado vinculado a este tenant
+      visitor = await prisma.visitor.findFirst({
+        where: { tenantId: qr.tenantId, email: visitorEmail }
       });
+
+      // Se o usuário existe no sistema (User) mas ainda não tem registro de Visitor neste tenant, cria agora
+      if (!visitor) {
+        // Verifica se existe User com esse email para pegar o nome
+        const user = await prisma.user.findUnique({ where: { email: visitorEmail } });
+
+        visitor = await prisma.visitor.create({
+          data: {
+            tenantId: qr.tenantId,
+            name: user?.name || "Visitante",
+            email: visitorEmail
+          }
+        });
+      }
+    } else {
+      // Fluxo anônimo (mantém lógica anterior)
+      visitor = await prisma.visitor.findFirst({
+        where: { tenantId: qr.tenantId, email: null }
+      });
+
+      if (!visitor) {
+        visitor = await prisma.visitor.create({
+          data: {
+            tenantId: qr.tenantId,
+            name: "Visitante Anônimo",
+            email: null
+          }
+        });
+      }
     }
 
     const xpToAdd = qr.xpReward || 5;
@@ -154,7 +288,8 @@ router.post("/visit-from-qr", async (req, res) => {
       message: "Visita via QR registrada",
       xpGained: xpToAdd,
       type: qr.type,
-      referenceId: qr.referenceId
+      referenceId: qr.referenceId,
+      visitorName: visitor.name // Retorna nome para feedback
     });
   } catch (err) {
     console.error("Erro visit-from-qr", err);

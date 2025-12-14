@@ -8,7 +8,8 @@ const router = Router();
 const createEntrySchema = z.object({
     body: z.object({
         message: z.string().min(1, "Mensagem não pode ser vazia").max(500, "Mensagem muito longa"),
-        visitorId: z.string().uuid("ID do visitante inválido"),
+        visitorId: z.string().uuid("ID do visitante inválido").optional(),
+        email: z.string().email().optional(),
         tenantId: z.string().uuid("ID do museu inválido")
     })
 });
@@ -19,7 +20,7 @@ router.get("/", async (req, res) => {
         const { tenantId } = req.query;
         if (!tenantId) return res.status(400).json({ message: "tenantId obrigatório" });
 
-        const entries = await (prisma as any).guestbookEntry.findMany({
+        const entries = await prisma.guestbookEntry.findMany({
             where: {
                 tenantId: tenantId as string,
                 isVisible: true
@@ -43,12 +44,29 @@ router.get("/", async (req, res) => {
 // Criar mensagem
 router.post("/", validate(createEntrySchema), async (req, res) => {
     try {
-        const { message, visitorId, tenantId } = req.body;
+        const { message, visitorId, tenantId, email } = req.body;
 
-        const entry = await (prisma as any).guestbookEntry.create({
+        let finalVisitorId = visitorId;
+
+        // Se o visitorId não vier (ou quisermos garantir), tentamos buscar pelo email
+        if (!finalVisitorId && email) {
+            const visitor = await prisma.visitor.findFirst({
+                where: { email, tenantId }
+            });
+            if (visitor) {
+                finalVisitorId = visitor.id;
+            }
+        }
+
+        // Se ainda não tiver visitorId, erro (ou criar anônimo, mas guestbook geralmente pede identificação)
+        if (!finalVisitorId) {
+            return res.status(400).json({ message: "Visitante não identificado. Faça login ou forneça visitorId." });
+        }
+
+        const entry = await prisma.guestbookEntry.create({
             data: {
                 message,
-                visitorId,
+                visitorId: finalVisitorId,
                 tenantId,
                 isVisible: true // Pode ser false se quiser moderação
             }
