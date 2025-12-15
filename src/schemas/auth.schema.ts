@@ -13,6 +13,7 @@ export const registerSchema = z.object({
         email: z.string().email({ message: "Email inválido" }),
         password: z.string().min(6, { message: "A senha deve ter no mínimo 6 caracteres" }),
         role: z.enum(["visitor", "admin", "master"]).optional(),
+        tenantId: z.string().uuid().optional(),
     }),
 });
 
