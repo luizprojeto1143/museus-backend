@@ -386,55 +386,7 @@ router.get("/:visitorId/summary", async (req, res) => {
   }
 });
 
-// Summary genérico para o front (/visitors/me/summary)
-// Agora filtra pelo email do usuário logado
-router.get("/me/summary", async (req, res) => {
-  try {
-    const { email, tenantId } = req.query as { email?: string; tenantId?: string };
 
-    if (!email || !tenantId) {
-      // Se não tiver email/tenantId, retorna vazio para não vazar dados globais
-      return res.json({ xp: 0, stamps: [], visitsCount: 0, achievements: [] });
-    }
-
-    const visitor = await prisma.visitor.findFirst({
-      where: { email, tenantId },
-      include: {
-        visits: { orderBy: { createdAt: "desc" }, take: 100, include: { work: true } },
-        achievements: { include: { achievement: true } }
-      }
-    });
-
-    if (!visitor) {
-      return res.json({ xp: 0, stamps: [], visitsCount: 0, achievements: [] });
-    }
-
-    const stamps = visitor.visits
-      .filter((v) => v.work)
-      .map((v) => ({
-        workTitle: v.work!.title,
-        date: v.createdAt.toISOString()
-      }));
-
-    const xp = visitor.xp;
-
-    return res.json({
-      xp,
-      stamps,
-      achievements: visitor.achievements.map((va) => ({
-        id: va.achievement.id,
-        code: va.achievement.code,
-        title: va.achievement.title,
-        description: va.achievement.description,
-        unlockedAt: va.unlockedAt
-      })),
-      visitsCount: visitor.visits.length
-    });
-  } catch (err) {
-    console.error("Erro me/summary", err);
-    return res.status(500).json({ message: "Erro ao buscar resumo" });
-  }
-});
 
 // Atualiza dados do visitante logado (ou identificado por email/tenant)
 router.put("/me", async (req, res) => {
