@@ -91,6 +91,16 @@ app.use("/gamification", gamificationRoutes);
 app.use("/search", searchRoutes);
 
 const PORT = process.env.PORT || 3000;
+
+// Global Error Handler
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("❌ Global Error:", err);
+  res.status(500).json({ error: "Internal Server Error", details: err.message });
+});
+
 app.listen(PORT, () => {
-  console.log(`Museus backend enterprise running on port ${PORT}`);
+  console.log(`✅ Museus backend enterprise running on port ${PORT}`);
+  console.log(`🔧 Environment: ${process.env.NODE_ENV || "dev"}`);
+  console.log(`🌐 Allowed Origin: ${process.env.NODE_ENV === "production" ? (process.env.FRONTEND_URL || "*") : "*"}`);
 });
