@@ -83,7 +83,7 @@ model User {
   name      String
   role      Role
   tenantId  String?
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -102,7 +102,7 @@ model Category {
   active      Boolean      @default(true)
 
   tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   works  Work[]
   trails Trail[]
@@ -136,7 +136,7 @@ model Work {
   published   Boolean  @default(true)
 
   tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -156,7 +156,7 @@ model Trail {
   category    Category? @relation(fields: [categoryId], references: [id])
 
   tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   visits VisitorVisit[]
 
@@ -176,7 +176,7 @@ model Event {
   category    Category? @relation(fields: [categoryId], references: [id])
 
   tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   visits VisitorVisit[]
 
@@ -193,7 +193,7 @@ model Visitor {
   xp        Int      @default(0)
 
   tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   visits       VisitorVisit[]
   achievements VisitorAchievement[]
@@ -235,7 +235,7 @@ model Achievement {
   active      Boolean  @default(true)
   
   tenantId    String
-  tenant      Tenant @relation(fields: [tenantId], references: [id])
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   visitors VisitorAchievement[]
 }
@@ -269,7 +269,7 @@ model QRCode {
   xpReward    Int      @default(5)
 
   tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 }
@@ -281,7 +281,7 @@ model ChatPersona {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model Booking {
@@ -289,7 +289,7 @@ model Booking {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   date      DateTime
   status    String   @default("CONFIRMED") // CONFIRMED, CANCELLED
   createdAt DateTime @default(now())
@@ -305,7 +305,7 @@ model GuestbookEntry {
   visitor   Visitor  @relation(fields: [visitorId], references: [id])
   
   tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 }

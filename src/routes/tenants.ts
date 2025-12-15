@@ -201,4 +201,46 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
   }
 });
 
+// Delete Tenant (MASTER OR ADMIN)
+// Se for admin, só pode deletar o próprio tenant
+router.delete("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+
+    if (user.role === Role.ADMIN && user.tenantId !== id) {
+      return res.status(403).json({ message: "Sem permissão" });
+    }
+
+    // Cascate delete is handled by Database (Prisma schema)
+    await prisma.tenant.delete({
+      where: { id }
+    });
+
+    return res.status(204).send();
+  } catch (err) {
+    console.error("Erro deletar tenant", err);
+    return res.status(500).json({ message: "Erro ao deletar tenant" });
+  }
+});
+
+// Clean Demo Data (MASTER)
+router.delete("/utils/demo", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+  try {
+    // Slugs identificados como demo no sistema ou padrão
+    const demoSlugs = ['museu-a', 'cidade-b', 'demo', 'exemplo'];
+
+    const { count } = await prisma.tenant.deleteMany({
+      where: {
+        slug: { in: demoSlugs }
+      }
+    });
+
+    return res.json({ message: `Removidos ${count} tenants de demonstração.` });
+  } catch (err) {
+    console.error("Erro limpar demo data", err);
+    return res.status(500).json({ message: "Erro ao limpar dados de demonstração" });
+  }
+});
+
 export default router;
