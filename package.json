@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "npx prisma migrate resolve --rolled-back 20251214120000_init || echo \"Migration fix skipped\" && npx prisma migrate deploy && node dist/index.js",
+    "start": "npx prisma migrate resolve --applied 20251214120000_init || echo \"Migration fix skipped\" && npx prisma migrate deploy && node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "test": "jest",
