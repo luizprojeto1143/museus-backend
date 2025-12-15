@@ -48,6 +48,8 @@ model Tenant {
   coverImageUrl String?
   appIconUrl    String?
   bannerUrl     String?
+  signatureUrl  String? // Assinatura do responsável para certificados
+  certificateBackgroundUrl String? // Imagem de fundo personalizada para certificados (A4 Paisagem)
   
   // Map Settings
   mapImageUrl   String?
@@ -74,6 +76,7 @@ model Tenant {
   chatPersona ChatPersona?
   bookings    Booking[]
   guestbookEntries GuestbookEntry[]
+  clues       Clue[]
 }
 
 model User {
@@ -143,6 +146,7 @@ model Work {
 
   visits   VisitorVisit[]
   stamps   PassportStamp[]
+  clues    Clue[]
 }
 
 model Trail {
@@ -164,6 +168,39 @@ model Trail {
   updatedAt DateTime @updatedAt
 }
 
+
+
+model Clue {
+  id        String   @id @default(uuid())
+  riddle    String // Charada
+  answer    String // Resposta esperada
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  
+  workId    String?
+  work      Work?    @relation(fields: [workId], references: [id]) // Pista pode levar a uma obra
+
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EventAttendance {
+  id          String   @id @default(uuid())
+  eventId     String
+  visitorId   String
+  checkInTime DateTime @default(now())
+  status      String   @default("PRESENT") // PRESENT, REGISTERED
+
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  visitor     Visitor  @relation(fields: [visitorId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+// Update Event model to support Online Events
 model Event {
   id          String   @id @default(uuid())
   title       String
@@ -172,6 +209,9 @@ model Event {
   startDate   DateTime
   endDate     DateTime?
   
+  isOnline    Boolean  @default(false)
+  meetingLink String?
+
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
 
@@ -179,6 +219,7 @@ model Event {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   visits VisitorVisit[]
+  attendances EventAttendance[] // Relacionamento com presenças
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -198,6 +239,7 @@ model Visitor {
   visits       VisitorVisit[]
   achievements VisitorAchievement[]
   stamps       PassportStamp[]
+  attendances  EventAttendance[]
   guestbookEntries GuestbookEntry[]
 
   createdAt DateTime @default(now())

@@ -26,6 +26,7 @@ import bookingsRoutes from "./routes/bookings.js";
 import guestbookRoutes from "./routes/guestbook.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import searchRoutes from "./routes/search.js";
+import cluesRoutes from "./routes/clues.js";
 
 const app = express();
 
@@ -89,6 +90,7 @@ import gamificationRoutes from "./routes/gamification.js";
 
 app.use("/gamification", gamificationRoutes);
 app.use("/search", searchRoutes);
+app.use("/clues", cluesRoutes);
 
 const PORT = process.env.PORT || 3000;
 

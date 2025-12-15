@@ -96,20 +96,46 @@ router.post("/register", async (req, res) => {
       tenantId: string;
       name?: string;
       email?: string;
+      age?: number;
     }
 
-    const { tenantId, name, email } = req.body as RegisterVisitorBody;
+    const { tenantId, name, email, age } = req.body as RegisterVisitorBody;
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
-    const visitor = await prisma.visitor.create({
-      data: {
-        tenantId,
-        name: name || null,
-        email: email || null
-      }
-    });
-    return res.status(201).json(visitor);
+    // Use upsert to handle case where Visitor exists (orphan) but User is new
+    if (email) {
+      const visitor = await prisma.visitor.upsert({
+        where: {
+          email_tenantId: {
+            email,
+            tenantId
+          }
+        },
+        update: {
+          name: name || undefined,
+          age: age || undefined
+        },
+        create: {
+          tenantId,
+          name: name || null,
+          email,
+          age: age || null
+        }
+      });
+      return res.status(201).json(visitor);
+    } else {
+      // Fallback for no email (should not happen in this flow but just in case)
+      const visitor = await prisma.visitor.create({
+        data: {
+          tenantId,
+          name: name || null,
+          email: null,
+          age: age || null
+        }
+      });
+      return res.status(201).json(visitor);
+    }
   } catch (err) {
     console.error("Erro criar visitante", err);
     return res.status(500).json({ message: "Erro ao criar visitante" });
@@ -276,6 +302,25 @@ router.post("/visit-from-qr", async (req, res) => {
             data: {
               visitorId: visitor.id,
               workId
+            }
+          })
+        );
+      }
+    }
+
+    if (eventId) {
+      const existingAttendance = await prisma.eventAttendance.findFirst({
+        where: { visitorId: visitor.id, eventId }
+      });
+
+      if (!existingAttendance) {
+        operations.push(
+          prisma.eventAttendance.create({
+            data: {
+              visitorId: visitor.id,
+              eventId,
+              status: "PRESENT",
+              checkInTime: new Date()
             }
           })
         );

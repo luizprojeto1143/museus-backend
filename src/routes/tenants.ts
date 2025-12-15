@@ -150,7 +150,7 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
 
     const {
       mission, address, openingHours, whatsapp, email, website,
-      logoUrl, coverImageUrl, appIconUrl, bannerUrl,
+      logoUrl, coverImageUrl, appIconUrl, bannerUrl, signatureUrl, certificateBackgroundUrl,
       mapImageUrl, latitude, longitude,
       primaryColor, secondaryColor, theme, historicalFont,
       name // Admin também pode querer alterar o nome de exibição
@@ -160,7 +160,7 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       where: { id },
       data: {
         mission, address, openingHours, whatsapp, email, website,
-        logoUrl, coverImageUrl, appIconUrl, bannerUrl,
+        logoUrl, coverImageUrl, appIconUrl, bannerUrl, signatureUrl, certificateBackgroundUrl,
         mapImageUrl,
         latitude: latitude ? parseFloat(latitude) : undefined,
         longitude: longitude ? parseFloat(longitude) : undefined,
@@ -180,7 +180,10 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
 router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, slug, plan, maxWorks } = req.body;
+    const { name, slug, plan, maxWorks, logoUrl, signatureUrl, certificateBackgroundUrl } = req.body;
+
+    // Convert maxWorks to number if present
+    const maxWorksInt = maxWorks ? parseInt(maxWorks) : undefined;
 
     const tenant = await prisma.tenant.update({
       where: { id },
@@ -190,7 +193,10 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         // @ts-ignore
         plan: plan,
         // @ts-ignore
-        maxWorks: maxWorks ? parseInt(maxWorks) : undefined
+        maxWorks: maxWorksInt,
+        logoUrl,
+        signatureUrl,
+        certificateBackgroundUrl
       }
     });
 
