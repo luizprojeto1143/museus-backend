@@ -32,9 +32,17 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ message: "Obra não encontrada" });
     }
     return res.json(work);
-  } catch (err) {
-    console.error("Erro detalhar obra", err);
-    return res.status(500).json({ message: "Erro ao buscar obra" });
+  } catch (err: any) {
+    console.error(`Erro detalhar obra ID: ${req.params.id}`, {
+      message: err.message,
+      code: err.code,
+      meta: err.meta,
+      stack: err.stack
+    });
+    return res.status(500).json({
+      message: "Erro ao buscar obra",
+      debug: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
