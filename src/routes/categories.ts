@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../prisma.js";
+import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { Role } from "@prisma/client";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Listar categorias
 router.get("/", async (req, res) => {
@@ -33,9 +34,12 @@ router.get("/", async (req, res) => {
 });
 
 // Criar categoria
-router.post("/", async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
-    const { name, type, description, tenantId } = req.body;
+    const user = req.user!;
+    const { name, type, description } = req.body;
+
+    const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string) : user.tenantId;
 
     if (!name || !type || !tenantId) {
       return res.status(400).json({ error: "Missing required fields" });
