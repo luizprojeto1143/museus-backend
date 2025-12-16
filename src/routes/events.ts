@@ -66,9 +66,10 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       location?: string;
       startDate: string;
       endDate?: string;
+      categoryId?: string;
     }
 
-    const { title, description, location, startDate, endDate } = req.body as EventBody;
+    const { title, description, location, startDate, endDate, categoryId } = req.body as EventBody;
     const event = await prisma.event.create({
       data: {
         title,
@@ -76,6 +77,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         location,
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
+        categoryId: categoryId && categoryId !== "" ? categoryId : null,
         tenantId
       }
     });

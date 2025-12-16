@@ -56,15 +56,17 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       duration?: number;
       workIds?: string[];
       tenantId?: string;
+      categoryId?: string;
     }
 
-    const { title, description, duration, workIds } = req.body as TrailBody;
+    const { title, description, duration, workIds, categoryId } = req.body as TrailBody;
     const trail = await prisma.trail.create({
       data: {
         title,
         description,
         duration,
         workIds: workIds || [],
+        categoryId: categoryId && categoryId !== "" ? categoryId : null,
         tenantId
       }
     });
