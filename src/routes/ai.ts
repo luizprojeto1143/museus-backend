@@ -22,17 +22,80 @@ router.post("/chat", async (req, res) => {
     }
 
     const persona = await prisma.chatPersona.findUnique({
-      where: { tenantId: tenantId as string }
+      where: { tenantId: tenantId as string },
+      include: { tenant: true }
     });
 
-    const systemPrompt =
+    // 1. Contexto do Museu
+    const museumName = persona?.tenant?.name || "Museu";
+    const museumAddress = persona?.tenant?.address || "Localização não informada";
+    const museumMission = persona?.tenant?.mission || "";
+
+    // 2. Obras (Catálogo)
+    const works = await prisma.work.findMany({
+      where: { tenantId: tenantId as string, published: true },
+      select: { title: true, artist: true, room: true, description: true },
+      take: 20
+    });
+    const worksText = works.map(w =>
+      `- Obra: "${w.title}" (${w.artist || "?"}, Sala ${w.room || "?"}). Detalhes: ${w.description ? w.description.substring(0, 150) + "..." : "N/A"}`
+    ).join("\n");
+
+    // 3. Eventos (Agenda - Próximos)
+    const events = await prisma.event.findMany({
+      where: { tenantId: tenantId as string, startDate: { gte: new Date() } },
+      select: { title: true, startDate: true, location: true, description: true },
+      take: 5,
+      orderBy: { startDate: 'asc' }
+    });
+    const eventsText = events.map(e =>
+      `- Evento: "${e.title}" em ${e.startDate.toLocaleDateString()} (${e.location || "Local não def."}). Detalhes: ${e.description || ""}`
+    ).join("\n");
+
+    // 4. Trilhas/Roteiros
+    const trails = await prisma.trail.findMany({
+      where: { tenantId: tenantId as string },
+      select: { title: true, description: true, duration: true },
+      take: 5
+    });
+    const trailsText = trails.map(t =>
+      `- Roteiro: "${t.title}" (${t.duration || "?"} min). Sobre: ${t.description || ""}`
+    ).join("\n");
+
+    const contextPrompt = `
+    IDENTIDADE:
+    Você é o guia oficial do ${museumName}, localizado em ${museumAddress}.
+    ${museumMission ? `Missão: ${museumMission}` : ""}
+
+    CONHECIMENTO DO ACERVO E AGENDA:
+    Aqui está o que o museu oferece hoje. Use isso para responder aos visitantes:
+    
+    [OBRAS EM DESTAQUE]
+    ${worksText || "Nenhuma obra listada no momento."}
+
+    [PRÓXIMOS EVENTOS]
+    ${eventsText || "Nenhum evento próximo agendado."}
+
+    [ROTEIROS SUGERIDOS]
+    ${trailsText || "Nenhum roteiro específico criado."}
+
+    DIRETRIZES:
+    - Responda como se conhecesse profundamente cada item acima.
+    - Se perguntarem sobre algo que não está nesta lista, diga gentilmente que não tem essa informação no momento.
+    - Seja breve e prestativo.
+    - IMPORTANTE: Se perguntarem quem você é ou ao se apresentar, diga: "Sou a inteligência artificial do ${museumName}, localizado em ${museumAddress}."
+    `;
+
+    const baseSystemPrompt =
       persona?.systemPrompt ||
-      "Você é um guia virtual de um museu, respondendo de forma acolhedora, inclusiva e acessível.";
+      "Você é um guia virtual acolhedor, inclusivo e acessível.";
+
+    const finalSystemPrompt = `${contextPrompt}\n\n${baseSystemPrompt}`;
 
     const completion = await openai.chat.completions.create({
       model: MODEL,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: finalSystemPrompt },
         { role: "user", content: message }
       ]
     });
