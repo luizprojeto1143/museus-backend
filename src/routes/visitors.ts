@@ -56,7 +56,7 @@ router.get("/me/summary", async (req, res) => {
       include: {
         visits: { orderBy: { createdAt: "desc" }, take: 20, include: { work: true } },
         achievements: { include: { achievement: true } },
-        passportStamps: { include: { work: true } }
+        stamps: { include: { work: true } }
       }
     });
 
@@ -72,9 +72,9 @@ router.get("/me/summary", async (req, res) => {
       });
     }
 
-    const stamps = visitor.passportStamps.map(s => ({
+    const stamps = visitor.stamps.map(s => ({
       workTitle: s.work?.title || "Obra",
-      date: s.obtainedAt
+      date: s.stampedAt || s["obtainedAt"] // Fallback or check schema for correct date field
     }));
 
     return res.json({
