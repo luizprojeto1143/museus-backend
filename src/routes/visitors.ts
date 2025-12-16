@@ -42,7 +42,63 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Detalhes completos do visitante para o Admin
+// Resumo do visitante atual (por email/tenantId)
+router.get("/me/summary", async (req, res) => {
+  try {
+    const { email, tenantId } = req.query as { email?: string; tenantId?: string };
+
+    if (!email || !tenantId) {
+      return res.status(400).json({ message: "email e tenantId são obrigatórios" });
+    }
+
+    const visitor = await prisma.visitor.findFirst({
+      where: { email, tenantId },
+      include: {
+        visits: { orderBy: { createdAt: "desc" }, take: 20, include: { work: true } },
+        achievements: { include: { achievement: true } },
+        passportStamps: { include: { work: true } }
+      }
+    });
+
+    if (!visitor) {
+      // Retorna 200 com dados zerados em vez de 404 para nao quebrar o front se for novo
+      return res.json({
+        xp: 0,
+        stamps: [],
+        achievements: [],
+        visitsCount: 0,
+        level: 1,
+        nextLevelXp: 100
+      });
+    }
+
+    const stamps = visitor.passportStamps.map(s => ({
+      workTitle: s.work?.title || "Obra",
+      date: s.obtainedAt
+    }));
+
+    return res.json({
+      id: visitor.id,
+      name: visitor.name,
+      xp: visitor.xp,
+      stamps,
+      achievements: visitor.achievements.map((va) => ({
+        id: va.achievement.id,
+        code: va.achievement.code,
+        title: va.achievement.title,
+        description: va.achievement.description,
+        iconUrl: va.achievement.iconUrl,
+        unlockedAt: va.unlockedAt
+      })),
+      visitsCount: visitor.visits.length,
+      level: Math.floor(visitor.xp / 100) + 1, // Exemplo simples
+      nextLevelXp: (Math.floor(visitor.xp / 100) + 1) * 100
+    });
+  } catch (err) {
+    console.error("Erro me summary", err);
+    return res.status(500).json({ message: "Erro ao buscar resumo" });
+  }
+});
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
