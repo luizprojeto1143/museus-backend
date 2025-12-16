@@ -106,14 +106,43 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
   try {
     const { id } = req.params;
     const data = req.body;
+
+    // Build safe update object
+    const updateData: any = {
+      title: data.title,
+      artist: data.artist,
+      year: data.year,
+      room: data.room,
+      floor: data.floor,
+      description: data.description,
+      imageUrl: data.imageUrl,
+      audioUrl: data.audioUrl,
+      librasUrl: data.librasUrl,
+      videoUrl: data.videoUrl,
+      published: data.published,
+      radius: data.radius ? parseInt(data.radius) : undefined,
+    };
+
+    // Handle category relation
+    if (data.category !== undefined) {
+      updateData.categoryId = data.category && data.category !== "" ? data.category : null;
+    }
+
+    // Handle optional geofencing if provided
+    if (data.latitude) updateData.latitude = parseFloat(data.latitude);
+    if (data.longitude) updateData.longitude = parseFloat(data.longitude);
+
     const work = await prisma.work.update({
       where: { id },
-      data
+      data: updateData
     });
     return res.json(work);
-  } catch (err) {
-    console.error("Erro atualizar obra", err);
-    return res.status(500).json({ message: "Erro ao atualizar obra" });
+  } catch (err: any) {
+    console.error(`Erro atualizar obra ID: ${req.params.id}`, err);
+    return res.status(500).json({
+      message: "Erro ao atualizar obra",
+      debug: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
