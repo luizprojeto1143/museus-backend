@@ -205,4 +205,38 @@ router.post("/itinerary", async (req, res) => {
   }
 });
 
+// TTS Endpoint
+router.post("/tts", async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
+    }
+    const { text, voice } = req.body;
+
+    if (!text) {
+      return res.status(400).json({ message: "Texto é obrigatório" });
+    }
+
+    const response = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: voice || "onyx",
+      input: text,
+    });
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    // Return audio directly
+    res.set({
+      "Content-Type": "audio/mpeg",
+      "Content-Length": buffer.length,
+    });
+
+    return res.send(buffer);
+
+  } catch (err) {
+    console.error("Erro IA TTS", err);
+    return res.status(500).json({ message: "Erro ao gerar áudio" });
+  }
+});
+
 export default router;
