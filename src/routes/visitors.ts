@@ -72,10 +72,7 @@ router.get("/me/summary", async (req, res) => {
       });
     }
 
-    const stamps = visitor.stamps.map(s => ({
-      workTitle: s.work?.title || "Obra",
-      date: s.stampedAt || s["obtainedAt"] // Fallback or check schema for correct date field
-    }));
+    date: s.stampedAt
 
     return res.json({
       id: visitor.id,
