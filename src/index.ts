@@ -29,6 +29,7 @@ import searchRoutes from "./routes/search.js";
 import cluesRoutes from "./routes/clues.js";
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(cors({
   origin: process.env.NODE_ENV === "production"

@@ -63,8 +63,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         title: data.title,
         artist: data.artist,
         year: data.year,
-        // Fix category assignment (assuming data.category is an ID or null)
-        categoryId: data.category || undefined,
+        // Fix category assignment: Ensure empty string becomes null
+        categoryId: data.category && data.category !== "" ? data.category : null,
 
         room: data.room,
         floor: data.floor,
@@ -85,8 +85,11 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       }
     });
     return res.status(201).json(work);
-  } catch (err) {
+  } catch (err: any) {
     console.error("Erro criar obra", err);
+    if (err.code === 'P2003') {
+      return res.status(400).json({ message: "Categoria fornecida é inválida ou não existe." });
+    }
     return res.status(500).json({ message: "Erro ao criar obra" });
   }
 });
