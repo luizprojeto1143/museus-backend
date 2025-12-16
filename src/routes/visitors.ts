@@ -72,7 +72,10 @@ router.get("/me/summary", async (req, res) => {
       });
     }
 
-    date: s.stampedAt
+    const stamps = visitor.stamps.map(s => ({
+      workTitle: s.work?.title || "Obra",
+      date: s.stampedAt
+    }));
 
     return res.json({
       id: visitor.id,
