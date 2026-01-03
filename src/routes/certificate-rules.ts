@@ -52,7 +52,7 @@ router.put('/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         const { name, triggerType, conditions, actionTemplateId, active } = req.body;
 
         const rule = await prisma.certificateRule.update({
-            where: { id, tenantId },
+            where: { id, tenantId: tenantId! },
             data: {
                 name,
                 triggerType,
@@ -74,7 +74,7 @@ router.delete('/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), as
         const tenantId = req.user?.tenantId;
 
         await prisma.certificateRule.delete({
-            where: { id, tenantId }
+            where: { id, tenantId: tenantId! }
         });
         return res.status(204).send();
     } catch (err) {
