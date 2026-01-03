@@ -133,7 +133,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     return res.status(201).json(tenant);
   } catch (err) {
     console.error("Erro criar tenant", err);
-    return res.status(500).json({ message: "Erro ao criar tenant" });
+    return res.status(500).json({ message: "Erro ao criar tenant", details: err instanceof Error ? err.message : String(err) });
   }
 });
 
