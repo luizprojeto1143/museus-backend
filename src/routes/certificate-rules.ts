@@ -10,8 +10,10 @@ const prisma = new PrismaClient();
 router.get('/', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const tenantId = req.user?.tenantId;
+        if (!tenantId) return res.status(400).json({ message: "Tenant ID required" });
+
         const rules = await prisma.certificateRule.findMany({
-            where: { tenantId },
+            where: { tenantId: tenantId as string },
             include: { actionTemplate: true },
             orderBy: { updatedAt: 'desc' }
         });
