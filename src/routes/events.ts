@@ -235,6 +235,27 @@ router.post("/:id/checkin", async (req, res) => {
       data: { xp: { increment: 10 } }
     });
 
+    // Hook: Event Attended
+    try {
+      const { CertificateEngine } = await import('../services/certificate-engine.js');
+      await CertificateEngine.evaluate('EVENT_ATTENDED', {
+        tenantId: event.tenantId,
+        visitorId: targetVisitorId,
+        eventId: id
+      });
+      // Also check XP threshold
+      const updatedVisitor = await prisma.visitor.findUnique({ where: { id: targetVisitorId } });
+      if (updatedVisitor) {
+        await CertificateEngine.evaluate('XP_THRESHOLD', {
+          tenantId: event.tenantId,
+          visitorId: targetVisitorId,
+          newXp: updatedVisitor.xp
+        });
+      }
+    } catch (e) {
+      console.error("Hook Error", e);
+    }
+
     return res.status(201).json({ message: "Check-in realizado com sucesso", attendance });
   } catch (err) {
     console.error("Erro check-in", err);

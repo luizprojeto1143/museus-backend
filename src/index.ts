@@ -28,6 +28,8 @@ import leaderboardRoutes from "./routes/leaderboard.js";
 import searchRoutes from "./routes/search.js";
 import cluesRoutes from "./routes/clues.js";
 import certificatesRoutes from "./routes/certificates.js";
+import certificateTemplatesRoutes from "./routes/certificate-templates.js";
+import certificateRulesRoutes from "./routes/certificate-rules.js";
 
 const app = express();
 app.set('trust proxy', 1);
@@ -94,6 +96,8 @@ app.use("/gamification", gamificationRoutes);
 app.use("/search", searchRoutes);
 app.use("/clues", cluesRoutes);
 app.use("/certificates", certificatesRoutes);
+app.use("/certificate-templates", certificateTemplatesRoutes);
+app.use("/certificate-rules", certificateRulesRoutes);
 
 const PORT = process.env.PORT || 3000;
 

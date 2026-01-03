@@ -41,6 +41,13 @@ enum CertificateStatus {
   REVOKED
 }
 
+enum TriggerType {
+  TRAIL_COMPLETED
+  EVENT_ATTENDED
+  XP_THRESHOLD
+  MANUAL
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -91,6 +98,8 @@ model Tenant {
   guestbookEntries GuestbookEntry[]
   clues       Clue[]
   certificates Certificate[]
+  certificateTemplates CertificateTemplate[]
+  certificateRules     CertificateRule[]
 }
 
 model User {
@@ -383,6 +392,44 @@ model Certificate {
   status      CertificateStatus @default(VALID)
   metadata    Json?
 
+
   visitor     Visitor @relation(fields: [visitorId], references: [id])
   tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  templateId  String?
+  template    CertificateTemplate? @relation(fields: [templateId], references: [id])
+}
+
+model CertificateTemplate {
+  id            String   @id @default(uuid())
+  name          String
+  backgroundUrl String?
+  elements      Json     // Array of { field, x, y, style }
+  dimensions    Json?    // { width, height }
+  
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  certificates  Certificate[]
+  rules         CertificateRule[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model CertificateRule {
+  id               String      @id @default(uuid())
+  name             String
+  triggerType      TriggerType
+  conditions       Json        // Logic for trigger
+  active           Boolean     @default(true)
+  
+  actionTemplateId String
+  actionTemplate   CertificateTemplate @relation(fields: [actionTemplateId], references: [id])
+  
+  tenantId         String
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
