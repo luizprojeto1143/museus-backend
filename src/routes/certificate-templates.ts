@@ -13,7 +13,7 @@ router.get('/', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
         if (!tenantId) return res.status(400).json({ message: "Tenant ID required" });
 
         const templates = await prisma.certificateTemplate.findMany({
-            where: { tenantId },
+            where: { tenantId: tenantId as string },
             orderBy: { updatedAt: 'desc' }
         });
         return res.json(templates);
@@ -48,10 +48,12 @@ router.put('/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
     try {
         const { id } = req.params;
         const tenantId = req.user?.tenantId;
+        if (!tenantId) return res.status(400).json({ message: "Tenant ID required" });
+
         const { name, backgroundUrl, elements, dimensions } = req.body;
 
         const template = await prisma.certificateTemplate.update({
-            where: { id, tenantId },
+            where: { id, tenantId: tenantId as string },
             data: {
                 name,
                 backgroundUrl,
@@ -70,9 +72,10 @@ router.delete('/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), as
     try {
         const { id } = req.params;
         const tenantId = req.user?.tenantId;
+        if (!tenantId) return res.status(400).json({ message: "Tenant ID required" });
 
         await prisma.certificateTemplate.delete({
-            where: { id, tenantId }
+            where: { id, tenantId: tenantId as string }
         });
         return res.status(204).send();
     } catch (err) {
