@@ -28,6 +28,19 @@ enum CategoryType {
   GENERAL
 }
 
+enum CertificateType {
+  EVENT
+  TRAIL
+  VISIT
+  COURSE
+  CUSTOM
+}
+
+enum CertificateStatus {
+  VALID
+  REVOKED
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
@@ -77,6 +90,7 @@ model Tenant {
   bookings    Booking[]
   guestbookEntries GuestbookEntry[]
   clues       Clue[]
+  certificates Certificate[]
 }
 
 model User {
@@ -209,6 +223,11 @@ model Event {
   startDate   DateTime
   endDate     DateTime?
   
+  // Certificate Settings
+  certificateBackgroundUrl String?
+  certificateText String?
+  minMinutesForCertificate Int?
+
   isOnline    Boolean  @default(false)
   meetingLink String?
 
@@ -241,6 +260,7 @@ model Visitor {
   stamps       PassportStamp[]
   attendances  EventAttendance[]
   guestbookEntries GuestbookEntry[]
+  certificates Certificate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -350,4 +370,19 @@ model GuestbookEntry {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+}
+
+model Certificate {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  visitorId   String
+  tenantId    String
+  type        CertificateType
+  relatedId   String?
+  generatedAt DateTime @default(now())
+  status      CertificateStatus @default(VALID)
+  metadata    Json?
+
+  visitor     Visitor @relation(fields: [visitorId], references: [id])
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
