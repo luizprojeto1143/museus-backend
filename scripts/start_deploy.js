@@ -81,6 +81,16 @@ if (!runWithRetry('npx prisma migrate deploy')) {
     process.exit(1);
 }
 
+// Executar Seed automaticamente se o comando existir
+console.log("🌱 Executando Seeding (Populando dados iniciais)...");
+try {
+    // Executa de forma síncrona. Ignora erro se falhar para não travar deploy.
+    execSync('npm run prisma:seed', { stdio: 'inherit', env: process.env });
+    console.log("✅ Seed concluído.");
+} catch (e) {
+    console.warn("⚠️ Aviso: Seed falhou ou já foi executado. Continuando...", e.message);
+}
+
 console.log("2️⃣ Iniciando Aplicação...");
 
 const appProcess = spawn('node', ['dist/index.js'], {
