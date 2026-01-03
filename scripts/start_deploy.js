@@ -7,12 +7,12 @@ if (!DB_URL) {
     process.exit(1);
 }
 
-// Function to mask URL for safe logging
+// Function to mask URL for safe logging but showing PORT
 function maskUrl(url) {
     try {
         const urlObj = new URL(url);
         urlObj.password = '****';
-        return urlObj.toString();
+        return `Protocol: ${urlObj.protocol}, Host: ${urlObj.hostname}, Port: ${urlObj.port}, Params: ${urlObj.search}`;
     } catch (e) {
         return 'Invalid URL';
     }
@@ -20,30 +20,39 @@ function maskUrl(url) {
 
 let modifiedUrl = DB_URL;
 
-// Verifica se já possui parâmetros de query e adiciona sslmode=no-verify se necessário
-const hasQueryParams = DB_URL.includes('?');
-const sslParam = 'sslmode=no-verify';
+// Tenta forçar sslmode=require e aumentar timeout
+const paramsToAdd = [];
 
-// Simple check to avoid double injection if headers already exist
 if (!DB_URL.includes('sslmode=')) {
-    console.log("⚠️ Detectado ambiente de produção. Injetando 'sslmode=no-verify'...");
-    modifiedUrl = hasQueryParams ? `${DB_URL}&${sslParam}` : `${DB_URL}?${sslParam}`;
-} else {
-    console.log("ℹ️ DATABASE_URL já possui configuração de SSL.");
+    console.log("⚠️ Injetando 'sslmode=require' (tentativa de fix para P1017)...");
+    paramsToAdd.push('sslmode=require');
 }
 
-console.log(`🔍 Connection String sendo usada: ${maskUrl(modifiedUrl)}`);
+if (!DB_URL.includes('connect_timeout=')) {
+    console.log("⚠️ Injetando 'connect_timeout=30'...");
+    paramsToAdd.push('connect_timeout=30');
+}
+
+if (paramsToAdd.length > 0) {
+    const separator = modifiedUrl.includes('?') ? '&' : '?';
+    modifiedUrl = `${modifiedUrl}${separator}${paramsToAdd.join('&')}`;
+}
+
+console.log(`🔍 Detalhes da Conexão: ${maskUrl(modifiedUrl)}`);
 
 // Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
 
-console.log("🚀 Iniciando Script de Deploy com Retries...");
+console.log("🚀 Iniciando Script de Deploy (v2 - Require SSL + Timeout)...");
 
 // Função para tentar executar comando com retries
-function runWithRetry(command, retries = 3, delayMs = 2000) {
+function runWithRetry(command, retries = 3, delayMs = 3000) {
     for (let i = 0; i < retries; i++) {
         try {
             console.log(`1️⃣ Executando Migrações (Tentativa ${i + 1}/${retries})...`);
+            // check if we are using pgBouncer (port 6432 typically)
+            // If port is 6432, migrations might fail if not using direct url, but let's try anyway.
+
             execSync(command, { stdio: 'inherit', env: process.env });
             console.log("✅ Migrações concluídas com sucesso.");
             return true;
@@ -52,7 +61,7 @@ function runWithRetry(command, retries = 3, delayMs = 2000) {
             if (i < retries - 1) {
                 console.log(`⏳ Aguardando ${delayMs}ms antes de tentar novamente...`);
                 const start = Date.now();
-                while (Date.now() - start < delayMs) { } // Busy wait simples
+                while (Date.now() - start < delayMs) { } // Busy wait
             } else {
                 console.error("❌ Todas as tentativas de migração falharam.");
                 return false;
