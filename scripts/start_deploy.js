@@ -1,5 +1,9 @@
 import { execSync, spawn } from 'child_process';
 
+// 1. Configurar preferência por IPv4 antes de qualquer outra coisa
+// Isso corrige problemas de resolução DNS comuns em ambientes Node > 17
+process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --dns-result-order=ipv4first';
+
 const DB_URL = process.env.DATABASE_URL;
 
 if (!DB_URL) {
@@ -7,12 +11,12 @@ if (!DB_URL) {
     process.exit(1);
 }
 
-// Function to mask URL for safe logging but showing PORT
+// Logging seguro
 function maskUrl(url) {
     try {
         const urlObj = new URL(url);
         urlObj.password = '****';
-        return `Protocol: ${urlObj.protocol}, Host: ${urlObj.hostname}, Port: ${urlObj.port}, Params: ${urlObj.search}`;
+        return `Protocol: ${urlObj.protocol}, Host: ${urlObj.hostname}, Port: ${urlObj.port || 'default'}, Params: ${urlObj.search}`;
     } catch (e) {
         return 'Invalid URL';
     }
@@ -20,17 +24,22 @@ function maskUrl(url) {
 
 let modifiedUrl = DB_URL;
 
-// Tenta forçar sslmode=require e aumentar timeout
-const paramsToAdd = [];
-
-if (!DB_URL.includes('sslmode=')) {
-    console.log("⚠️ Injetando 'sslmode=require' (tentativa de fix para P1017)...");
-    paramsToAdd.push('sslmode=require');
+// Tenta limpar params conflitantes da tentativa anterior se existirem hardcoded na URL base do Render
+// (Mas geralmente a variável vem limpa a cada deploy limpo, vamos apenas garantir o SSL no-verify)
+if (modifiedUrl.includes('sslmode=require')) {
+    modifiedUrl = modifiedUrl.replace('sslmode=require', 'sslmode=no-verify');
 }
 
-if (!DB_URL.includes('connect_timeout=')) {
-    console.log("⚠️ Injetando 'connect_timeout=30'...");
-    paramsToAdd.push('connect_timeout=30');
+const paramsToAdd = [];
+
+if (!modifiedUrl.includes('sslmode=')) {
+    console.log("⚠️ Injetando 'sslmode=no-verify' (Padrão para Render Int)...");
+    paramsToAdd.push('sslmode=no-verify');
+}
+
+// Reduzir connection limit para migração para evitar gargalo
+if (!modifiedUrl.includes('connection_limit=')) {
+    paramsToAdd.push('connection_limit=3');
 }
 
 if (paramsToAdd.length > 0) {
@@ -38,21 +47,19 @@ if (paramsToAdd.length > 0) {
     modifiedUrl = `${modifiedUrl}${separator}${paramsToAdd.join('&')}`;
 }
 
-console.log(`🔍 Detalhes da Conexão: ${maskUrl(modifiedUrl)}`);
+console.log(`🔍 Connection Info: ${maskUrl(modifiedUrl)}`);
+console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS}`);
 
 // Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
 
-console.log("🚀 Iniciando Script de Deploy (v2 - Require SSL + Timeout)...");
+console.log("🚀 Iniciando Script de Deploy (v3 - IPv4 First + no-verify)...");
 
 // Função para tentar executar comando com retries
 function runWithRetry(command, retries = 3, delayMs = 3000) {
     for (let i = 0; i < retries; i++) {
         try {
             console.log(`1️⃣ Executando Migrações (Tentativa ${i + 1}/${retries})...`);
-            // check if we are using pgBouncer (port 6432 typically)
-            // If port is 6432, migrations might fail if not using direct url, but let's try anyway.
-
             execSync(command, { stdio: 'inherit', env: process.env });
             console.log("✅ Migrações concluídas com sucesso.");
             return true;
@@ -74,7 +81,7 @@ if (!runWithRetry('npx prisma migrate deploy')) {
     process.exit(1);
 }
 
-console.log("2️⃣ Iniciando Aplicação (node dist/index.js)...");
+console.log("2️⃣ Iniciando Aplicação...");
 
 const appProcess = spawn('node', ['dist/index.js'], {
     stdio: 'inherit',
