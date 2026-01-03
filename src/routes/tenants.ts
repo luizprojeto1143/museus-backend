@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
+import bcrypt from "bcrypt";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 
@@ -105,8 +106,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
       return res.status(400).json({ message: "Slug já em uso" });
     }
 
-    const bcrypt = await import("bcrypt");
-    const hash = await bcrypt.default.hash(adminPassword, 10);
+    const hash = await bcrypt.hash(adminPassword, 10);
 
     const tenant = await prisma.tenant.create({
       data: {
