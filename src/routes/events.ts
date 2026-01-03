@@ -69,7 +69,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       categoryId?: string;
     }
 
-    const { title, description, location, startDate, endDate, categoryId } = req.body as EventBody;
+    const { title, description, location, startDate, endDate, categoryId, certificateBackgroundUrl, certificateText, minMinutesForCertificate } = req.body as EventBody & { certificateBackgroundUrl?: string; certificateText?: string; minMinutesForCertificate?: number; };
     const event = await prisma.event.create({
       data: {
         title,
@@ -78,6 +78,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
         categoryId: categoryId && categoryId !== "" ? categoryId : null,
+        certificateBackgroundUrl,
+        certificateText,
+        minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
         tenantId
       }
     });
@@ -91,12 +94,16 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, location, startDate, endDate } = req.body as {
+    const { title, description, location, startDate, endDate, categoryId, certificateBackgroundUrl, certificateText, minMinutesForCertificate } = req.body as {
       title: string;
       description?: string;
       location?: string;
       startDate: string;
       endDate?: string;
+      categoryId?: string;
+      certificateBackgroundUrl?: string;
+      certificateText?: string;
+      minMinutesForCertificate?: number;
     };
     const event = await prisma.event.update({
       where: { id },
@@ -105,7 +112,11 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         description,
         location,
         startDate: new Date(startDate),
-        endDate: endDate ? new Date(endDate) : null
+        endDate: endDate ? new Date(endDate) : null,
+        categoryId,
+        certificateBackgroundUrl,
+        certificateText,
+        minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null
       }
     });
     return res.json(event);
