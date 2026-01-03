@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { CertificateService } from '../services/certificate';
-import { authMiddleware } from '../middleware/auth'; // Assumptions based on existing files
+import { CertificateService } from '../services/certificate.js';
+import { authMiddleware } from '../middleware/auth.js'; // Assumptions based on existing files
 import { z } from 'zod'; // Assuming zod is usedProject
 
 const router = Router();
