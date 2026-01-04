@@ -32,13 +32,12 @@ if (modifiedUrl.includes('sslmode=require')) {
 
 const paramsToAdd = [];
 
-if (!modifiedUrl.includes('sslmode=')) {
-    console.log("⚠️ Injetando 'sslmode=no-verify' (Padrão para Render Int)...");
-    paramsToAdd.push('sslmode=no-verify');
-}
-
-// 2.3. Remover connection_limit (vamos deixar o Prisma gerenciar ou o padrão do banco)
-// paramsToAdd.push('connection_limit=3'); // REMOVIDO: Pode estar causando desconexão prematura
+// REMOVED: Injeção forçada de SSL. O Render Internal URL geralmente não usa SSL.
+// Se precisar, o usuário deve adicionar na Environment Variable do Render.
+// if (!modifiedUrl.includes('sslmode=')) {
+//     console.log("⚠️ Injetando 'sslmode=no-verify' (Padrão para Render Int)...");
+//     paramsToAdd.push('sslmode=no-verify');
+// }
 
 if (paramsToAdd.length > 0) {
     const separator = modifiedUrl.includes('?') ? '&' : '?';
