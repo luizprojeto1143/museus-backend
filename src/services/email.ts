@@ -1,187 +1,287 @@
-import nodemailer from "nodemailer";
-import PDFDocument from "pdfkit";
-import fs from "fs";
-import path from "path";
+import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
+import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
-// Configuração do transporter
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: parseInt(process.env.SMTP_PORT || "587"),
-    secure: process.env.SMTP_SECURE === "true", // true para 465, false para outros
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
+export class MailService {
+    public transporter: nodemailer.Transporter;
 
-import axios from "axios";
-
-// Helper para baixar imagem
-const fetchImageBuffer = async (url?: string | null): Promise<Buffer | null> => {
-    if (!url) return null;
-    try {
-        const response = await axios.get(url, { responseType: "arraybuffer" });
-        return Buffer.from(response.data);
-    } catch (e) {
-        console.warn("Falha ao baixar imagem para certificado:", url);
-        return null;
+    constructor() {
+        // Use environment variables or fallback to Ethereal for dev
+        if (process.env.SMTP_HOST) {
+            this.transporter = nodemailer.createTransport({
+                host: process.env.SMTP_HOST,
+                port: Number(process.env.SMTP_PORT) || 587,
+                secure: false,
+                auth: {
+                    user: process.env.SMTP_USER,
+                    pass: process.env.SMTP_PASS
+                }
+            });
+        } else {
+            console.log("Using Ethereal Mail Mock");
+            this.transporter = nodemailer.createTransport({
+                host: "smtp.ethereal.email",
+                port: 587,
+                secure: false, // true for 465, false for other ports
+                auth: {
+                    user: 'maddison53@ethereal.email', // Mock
+                    pass: 'jn7jnAPss4f63QBp6D'
+                }
+            });
+        }
     }
-};
 
-export const generateCertificateBuffer = async (
+    async sendTicketEmail(
+        to: string,
+        eventTitle: string,
+        guestName: string,
+        ticketCode: string,
+        eventDate?: string,
+        location?: string
+    ) {
+        try {
+            // Generate PDF Buffer
+            const pdfBuffer = await this.generateTicketPDF(eventTitle, guestName, ticketCode, eventDate, location);
+
+            const info = await this.transporter.sendMail({
+                from: '"Museus Ent" <noreply@museus.ent>',
+                to,
+                subject: `🎟️ Seu ingresso para ${eventTitle}`,
+                html: `
+                    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%); border-radius: 16px; overflow: hidden;">
+                        <!-- Header -->
+                        <div style="height: 4px; background: #f59e0b;"></div>
+                        <div style="padding: 40px 30px; text-align: center;">
+                            <h1 style="color: #ffffff; margin: 0 0 10px 0; font-size: 28px;">🎉 Inscrição Confirmada!</h1>
+                            <p style="color: #94a3b8; margin: 0; font-size: 16px;">Seu ingresso está pronto</p>
+                        </div>
+                        
+                        <!-- Content -->
+                        <div style="background: #ffffff; padding: 30px; margin: 0 20px 20px 20px; border-radius: 12px;">
+                            <h2 style="color: #1e3a8a; margin: 0 0 20px 0; font-size: 22px;">${eventTitle}</h2>
+                            
+                            <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                                <div style="flex: 1;">
+                                    <p style="color: #64748b; font-size: 12px; margin: 0 0 4px 0; text-transform: uppercase;">Participante</p>
+                                    <p style="color: #1e293b; font-size: 16px; font-weight: 600; margin: 0;">${guestName}</p>
+                                </div>
+                                <div style="flex: 1;">
+                                    <p style="color: #64748b; font-size: 12px; margin: 0 0 4px 0; text-transform: uppercase;">Código</p>
+                                    <p style="color: #f59e0b; font-size: 16px; font-weight: 700; margin: 0;">${ticketCode}</p>
+                                </div>
+                            </div>
+                            
+                            ${eventDate ? `<p style="color: #64748b; margin: 10px 0;">📅 <strong style="color: #1e293b;">${eventDate}</strong></p>` : ''}
+                            ${location ? `<p style="color: #64748b; margin: 10px 0;">📍 <strong style="color: #1e293b;">${location}</strong></p>` : ''}
+                            
+                            <div style="background: #f8fafc; border-radius: 8px; padding: 16px; margin-top: 20px; text-align: center;">
+                                <p style="color: #64748b; font-size: 14px; margin: 0;">📎 Seu ingresso em PDF está anexado a este e-mail</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Footer -->
+                        <div style="padding: 20px 30px; text-align: center;">
+                            <p style="color: #64748b; font-size: 12px; margin: 0;">Apresente o QR Code do ingresso na entrada do evento</p>
+                            <p style="color: #475569; font-size: 11px; margin: 10px 0 0 0;">Museus Enterprise</p>
+                        </div>
+                    </div>
+                `,
+                attachments: [
+                    {
+                        filename: `ingresso_${eventTitle.replace(/\s+/g, '_')}.pdf`,
+                        content: pdfBuffer
+                    }
+                ]
+            });
+
+            console.log("Message sent: %s", info.messageId);
+        } catch (error) {
+            console.error("Email error (non-blocking):", error);
+        }
+    }
+
+    private async generateTicketPDF(event: string, guest: string, code: string, eventDate?: string, location?: string): Promise<Buffer> {
+        return new Promise(async (resolve, reject) => {
+            try {
+                // Ticket size - similar to a real event ticket
+                const doc = new PDFDocument({
+                    size: [600, 280], // Wide ticket format
+                    margins: { top: 0, bottom: 0, left: 0, right: 0 }
+                });
+                const chunks: any[] = [];
+
+                doc.on('data', chunk => chunks.push(chunk));
+                doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+                // QR Code Generation
+                const qrData = await QRCode.toDataURL(code, {
+                    width: 120,
+                    margin: 0,
+                    color: { dark: '#1e3a8a', light: '#ffffff' }
+                });
+
+                // === BACKGROUND GRADIENT (Dark Blue to Purple) ===
+                const gradient = doc.linearGradient(0, 0, 600, 280);
+                gradient.stop(0, '#0f172a')   // Slate 900
+                    .stop(0.5, '#1e1b4b')  // Indigo 950
+                    .stop(1, '#312e81');   // Indigo 900
+                doc.rect(0, 0, 600, 280).fill(gradient);
+
+                // === DECORATIVE ELEMENTS ===
+                // Top accent line
+                doc.rect(0, 0, 600, 4).fill('#f59e0b'); // Amber accent
+
+                // Circular pattern (subtle)
+                doc.opacity(0.05);
+                doc.circle(500, 140, 200).fill('#ffffff');
+                doc.circle(-50, 140, 150).fill('#ffffff');
+                doc.opacity(1);
+
+                // === LEFT SECTION (Main Info) ===
+                // Event Title
+                doc.font('Helvetica-Bold').fontSize(28).fillColor('#ffffff');
+                doc.text(event.toUpperCase(), 30, 35, { width: 380 });
+
+                // Divider line
+                doc.rect(30, 85, 60, 3).fill('#f59e0b');
+
+                // Guest Name
+                doc.font('Helvetica').fontSize(12).fillColor('#94a3b8');
+                doc.text('PARTICIPANTE', 30, 105);
+                doc.font('Helvetica-Bold').fontSize(18).fillColor('#ffffff');
+                doc.text(guest, 30, 120);
+
+                // Date & Location (if provided)
+                doc.font('Helvetica').fontSize(11).fillColor('#94a3b8');
+                doc.text('DATA', 30, 160);
+                doc.font('Helvetica-Bold').fontSize(14).fillColor('#e2e8f0');
+                doc.text(eventDate || 'A confirmar', 30, 175);
+
+                doc.font('Helvetica').fontSize(11).fillColor('#94a3b8');
+                doc.text('LOCAL', 30, 205);
+                doc.font('Helvetica-Bold').fontSize(14).fillColor('#e2e8f0');
+                doc.text(location || 'Ver detalhes no app', 30, 220, { width: 200 });
+
+                // === PERFORATED LINE (Dashed separator) ===
+                doc.strokeColor('#475569').lineWidth(1).dash(5, { space: 5 });
+                doc.moveTo(430, 20).lineTo(430, 260).stroke();
+                doc.undash();
+
+                // === RIGHT SECTION (QR Code) ===
+                // White background for QR
+                doc.roundedRect(455, 40, 120, 120, 8).fill('#ffffff');
+
+                // QR Code
+                doc.image(qrData, 460, 45, { width: 110 });
+
+                // Code text
+                doc.font('Helvetica-Bold').fontSize(14).fillColor('#f59e0b');
+                doc.text(code, 455, 175, { width: 120, align: 'center' });
+
+                // Instructions
+                doc.font('Helvetica').fontSize(9).fillColor('#64748b');
+                doc.text('Apresente este', 455, 200, { width: 120, align: 'center' });
+                doc.text('QR Code na entrada', 455, 212, { width: 120, align: 'center' });
+
+                // === BOTTOM BRANDING ===
+                doc.font('Helvetica').fontSize(8).fillColor('#475569');
+                doc.text('Powered by Museus Enterprise', 30, 255);
+
+                doc.end();
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+}
+
+export const mailService = new MailService();
+
+// Certificate Functions (used by events.ts)
+export async function generateCertificateBuffer(
     visitorName: string,
-    eventName: string,
+    eventTitle: string,
     date: string,
-    organizerName: string,
-    verificationCode?: string,
+    tenantName: string,
+    code: string,
     logoUrl?: string | null,
     signatureUrl?: string | null,
     backgroundUrl?: string | null
-): Promise<Buffer> => {
-    // Carregar imagens em paralelo
-    const [logoBuffer, signatureBuffer, backgroundBuffer] = await Promise.all([
-        fetchImageBuffer(logoUrl),
-        fetchImageBuffer(signatureUrl),
-        fetchImageBuffer(backgroundUrl)
-    ]);
-
-    return new Promise((resolve, reject) => {
+): Promise<Buffer> {
+    return new Promise(async (resolve, reject) => {
         try {
-            const doc = new PDFDocument({ layout: "landscape", size: "A4", margin: 40 });
-            const buffers: Buffer[] = [];
+            const doc = new PDFDocument({ size: 'A4', layout: 'landscape' });
+            const chunks: any[] = [];
 
-            doc.on("data", (buffer) => buffers.push(buffer));
-            doc.on("end", () => resolve(Buffer.concat(buffers)));
-            doc.on("error", (err) => reject(err));
+            doc.on('data', chunk => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
 
-            const centerX = doc.page.width / 2;
-            const centerY = doc.page.height / 2;
+            // Background
+            doc.rect(0, 0, doc.page.width, doc.page.height).fill('#f8f9fa');
 
-            // Fundo
-            if (backgroundBuffer) {
-                // Desenhar imagem de fundo cobrindo tudo
-                doc.image(backgroundBuffer, 0, 0, { width: doc.page.width, height: doc.page.height });
-            } else {
-                // Design Padrão
-                doc.rect(0, 0, doc.page.width, doc.page.height).fill("#fdfdfd");
-                doc.lineWidth(3).rect(20, 20, doc.page.width - 40, doc.page.height - 40).stroke("#d4af37"); // Borda Externa
-                doc.lineWidth(1).rect(25, 25, doc.page.width - 50, doc.page.height - 50).stroke("#e5e7eb"); // Borda Interna sutil
-            }
+            // Border
+            doc.rect(30, 30, doc.page.width - 60, doc.page.height - 60).lineWidth(3).stroke('#d4af37');
 
-            let currentY = 60;
+            // Title
+            doc.fillColor('#1e3a8a').fontSize(36).text('CERTIFICADO', 0, 100, { align: 'center' });
 
-            // LOGO (Se tiver fundo personalizado, talvez o logo já esteja lá? Mas vamos manter a opção de sobrepor se a URL do logo for passada)
-            if (logoBuffer) {
-                const logoWidth = 100;
-                doc.image(logoBuffer, centerX - (logoWidth / 2), currentY, { width: logoWidth });
-                currentY += 80;
-            } else {
-                currentY += 40;
-            }
+            // Body
+            doc.fillColor('#333').fontSize(16).text(
+                `Certificamos que ${visitorName} participou do evento "${eventTitle}" realizado em ${date}, promovido por ${tenantName}.`,
+                80, 200, { align: 'center', width: doc.page.width - 160 }
+            );
 
-            doc.moveDown(0);
-            doc.y = currentY;
+            // Code
+            doc.fontSize(12).text(`Código de Verificação: ${code}`, 0, 350, { align: 'center' });
 
-            // Ajustar cores baseadas no fundo? Por enquanto manter cores escuras/padrão.
-            // Se tiver fundo, talvez o texto precise ser branco? Impossível saber sem input do usuário.
-            // Vou assumir que o fundo é claro (papel, pergaminho).
-
-            doc.font("Helvetica-Bold").fontSize(36).fillColor("#1f2937").text("CERTIFICADO", { align: "center" });
-            doc.fontSize(14).font("Helvetica").fillColor("#d4af37").text("DE PARTICIPAÇÃO", { align: "center", characterSpacing: 2 });
-
-            doc.moveDown(2);
-            doc.fontSize(16).font("Helvetica").fillColor("#4b5563").text("Certificamos que", { align: "center" });
-
-            doc.moveDown(0.5);
-            doc.fontSize(28).font("Helvetica-Bold").fillColor("#d4af37").text(visitorName, { align: "center" });
-
-            doc.moveDown(0.5);
-            doc.fontSize(16).font("Helvetica").fillColor("#4b5563").text(`participou do evento realizado por ${organizerName}:`, { align: "center" });
-
-            doc.moveDown(0.5);
-            doc.fontSize(22).font("Helvetica-Bold").fillColor("#1f2937").text(eventName, { align: "center" });
-
-            doc.moveDown(1.5);
-            doc.fontSize(14).font("Helvetica").fillColor("#6b7280").text(`Realizado em: ${date}`, { align: "center" });
-
-            // ASSINATURA AREA
-            const signatureY = doc.page.height - 130;
-
-            if (signatureBuffer) {
-                const sigWidth = 120;
-                doc.image(signatureBuffer, centerX - (sigWidth / 2), signatureY - 50, { width: sigWidth });
-            }
-
-            // Linha da assinatura
-            doc.moveTo(centerX - 100, signatureY)
-                .lineTo(centerX + 100, signatureY)
-                .strokeColor("#9ca3af")
-                .lineWidth(1)
-                .stroke();
-
-            doc.fontSize(12).font("Helvetica-Bold").fillColor("#374151").text(organizerName, centerX - 100, signatureY + 10, { width: 200, align: "center" });
-            doc.fontSize(10).font("Helvetica").fillColor("#9ca3af").text("Organizador", centerX - 100, signatureY + 25, { width: 200, align: "center" });
-
-            if (verificationCode) {
-                const codeY = doc.page.height - 40;
-                doc.fontSize(9).font("Courier").fillColor("#9ca3af").text(`Código de Verificação: ${verificationCode}`, 0, codeY, { align: "right", width: doc.page.width - 40 });
-            }
+            // Footer
+            doc.fontSize(10).fillColor('#666').text(tenantName, 0, 400, { align: 'center' });
 
             doc.end();
-        } catch (err) {
-            reject(err);
+        } catch (e) {
+            reject(e);
         }
     });
-};
+}
 
-export const sendCertificateEmail = async (
-    toEmail: string,
+export async function sendCertificateEmail(
+    to: string,
     visitorName: string,
-    eventName: string,
+    eventTitle: string,
     date: string,
-    organizerName: string,
-    verificationCode?: string,
+    tenantName: string,
+    code: string,
     logoUrl?: string | null,
     signatureUrl?: string | null,
     backgroundUrl?: string | null
-): Promise<boolean> => {
+): Promise<boolean> {
     try {
-        if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-            console.warn("⚠️ SMTP credentials not found. Skipping email sending.");
-            console.log(`[MOCK EMAIL] To: ${toEmail}, Subject: Certificado - ${eventName}`);
-            return true;
-        }
-
-        const pdfData = await generateCertificateBuffer(
-            visitorName,
-            eventName,
-            date,
-            organizerName,
-            verificationCode,
-            logoUrl,
-            signatureUrl,
-            backgroundUrl
+        const pdfBuffer = await generateCertificateBuffer(
+            visitorName, eventTitle, date, tenantName, code, logoUrl, signatureUrl, backgroundUrl
         );
 
-        // Enviar E-mail
-        await transporter.sendMail({
-            from: `"Museus - ${organizerName}" <${process.env.SMTP_USER}>`,
-            to: toEmail,
-            subject: `Seu Certificado: ${eventName}`,
-            text: `Olá ${visitorName},\n\nObrigado por participar do evento "${eventName}".\n\nSeu certificado está em anexo.\n\nAtenciosamente,\n${organizerName}`,
-            html: `<p>Olá <strong>${visitorName}</strong>,</p><p>Obrigado por participar do evento "<strong>${eventName}</strong>".</p><p>Seu certificado está em anexo.</p><br><p>Atenciosamente,<br>${organizerName}</p>`,
+        await mailService.transporter.sendMail({
+            from: `"${tenantName}" <noreply@museus.ent>`,
+            to,
+            subject: `Seu Certificado - ${eventTitle}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; color: #333;">
+                    <h1>Parabéns, ${visitorName}!</h1>
+                    <p>Seu certificado de participação no evento <strong>${eventTitle}</strong> está em anexo.</p>
+                    <p>Código de verificação: <strong>${code}</strong></p>
+                </div>
+            `,
             attachments: [
-                {
-                    filename: `Certificado_${eventName.replace(/\s+/g, "_")}.pdf`,
-                    content: pdfData,
-                    contentType: "application/pdf",
-                },
-            ],
+                { filename: `certificado_${eventTitle.replace(/\s+/g, '_')}.pdf`, content: pdfBuffer }
+            ]
         });
-        console.log(`✅ Certificado enviado para ${toEmail}`);
+
         return true;
-    } catch (error) {
-        console.error("❌ Erro ao enviar e-mail:", error);
+    } catch (e) {
+        console.error("Certificate email error:", e);
         return false;
     }
-};
+}
+

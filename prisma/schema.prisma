@@ -100,6 +100,13 @@ model Tenant {
   certificates Certificate[]
   certificateTemplates CertificateTemplate[]
   certificateRules     CertificateRule[]
+  auditLogs    AuditLog[]
+  newsletters  NewsletterSubscription[]
+  donations    Donation[]
+  products     Product[]
+  orders       Order[]
+  dailyChallenges DailyChallenge[]
+  scavengerHunts  ScavengerHunt[]
 }
 
 model User {
@@ -170,6 +177,8 @@ model Work {
   visits   VisitorVisit[]
   stamps   PassportStamp[]
   clues    Clue[]
+  favorites Favorite[]
+  reviews  Review[]
 }
 
 model Trail {
@@ -228,17 +237,40 @@ model Event {
   id          String   @id @default(uuid())
   title       String
   description String?
-  location    String?
+  
+  // Format & Visibility
+  format      String   @default("PRESENTIAL") // PRESENTIAL, ONLINE, HYBRID
+  visibility  String   @default("PUBLIC")     // PUBLIC, PRIVATE
+  isOnline    Boolean  @default(false)        // Keep for backward compatibility or computed
+  
+  // Date & Time
   startDate   DateTime
   endDate     DateTime?
+  
+  // Location (Presential)
+  location    String?  // Name of the place e.g. "Sítio Terra Prometida"
+  zipCode     String?
+  address     String?
+  number      String?
+  complement  String?
+  neighborhood String?
+  city        String?
+  state       String?
+  
+  // Online
+  meetingLink String?   // Zoom, Meet, etc.
+  platform    String?   // ZOOM, YOUTUBE, MEET, OTHER
+  
+  // Producer Info
+  producerName        String?
+  producerDescription String?
+  producerLogoUrl     String?
+  coverImageUrl       String?
   
   // Certificate Settings
   certificateBackgroundUrl String?
   certificateText String?
   minMinutesForCertificate Int?
-
-  isOnline    Boolean  @default(false)
-  meetingLink String?
 
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
@@ -246,11 +278,80 @@ model Event {
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  visits VisitorVisit[]
-  attendances EventAttendance[] // Relacionamento com presenças
+  visits      VisitorVisit[]
+  attendances EventAttendance[]
+  tickets     Ticket[]
+  registrations Registration[]
+  reviews     Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum TicketType {
+  FREE
+  PAID
+}
+
+enum TicketStatus {
+  ACTIVE
+  PAUSED
+  SOLD_OUT
+  EXPIRED
+}
+
+model Ticket {
+  id            String      @id @default(uuid())
+  eventId       String
+  name          String
+  description   String?
+  type          TicketType  @default(FREE)
+  price         Decimal     @default(0.0) // 10.00
+  quantity      Int         // Total available
+  sold          Int         @default(0)   // Track sold count
+  absorbFee     Boolean     @default(false)
+  minBuy        Int         @default(1)
+  maxBuy        Int         @default(5)
+  salesStartDate DateTime?
+  salesEndDate  DateTime?
+  status        TicketStatus @default(ACTIVE)
+
+  event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrations Registration[]
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELED
+  CHECKED_IN
+}
+
+model Registration {
+  id            String             @id @default(uuid())
+  code          String             @unique // Unique booking code e.g. "ABC-123"
+  eventId       String
+  ticketId      String
+  visitorId     String?            // If linked to a known visitor
+  
+  // Guest Data (if not a registered visitor yet)
+  guestName     String
+  guestEmail    String
+  
+  status        RegistrationStatus @default(PENDING)
+  checkInDate   DateTime?
+  pricePaid     Decimal            @default(0.0)
+  
+  // Relations
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticket        Ticket    @relation(fields: [ticketId], references: [id])
+  visitor       Visitor?  @relation(fields: [visitorId], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model Visitor {
@@ -270,6 +371,13 @@ model Visitor {
   attendances  EventAttendance[]
   guestbookEntries GuestbookEntry[]
   certificates Certificate[]
+  registrations Registration[]
+  favorites    Favorite[]
+  reviews      Review[]
+  notificationPreference NotificationPreference?
+  orders       Order[]
+  challengeCompletions DailyChallengeCompletion[]
+  huntParticipations   ScavengerHuntParticipation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -432,4 +540,288 @@ model CertificateRule {
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// ========== NEW MODELS FOR WORLD-CLASS FEATURES ==========
+
+// Favorites - Save works to personal collection
+model Favorite {
+  id        String   @id @default(uuid())
+  
+  visitorId String
+  visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  workId    String
+  work      Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([visitorId, workId])
+}
+
+// Reviews - Star ratings and comments
+model Review {
+  id        String   @id @default(uuid())
+  
+  rating    Int      // 1-5 stars
+  comment   String?
+  
+  visitorId String
+  visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  workId    String?
+  work      Work?    @relation(fields: [workId], references: [id], onDelete: Cascade)
+  
+  eventId   String?
+  event     Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  approved  Boolean  @default(false) // Moderation
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([visitorId, workId])
+}
+
+// Audit Log - Track admin actions
+model AuditLog {
+  id        String   @id @default(uuid())
+  
+  action    String   // CREATE, UPDATE, DELETE, LOGIN, etc.
+  entity    String   // Work, Event, Visitor, etc.
+  entityId  String?
+  
+  userId    String?
+  userEmail String?
+  
+  oldData   Json?
+  newData   Json?
+  
+  ipAddress String?
+  userAgent String?
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+}
+
+// Newsletter Subscription
+model NewsletterSubscription {
+  id        String   @id @default(uuid())
+  email     String
+  name      String?
+  active    Boolean  @default(true)
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([email, tenantId])
+}
+
+// Donation
+model Donation {
+  id          String   @id @default(uuid())
+  
+  amount      Decimal  @db.Decimal(10, 2)
+  currency    String   @default("BRL")
+  
+  donorName   String?
+  donorEmail  String?
+  message     String?
+  anonymous   Boolean  @default(false)
+  
+  status      String   @default("PENDING") // PENDING, COMPLETED, FAILED
+  paymentId   String?
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+}
+
+// Notification Preferences
+model NotificationPreference {
+  id              String   @id @default(uuid())
+  
+  visitorId       String   @unique
+  visitor         Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  emailEvents     Boolean  @default(true)
+  emailNewsletter Boolean  @default(true)
+  pushNotifications Boolean @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ========== E-COMMERCE MODULE ==========
+
+// Product - Museum shop items
+model Product {
+  id          String   @id @default(uuid())
+  
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  imageUrl    String?
+  
+  category    String?  // souvenirs, books, prints, etc.
+  sku         String?
+  stock       Int      @default(0)
+  active      Boolean  @default(true)
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  orderItems  OrderItem[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([sku, tenantId])
+}
+
+// Order - Shop purchases
+model Order {
+  id          String   @id @default(uuid())
+  
+  status      String   @default("PENDING") // PENDING, PAID, SHIPPED, DELIVERED, CANCELLED
+  total       Decimal  @db.Decimal(10, 2)
+  
+  // Customer info
+  customerName  String
+  customerEmail String
+  customerPhone String?
+  
+  // Shipping
+  shippingAddress String?
+  shippingMethod  String?
+  shippingCost    Decimal? @db.Decimal(10, 2)
+  
+  // Payment
+  paymentMethod String?
+  paymentId     String?
+  
+  visitorId   String?
+  visitor     Visitor? @relation(fields: [visitorId], references: [id])
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  items       OrderItem[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+  
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// ========== ADVANCED GAMIFICATION ==========
+
+// Daily Challenge
+model DailyChallenge {
+  id          String   @id @default(uuid())
+  
+  title       String
+  description String
+  xpReward    Int      @default(50)
+  
+  type        String   // VISIT_WORK, ANSWER_QUIZ, SHARE_SOCIAL, etc.
+  target      Int      @default(1) // How many times to complete
+  conditions  Json?    // Additional conditions
+  
+  activeDate  DateTime // The day this challenge is active
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  completions DailyChallengeCompletion[]
+  
+  createdAt   DateTime @default(now())
+}
+
+model DailyChallengeCompletion {
+  id          String   @id @default(uuid())
+  
+  visitorId   String
+  visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  challengeId String
+  challenge   DailyChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  
+  progress    Int      @default(0)
+  completed   Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([visitorId, challengeId])
+}
+
+// Scavenger Hunt - Treasure hunt game
+model ScavengerHunt {
+  id          String   @id @default(uuid())
+  
+  title       String
+  description String?
+  
+  xpReward    Int      @default(200)
+  badgeReward String?  // Achievement code to unlock
+  
+  active      Boolean  @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  steps       ScavengerHuntStep[]
+  participants ScavengerHuntParticipation[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ScavengerHuntStep {
+  id          String   @id @default(uuid())
+  
+  order       Int
+  clue        String   // Hint to find the next step
+  answer      String   // Expected QR code or answer
+  
+  huntId      String
+  hunt        ScavengerHunt @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  
+  workId      String?  // Optional: step is at this work
+}
+
+model ScavengerHuntParticipation {
+  id          String   @id @default(uuid())
+  
+  visitorId   String
+  visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  huntId      String
+  hunt        ScavengerHunt @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  
+  currentStep Int      @default(0)
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([visitorId, huntId])
 }

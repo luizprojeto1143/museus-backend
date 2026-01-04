@@ -30,6 +30,16 @@ import cluesRoutes from "./routes/clues.js";
 import certificatesRoutes from "./routes/certificates.js";
 import certificateTemplatesRoutes from "./routes/certificate-templates.js";
 import certificateRulesRoutes from "./routes/certificate-rules.js";
+import { ticketsRouter } from "./routes/tickets.js";
+import { registrationsRouter } from "./routes/registrations.js";
+import favoritesRoutes from "./routes/favorites.js";
+import reviewsRoutes from "./routes/reviews.js";
+import healthRoutes from "./routes/health.js";
+import newsletterRoutes from "./routes/newsletter.js";
+import donationsRoutes from "./routes/donations.js";
+import auditRoutes from "./routes/audit.js";
+import shopRoutes from "./routes/shop.js";
+import challengesRoutes from "./routes/challenges.js";
 
 const app = express();
 app.set('trust proxy', 1);
@@ -98,6 +108,16 @@ app.use("/clues", cluesRoutes);
 app.use("/certificates", certificatesRoutes);
 app.use("/certificate-templates", certificateTemplatesRoutes);
 app.use("/certificate-rules", certificateRulesRoutes);
+app.use("/tickets", ticketsRouter);
+app.use("/registrations", registrationsRouter);
+app.use("/favorites", favoritesRoutes);
+app.use("/reviews", reviewsRoutes);
+app.use("/health", healthRoutes);
+app.use("/newsletter", newsletterRoutes);
+app.use("/donations", donationsRoutes);
+app.use("/audit-logs", auditRoutes);
+app.use("/shop", shopRoutes);
+app.use("/challenges", challengesRoutes);
 
 const PORT = process.env.PORT || 3000;
 

@@ -69,18 +69,46 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       categoryId?: string;
     }
 
-    const { title, description, location, startDate, endDate, categoryId, certificateBackgroundUrl, certificateText, minMinutesForCertificate } = req.body as EventBody & { certificateBackgroundUrl?: string; certificateText?: string; minMinutesForCertificate?: number; };
+    const {
+      title, description, location, startDate, endDate, categoryId,
+      certificateBackgroundUrl, certificateText, minMinutesForCertificate,
+      // New fields
+      format, visibility, isOnline,
+      zipCode, address, number, complement, neighborhood, city, state,
+      meetingLink, platform,
+      producerName, producerDescription, producerLogoUrl, coverImageUrl
+    } = req.body;
+
     const event = await prisma.event.create({
       data: {
         title,
         description,
-        location,
+        location, // Used as venue name
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
         categoryId: categoryId && categoryId !== "" ? categoryId : null,
         certificateBackgroundUrl,
         certificateText,
         minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
+
+        // New fields
+        format,
+        visibility,
+        isOnline: Boolean(isOnline),
+        zipCode,
+        address,
+        number,
+        complement,
+        neighborhood,
+        city,
+        state,
+        meetingLink,
+        platform,
+        producerName,
+        producerDescription,
+        producerLogoUrl,
+        coverImageUrl,
+
         tenantId
       }
     });
@@ -94,17 +122,15 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, location, startDate, endDate, categoryId, certificateBackgroundUrl, certificateText, minMinutesForCertificate } = req.body as {
-      title: string;
-      description?: string;
-      location?: string;
-      startDate: string;
-      endDate?: string;
-      categoryId?: string;
-      certificateBackgroundUrl?: string;
-      certificateText?: string;
-      minMinutesForCertificate?: number;
-    };
+    const {
+      title, description, location, startDate, endDate, categoryId,
+      certificateBackgroundUrl, certificateText, minMinutesForCertificate,
+      format, visibility, isOnline,
+      zipCode, address, number, complement, neighborhood, city, state,
+      meetingLink, platform,
+      producerName, producerDescription, producerLogoUrl, coverImageUrl
+    } = req.body;
+
     const event = await prisma.event.update({
       where: { id },
       data: {
@@ -116,7 +142,25 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         categoryId,
         certificateBackgroundUrl,
         certificateText,
-        minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null
+        minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
+
+        // New fields
+        format,
+        visibility,
+        isOnline: isOnline !== undefined ? Boolean(isOnline) : undefined,
+        zipCode,
+        address,
+        number,
+        complement,
+        neighborhood,
+        city,
+        state,
+        meetingLink,
+        platform,
+        producerName,
+        producerDescription,
+        producerLogoUrl,
+        coverImageUrl
       }
     });
     return res.json(event);

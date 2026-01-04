@@ -109,6 +109,116 @@ router.post("/chat", async (req, res) => {
   }
 });
 
+// Streaming Chat using Server-Sent Events (SSE)
+router.post("/chat/stream", async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
+    }
+
+    const { tenantId, message, conversationHistory = [] } = req.body as {
+      tenantId?: string;
+      message?: string;
+      conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    };
+
+    if (!tenantId || !message) {
+      return res.status(400).json({ message: "tenantId e message são obrigatórios" });
+    }
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    // Build context (same as regular chat)
+    const persona = await prisma.chatPersona.findUnique({
+      where: { tenantId },
+      include: { tenant: true }
+    });
+
+    const museumName = persona?.tenant?.name || "Museu";
+    const museumAddress = persona?.tenant?.address || "Localização não informada";
+    const museumMission = persona?.tenant?.mission || "";
+
+    const works = await prisma.work.findMany({
+      where: { tenantId, published: true },
+      select: { title: true, artist: true, room: true, description: true },
+      take: 15
+    });
+
+    const worksText = works.map(w =>
+      `- "${w.title}" (${w.artist || "?"}, Sala ${w.room || "?"})`
+    ).join("\\n");
+
+    const events = await prisma.event.findMany({
+      where: { tenantId, startDate: { gte: new Date() } },
+      select: { title: true, startDate: true, location: true },
+      take: 3,
+      orderBy: { startDate: 'asc' }
+    });
+
+    const eventsText = events.map(e =>
+      `- "${e.title}" em ${e.startDate.toLocaleDateString()} (${e.location || "Local TBD"})`
+    ).join("\\n");
+
+    const systemPrompt = `
+    Você é o guia virtual do ${museumName}, localizado em ${museumAddress}.
+    ${museumMission ? `Missão: ${museumMission}` : ""}
+    
+    ACERVO (obras disponíveis):
+    ${worksText || "Nenhuma obra cadastrada."}
+    
+    EVENTOS PRÓXIMOS:
+    ${eventsText || "Nenhum evento agendado."}
+    
+    INSTRUÇÕES:
+    - Seja acolhedor, breve e informativo
+    - Use emojis moderadamente para tornar a conversa amigável
+    - Se não souber algo, diga gentilmente
+    - Responda no idioma do usuário
+    ${persona?.systemPrompt || ""}
+    `;
+
+    // Build messages array with history
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt }
+    ];
+
+    // Add conversation history (last 10 messages max)
+    const recentHistory = conversationHistory.slice(-10);
+    for (const msg of recentHistory) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
+
+    // Add current message
+    messages.push({ role: 'user', content: message });
+
+    // Stream the response
+    const stream = await openai.chat.completions.create({
+      model: MODEL,
+      messages,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || "";
+      if (content) {
+        res.write(`data: ${JSON.stringify({ content })}\\n\\n`);
+      }
+    }
+
+    res.write(`data: ${JSON.stringify({ done: true })}\\n\\n`);
+    res.end();
+
+  } catch (err) {
+    console.error("Erro IA stream", err);
+    res.write(`data: ${JSON.stringify({ error: "Erro ao processar" })}\\n\\n`);
+    res.end();
+  }
+});
+
 // Rota de teste para o Admin (sem salvar persona)
 router.post("/test", async (req, res) => {
   try {
