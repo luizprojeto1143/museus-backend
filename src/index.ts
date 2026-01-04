@@ -118,6 +118,8 @@ app.use("/donations", donationsRoutes);
 app.use("/audit-logs", auditRoutes);
 app.use("/shop", shopRoutes);
 app.use("/challenges", challengesRoutes);
+import publicCertificateRoutes from "./routes/public/certificates.js";
+app.use("/public/certificates", publicCertificateRoutes);
 
 const PORT = process.env.PORT || 3000;
 
