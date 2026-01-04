@@ -21,10 +21,27 @@ function maskUrl(url) {
     }
 }
 
+const urlObj = new URL(DB_URL);
 let modifiedUrl = DB_URL;
 
+// RENDER FIX AUTO-DISCOVERY:
+// Se estivermos rodando no Render (interno) mas a URL for externa (.render.com),
+// vamos reescrever para o hostname interno para permitir conexão rápida e sem SSL (ou compatível).
+const isRenderExternalUrl = urlObj.hostname.includes('render.com');
+
+if (isRenderExternalUrl) {
+    console.log(`⚠️ Detectada URL Externa do Render (${urlObj.hostname}). Convertendo para Interna...`);
+    // O hostname interno geralmente é apenas a primeira parte (ex: dpg-xxx-a)
+    // External: dpg-xxx-a.oregon-postgres.render.com
+    // Internal: dpg-xxx-a
+    const internalHost = urlObj.hostname.split('.')[0];
+    urlObj.hostname = internalHost;
+    // Força desabilitar SSL para conexão interna direta
+    urlObj.searchParams.set('sslmode', 'disable');
+    modifiedUrl = urlObj.toString();
+}
+
 // Tenta limpar params conflitantes da tentativa anterior se existirem hardcoded na URL base do Render
-// (Mas geralmente a variável vem limpa a cada deploy limpo, vamos apenas garantir o SSL no-verify)
 if (modifiedUrl.includes('sslmode=require')) {
     modifiedUrl = modifiedUrl.replace('sslmode=require', 'sslmode=disable');
 }
