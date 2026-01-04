@@ -24,18 +24,24 @@ function maskUrl(url) {
 const urlObj = new URL(DB_URL);
 let modifiedUrl = DB_URL;
 
-// LOGIC REMOVED: Auto-rewrite to internal host failed (P1001).
-// LOGIC REMOVED: Force sslmode=disable failed (P1010).
-// LOGIC REMOVED: Force sslmode=no-verify failed (P1017).
+// RENDER EXTERNAL URL FIX:
+// Se a URL for externa (.render.com) ela EXIGE SSL.
+// O log mostrou que a URL atual não tem params ("Params: "), causando erro P1017 (Server closed connection) pois tentamos plaintext.
+// Vamos garantir que se for externa, tenha sslmode=no-verify.
+const isExternalRender = urlObj.hostname.includes('.render.com');
+const hasSSLParam = urlObj.searchParams.has('sslmode');
 
-// Simplificação Radical: Confiar na URL fornecida pelo Render Environment.
-// Se o usuário forneceu a External URL (com sslmode=require), vamos usar ela sem tocar.
+if (isExternalRender && !hasSSLParam) {
+    console.log("⚠️ URL Externa do Render detectada sem SSL. Adicionando 'sslmode=no-verify'...");
+    urlObj.searchParams.set('sslmode', 'no-verify');
+    modifiedUrl = urlObj.toString();
+}
 
 // Apenas logar mascarado para debug
 console.log(`🔍 Connection Info: ${maskUrl(modifiedUrl)}`);
 console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS || 'default'}`);
 
-// Atualiza o ambiente (redundante se não modificamos, mas mantido para clareza)
+// Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
 
 console.log("🚀 Iniciando Script de Deploy (v4 - Optimized for Render)...");
