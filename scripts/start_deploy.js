@@ -1,7 +1,8 @@
 import { execSync, spawn } from 'child_process';
 
-// 1. Configurar preferência por IPv4 - REMOVIDO: Pode causar conflito com resolução interna do Render em IPv6
-// process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --dns-result-order=ipv4first';
+// 1. Configurar preferência por IPv4
+// Isso corrige problemas de resolução DNS comuns em ambientes Node > 17 (especialmente com Render + Postgres)
+process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --dns-result-order=ipv4first';
 
 const DB_URL = process.env.DATABASE_URL;
 
