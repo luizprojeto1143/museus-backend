@@ -1,8 +1,7 @@
 import { execSync, spawn } from 'child_process';
 
-// 1. Configurar preferência por IPv4 antes de qualquer outra coisa
-// Isso corrige problemas de resolução DNS comuns em ambientes Node > 17
-process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --dns-result-order=ipv4first';
+// 1. Configurar preferência por IPv4 - REMOVIDO: Pode causar conflito com resolução interna do Render em IPv6
+// process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --dns-result-order=ipv4first';
 
 const DB_URL = process.env.DATABASE_URL;
 
@@ -27,17 +26,16 @@ let modifiedUrl = DB_URL;
 // Tenta limpar params conflitantes da tentativa anterior se existirem hardcoded na URL base do Render
 // (Mas geralmente a variável vem limpa a cada deploy limpo, vamos apenas garantir o SSL no-verify)
 if (modifiedUrl.includes('sslmode=require')) {
-    modifiedUrl = modifiedUrl.replace('sslmode=require', 'sslmode=no-verify');
+    modifiedUrl = modifiedUrl.replace('sslmode=require', 'sslmode=disable');
 }
 
 const paramsToAdd = [];
 
-// REMOVED: Injeção forçada de SSL. O Render Internal URL geralmente não usa SSL.
-// Se precisar, o usuário deve adicionar na Environment Variable do Render.
-// if (!modifiedUrl.includes('sslmode=')) {
-//     console.log("⚠️ Injetando 'sslmode=no-verify' (Padrão para Render Int)...");
-//     paramsToAdd.push('sslmode=no-verify');
-// }
+// FORCE SSL DISABLE: Render Internal é plaintext. Enviar 'sslmode=disable' garante que o Prisma não tente negociar SSL.
+if (!modifiedUrl.includes('sslmode=')) {
+    console.log("⚠️ Injetando 'sslmode=disable' (Forçando Plaintext para Render Int)...");
+    paramsToAdd.push('sslmode=disable');
+}
 
 if (paramsToAdd.length > 0) {
     const separator = modifiedUrl.includes('?') ? '&' : '?';
