@@ -37,10 +37,8 @@ if (!modifiedUrl.includes('sslmode=')) {
     paramsToAdd.push('sslmode=no-verify');
 }
 
-// Reduzir connection limit para migração para evitar gargalo
-if (!modifiedUrl.includes('connection_limit=')) {
-    paramsToAdd.push('connection_limit=3');
-}
+// 2.3. Remover connection_limit (vamos deixar o Prisma gerenciar ou o padrão do banco)
+// paramsToAdd.push('connection_limit=3'); // REMOVIDO: Pode estar causando desconexão prematura
 
 if (paramsToAdd.length > 0) {
     const separator = modifiedUrl.includes('?') ? '&' : '?';
@@ -53,10 +51,10 @@ console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS}`);
 // Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
 
-console.log("🚀 Iniciando Script de Deploy (v3 - IPv4 First + no-verify)...");
+console.log("🚀 Iniciando Script de Deploy (v4 - Optimized for Render)...");
 
 // Função para tentar executar comando com retries
-function runWithRetry(command, retries = 3, delayMs = 3000) {
+function runWithRetry(command, retries = 5, delayMs = 5000) {
     for (let i = 0; i < retries; i++) {
         try {
             console.log(`1️⃣ Executando Migrações (Tentativa ${i + 1}/${retries})...`);
