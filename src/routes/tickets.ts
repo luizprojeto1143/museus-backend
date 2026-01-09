@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../prisma.js'; // Use singleton
+import { Role } from '@prisma/client';
 import { z } from 'zod';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Schemas
 const ticketSchema = z.object({
@@ -67,7 +67,12 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
         });
 
         if (!existing) return res.status(404).json({ error: 'Ticket not found' });
-        // TODO: Add strict tenant check if needed (via event -> tenantId)
+
+        // Verificação strict de tenant
+        const user = req.user!;
+        if (user.role !== 'MASTER' && existing.event.tenantId !== user.tenantId) {
+            return res.status(403).json({ error: 'Sem permissão para editar ticket de outro tenant' });
+        }
 
         const ticket = await prisma.ticket.update({
             where: { id },

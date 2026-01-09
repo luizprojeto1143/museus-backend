@@ -40,6 +40,12 @@ import donationsRoutes from "./routes/donations.js";
 import auditRoutes from "./routes/audit.js";
 import shopRoutes from "./routes/shop.js";
 import challengesRoutes from "./routes/challenges.js";
+import backupRoutes from "./routes/backup.js";
+
+// ...
+
+app.use("/api/shop", shopRoutes);
+app.use("/api/backup", backupRoutes);
 
 const app = express();
 app.set('trust proxy', 1);

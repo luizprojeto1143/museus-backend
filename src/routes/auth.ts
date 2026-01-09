@@ -8,7 +8,12 @@ import { loginSchema, registerSchema, switchTenantSchema } from "../schemas/auth
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "secret";
+
+// SECURITY: JWT_SECRET must be set in production
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("FATAL: JWT_SECRET environment variable is not set in production!");
+}
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-only";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
 // Login
@@ -104,9 +109,21 @@ router.post("/register", validate(registerSchema), async (req, res) => {
 });
 
 // rota para seeding simples de MASTER (apenas dev)
+// SECURITY: This route is DISABLED in production
 router.post("/seed-master", async (req, res) => {
   try {
+    // Block this route in production
+    if (process.env.NODE_ENV === "production") {
+      console.warn("SECURITY: Attempted to access /seed-master in production from IP:", req.ip);
+      return res.status(403).json({ message: "Esta rota está desabilitada em produção" });
+    }
+
     const { email, password, name } = req.body as { email: string; password: string; name: string };
+
+    if (!email || !password || !name) {
+      return res.status(400).json({ message: "Email, password e name são obrigatórios" });
+    }
+
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) {
       return res.status(400).json({ message: "Já existe usuário com este email" });

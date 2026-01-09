@@ -104,7 +104,8 @@ router.delete("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (r
   }
 });
 
-router.post("/unlock", async (req, res) => {
+// SECURITY: Achievement unlock requires authentication
+router.post("/unlock", authMiddleware, async (req, res) => {
   try {
     const { visitorId, achievementId } = req.body as {
       visitorId?: string;

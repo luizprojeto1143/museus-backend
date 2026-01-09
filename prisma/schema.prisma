@@ -82,6 +82,20 @@ model Tenant {
   theme          String   @default("dark") // "light" | "dark"
   historicalFont Boolean  @default(true)
 
+  // Feature Flags - Módulos habilitados por tenant
+  featureWorks        Boolean @default(true)   // Catálogo de obras/artefatos
+  featureTrails       Boolean @default(true)   // Trilhas e roteiros
+  featureEvents       Boolean @default(true)   // Eventos e check-in
+  featureGamification Boolean @default(true)   // XP, conquistas, ranking, passaporte
+  featureQRCodes      Boolean @default(true)   // QR codes e scanner
+  featureChatAI       Boolean @default(false)  // Chat IA (premium)
+  featureShop         Boolean @default(false)  // Loja virtual (premium)
+  featureDonations    Boolean @default(false)  // Doações e mural de doadores (premium)
+  featureCertificates Boolean @default(true)   // Certificados de participação
+  featureReviews      Boolean @default(true)   // Favoritos e avaliações
+  featureGuestbook    Boolean @default(true)   // Livro de visitas
+  featureAccessibility Boolean @default(true)  // Libras e acessibilidade
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -107,6 +121,7 @@ model Tenant {
   orders       Order[]
   dailyChallenges DailyChallenge[]
   scavengerHunts  ScavengerHunt[]
+  files           File[]
 }
 
 model User {
@@ -125,6 +140,31 @@ model User {
   lastLogin DateTime?
 
   bookings  Booking[]
+}
+
+// File - Gerencia uploads no sistema
+model File {
+  id          String   @id @default(uuid())
+  filename    String
+  originalName String
+  url         String
+  type        String   // image, audio, video, document
+  mimeType    String
+  size        Int      // bytes
+  
+  // Onde o arquivo é usado
+  usedIn      String?  // work, trail, event, tenant, etc
+  usedInId    String?  // ID do registro onde é usado
+  
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  uploadedBy  String?  // userId
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([tenantId])
+  @@index([usedIn, usedInId])
 }
 
 model Category {
@@ -179,6 +219,10 @@ model Work {
   clues    Clue[]
   favorites Favorite[]
   reviews  Review[]
+
+  @@index([tenantId, categoryId])
+  @@index([tenantId, room])
+  @@index([tenantId, published])
 }
 
 model Trail {
@@ -272,6 +316,11 @@ model Event {
   certificateText String?
   minMinutesForCertificate Int?
 
+  // Sympla Killer Features 🚀
+  customFormSchema Json?   // Array of { id, label, type, required, options }
+  galleryUrls      String? // JSON array of strings (store as string for SQLite compat or Json if Postgres supports)
+  // Note: Using Json type is better if DB supports it. Prisma supports Json for SQLite.
+  
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
 
@@ -286,6 +335,8 @@ model Event {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId, startDate])
 }
 
 enum TicketType {
@@ -345,6 +396,9 @@ model Registration {
   checkInDate   DateTime?
   pricePaid     Decimal            @default(0.0)
   
+  // Sympla Killer Features 🚀
+  customFormData Json?             // { questionId: answer }
+  
   // Relations
   event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   ticket        Ticket    @relation(fields: [ticketId], references: [id])
@@ -383,6 +437,7 @@ model Visitor {
   updatedAt DateTime @updatedAt
 
   @@unique([email, tenantId])
+  @@index([tenantId, xp])
 }
 
 model VisitorVisit {
@@ -581,6 +636,7 @@ model Review {
   updatedAt DateTime @updatedAt
   
   @@unique([visitorId, workId])
+  @@unique([visitorId, eventId])
 }
 
 // Audit Log - Track admin actions

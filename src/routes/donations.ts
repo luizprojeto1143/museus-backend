@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
+import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -93,8 +94,8 @@ router.get('/wall', async (req, res) => {
     }
 });
 
-// GET /donations/stats - Donation statistics (Admin)
-router.get('/stats', async (req, res) => {
+// GET /donations/stats - Donation statistics (Admin only)
+router.get('/stats', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { tenantId } = req.query;
 

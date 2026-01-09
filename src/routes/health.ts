@@ -4,12 +4,12 @@ import os from 'os';
 
 const router = Router();
 
-// GET /health - Basic health check
+// GET /health - Deep Health Check
 router.get('/', async (req, res) => {
     const startTime = Date.now();
 
     try {
-        // Check database connection
+        // 1. Check database connection
         await prisma.$queryRaw`SELECT 1`;
         const dbLatency = Date.now() - startTime;
 
@@ -17,9 +17,11 @@ router.get('/', async (req, res) => {
             status: 'healthy',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),
-            database: {
-                status: 'connected',
-                latency: `${dbLatency}ms`
+            services: {
+                database: {
+                    status: 'connected',
+                    latency: `${dbLatency}ms`
+                }
             },
             system: {
                 hostname: os.hostname(),
@@ -29,7 +31,7 @@ router.get('/', async (req, res) => {
                     free: Math.round(os.freemem() / 1024 / 1024) + 'MB',
                     used: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024) + 'MB'
                 },
-                cpu: os.cpus().length + ' cores'
+                load: os.loadavg()
             },
             version: process.env.npm_package_version || '1.0.0'
         });
@@ -38,27 +40,25 @@ router.get('/', async (req, res) => {
         res.status(503).json({
             status: 'unhealthy',
             timestamp: new Date().toISOString(),
-            database: {
-                status: 'disconnected',
-                error: error instanceof Error ? error.message : 'Unknown error'
+            services: {
+                database: {
+                    status: 'disconnected',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                }
             }
         });
     }
 });
 
-// GET /health/ready - Readiness probe
+// K8s Liveness/Readiness
+router.get('/live', (req, res) => res.json({ status: 'alive' }));
 router.get('/ready', async (req, res) => {
     try {
         await prisma.$queryRaw`SELECT 1`;
-        res.json({ ready: true });
+        res.json({ status: 'ready' });
     } catch {
-        res.status(503).json({ ready: false });
+        res.status(503).json({ status: 'not_ready' });
     }
-});
-
-// GET /health/live - Liveness probe
-router.get('/live', (req, res) => {
-    res.json({ alive: true });
 });
 
 export default router;

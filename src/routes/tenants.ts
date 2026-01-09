@@ -31,9 +31,27 @@ router.get("/:id/settings", async (req, res) => {
     const tenant = await prisma.tenant.findUnique({
       where: { id },
       select: {
+        name: true,
+        logoUrl: true,
+        primaryColor: true,
+        secondaryColor: true,
+        historicalFont: true,
         mapImageUrl: true,
         latitude: true,
-        longitude: true
+        longitude: true,
+        // Feature Flags
+        featureWorks: true,
+        featureTrails: true,
+        featureEvents: true,
+        featureGamification: true,
+        featureQRCodes: true,
+        featureChatAI: true,
+        featureShop: true,
+        featureDonations: true,
+        featureCertificates: true,
+        featureReviews: true,
+        featureGuestbook: true,
+        featureAccessibility: true
       }
     });
 
@@ -44,6 +62,39 @@ router.get("/:id/settings", async (req, res) => {
     return res.json(tenant);
   } catch (err) {
     console.error("Erro ao buscar configurações do museu", err);
+    return res.status(500).json({ message: "Erro interno" });
+  }
+});
+
+// Get Tenant Features (Public) - Retorna apenas feature flags
+router.get("/:id/features", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenant = await prisma.tenant.findUnique({
+      where: { id },
+      select: {
+        featureWorks: true,
+        featureTrails: true,
+        featureEvents: true,
+        featureGamification: true,
+        featureQRCodes: true,
+        featureChatAI: true,
+        featureShop: true,
+        featureDonations: true,
+        featureCertificates: true,
+        featureReviews: true,
+        featureGuestbook: true,
+        featureAccessibility: true
+      }
+    });
+
+    if (!tenant) {
+      return res.status(404).json({ message: "Museu não encontrado" });
+    }
+
+    return res.json(tenant);
+  } catch (err) {
+    console.error("Erro ao buscar features do museu", err);
     return res.status(500).json({ message: "Erro interno" });
   }
 });
@@ -112,9 +163,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
       data: {
         name,
         slug,
-        // @ts-ignore
         plan: plan || "START",
-        // @ts-ignore
         maxWorks,
         users: {
           create: [
@@ -176,11 +225,17 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
   }
 });
 
-// Atualiza tenant (MASTER) - Apenas dados estruturais/plano
+// Atualiza tenant (MASTER) - Dados estruturais, plano e feature flags
 router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, slug, plan, maxWorks, logoUrl, signatureUrl, certificateBackgroundUrl } = req.body;
+    const {
+      name, slug, plan, maxWorks, logoUrl, signatureUrl, certificateBackgroundUrl,
+      // Feature Flags
+      featureWorks, featureTrails, featureEvents, featureGamification,
+      featureQRCodes, featureChatAI, featureShop, featureDonations,
+      featureCertificates, featureReviews, featureGuestbook, featureAccessibility
+    } = req.body;
 
     // Convert maxWorks to number if present
     const maxWorksInt = maxWorks ? parseInt(maxWorks) : undefined;
@@ -190,13 +245,24 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       data: {
         name,
         slug,
-        // @ts-ignore
         plan: plan,
-        // @ts-ignore
         maxWorks: maxWorksInt,
         logoUrl,
         signatureUrl,
-        certificateBackgroundUrl
+        certificateBackgroundUrl,
+        // Feature Flags (only update if provided)
+        ...(featureWorks !== undefined && { featureWorks }),
+        ...(featureTrails !== undefined && { featureTrails }),
+        ...(featureEvents !== undefined && { featureEvents }),
+        ...(featureGamification !== undefined && { featureGamification }),
+        ...(featureQRCodes !== undefined && { featureQRCodes }),
+        ...(featureChatAI !== undefined && { featureChatAI }),
+        ...(featureShop !== undefined && { featureShop }),
+        ...(featureDonations !== undefined && { featureDonations }),
+        ...(featureCertificates !== undefined && { featureCertificates }),
+        ...(featureReviews !== undefined && { featureReviews }),
+        ...(featureGuestbook !== undefined && { featureGuestbook }),
+        ...(featureAccessibility !== undefined && { featureAccessibility })
       }
     });
 

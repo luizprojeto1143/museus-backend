@@ -3,6 +3,41 @@ import { prisma } from "../prisma.js";
 
 const router = Router();
 
+// Get Leaderboard (Top 10 XP)
+router.get("/leaderboard", async (req, res) => {
+    try {
+        const { tenantId } = req.query as { tenantId?: string };
+
+        if (!tenantId) {
+            return res.status(400).json({ message: "tenantId is required" });
+        }
+
+        const topVisitors = await prisma.visitor.findMany({
+            where: { tenantId },
+            orderBy: { xp: 'desc' },
+            take: 10,
+            select: {
+                id: true,
+                name: true,
+                xp: true
+            }
+        });
+
+        // Mask names for privacy if needed, or return as is (Gamification usually public)
+        const leaderboard = topVisitors.map((v, i) => ({
+            rank: i + 1,
+            name: v.name || `Visitante ${v.id.substring(0, 4)}`,
+            xp: v.xp,
+            isCurrentUser: false // Frontend fills this
+        }));
+
+        return res.json(leaderboard);
+    } catch (err) {
+        console.error("Error fetching leaderboard", err);
+        return res.status(500).json({ message: "Error fetching leaderboard" });
+    }
+});
+
 // Get treasure hunt clues
 router.get("/clues", async (req, res) => {
     try {

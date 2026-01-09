@@ -76,7 +76,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       format, visibility, isOnline,
       zipCode, address, number, complement, neighborhood, city, state,
       meetingLink, platform,
-      producerName, producerDescription, producerLogoUrl, coverImageUrl
+      producerName, producerDescription, producerLogoUrl, coverImageUrl,
+      // Sympla Killer Features 🚀
+      customFormSchema, galleryUrls
     } = req.body;
 
     const event = await prisma.event.create({
@@ -109,9 +111,14 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         producerLogoUrl,
         coverImageUrl,
 
-        tenantId
+        // Sympla Killer Features
+        customFormSchema,
+        galleryUrls: galleryUrls ? JSON.stringify(galleryUrls) : null, // Ensure string if SQLite, or use proper JSON handling
+
+        tenant: { connect: { id: tenantId } }
       }
     });
+
     return res.status(201).json(event);
   } catch (err) {
     console.error("Erro criar evento", err);
@@ -128,41 +135,32 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
       format, visibility, isOnline,
       zipCode, address, number, complement, neighborhood, city, state,
       meetingLink, platform,
-      producerName, producerDescription, producerLogoUrl, coverImageUrl
+      coverImageUrl,
+      // Sympla Killer Features
+      customFormSchema, galleryUrls
     } = req.body;
 
     const event = await prisma.event.update({
       where: { id },
       data: {
-        title,
-        description,
-        location,
+        title, description, location,
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
-        categoryId,
-        certificateBackgroundUrl,
-        certificateText,
+        categoryId: categoryId || null,
+        certificateBackgroundUrl, certificateText,
         minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
 
-        // New fields
-        format,
-        visibility,
-        isOnline: isOnline !== undefined ? Boolean(isOnline) : undefined,
-        zipCode,
-        address,
-        number,
-        complement,
-        neighborhood,
-        city,
-        state,
-        meetingLink,
-        platform,
-        producerName,
-        producerDescription,
-        producerLogoUrl,
-        coverImageUrl
+        format, visibility, isOnline,
+        zipCode, address, number, complement, neighborhood, city, state,
+        meetingLink, platform,
+
+        coverImageUrl,
+        // Sympla Killer Features
+        customFormSchema,
+        galleryUrls: galleryUrls ? JSON.stringify(galleryUrls) : undefined
       }
     });
+
     return res.json(event);
   } catch (err) {
     console.error("Erro atualizar evento", err);
@@ -210,8 +208,8 @@ router.get("/:id/my-attendance", authMiddleware, async (req, res) => {
   }
 });
 
-// Check-in no evento
-router.post("/:id/checkin", async (req, res) => {
+// Check-in no evento (requires authentication)
+router.post("/:id/checkin", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const { visitorId, email } = req.body;
@@ -412,6 +410,72 @@ router.post("/:id/certificate", async (req, res) => {
   } catch (err) {
     console.error("Erro certificado", err);
     return res.status(500).json({ message: "Erro ao gerar certificado" });
+  }
+});
+
+// Register for Event (Sympla Killer)
+router.post("/:id/register", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ticketId, quantity, customFormData } = req.body;
+    const user = req.user!;
+
+    // 1. Validate Event & Ticket
+    const event = await prisma.event.findUnique({ where: { id } });
+    if (!event) return res.status(404).json({ message: "Evento não encontrado" });
+
+    // Race Condition Fix: Use Transaction! 🛡️
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Re-fetch ticket inside transaction to get latest state
+      const ticket = await tx.ticket.findUnique({ where: { id: ticketId } });
+      if (!ticket) throw new Error("Ingresso não encontrado");
+
+      if (ticket.eventId !== id) throw new Error("Ingresso inválido para este evento");
+
+      // Strict Stock Check
+      if (ticket.sold + quantity > ticket.quantity) {
+        throw new Error("Ingressos esgotados (Overbooking prevented)");
+      }
+
+      // 2. Find Visitor
+      const visitor = await tx.visitor.findFirst({
+        where: { email: user.email, tenantId: event.tenantId }
+      });
+      if (!visitor) throw new Error("Perfil de visitante não encontrado");
+
+      // 3. Create Registration
+      const code = `TKT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+
+      const registration = await tx.registration.create({
+        data: {
+          eventId: id,
+          ticketId,
+          visitorId: visitor.id,
+          guestName: visitor.name || "Visitante",
+          guestEmail: visitor.email || user.email,
+          code,
+          status: "CONFIRMED",
+          pricePaid: Number(ticket.price),
+          customFormData: customFormData || undefined
+        }
+      });
+
+      // 4. Atomic Increment
+      await tx.ticket.update({
+        where: { id: ticketId },
+        data: { sold: { increment: quantity } }
+      });
+
+      return registration;
+    });
+
+    return res.status(201).json({ message: "Inscrição realizada!", registration: result });
+
+  } catch (err: any) {
+    console.error("Erro inscrição evento", err);
+    // Handle specific transaction errors
+    const message = err.message || "Erro ao realizar inscrição";
+    return res.status(err.message?.includes("esgotados") ? 400 : 500).json({ message });
   }
 });
 

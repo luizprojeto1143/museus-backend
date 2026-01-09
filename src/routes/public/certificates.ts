@@ -30,7 +30,7 @@ router.get('/:code', async (req, res) => {
         }
 
         // Extract Title from Metadata
-        const meta = cert.metadata as any;
+        const meta = cert.metadata as { title?: string; date?: string;[key: string]: any } || {};
         const title = meta?.title || (cert.type === 'TRAIL' ? 'Trilha Cultural' : 'Evento Cultural');
 
         return res.json({

@@ -22,6 +22,44 @@ const storage = multer.diskStorage({
   }
 });
 
+// SECURITY: Allowed file types per category
+const ALLOWED_MIME_TYPES: Record<string, string[]> = {
+  images: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+  audio: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm'],
+  video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime']
+};
+
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+
+function createFileFilter(category: string) {
+  return (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    const allowedTypes = ALLOWED_MIME_TYPES[category] || [];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Tipo de arquivo não permitido. Tipos aceitos: ${allowedTypes.join(', ')}`));
+    }
+  };
+}
+
+const uploadImage = multer({
+  storage,
+  fileFilter: createFileFilter('images'),
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
+const uploadAudio = multer({
+  storage,
+  fileFilter: createFileFilter('audio'),
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
+const uploadVideo = multer({
+  storage,
+  fileFilter: createFileFilter('video'),
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
 const upload = multer({ storage });
 
 function hasR2Config() {
@@ -88,15 +126,16 @@ async function handleUpload(req: Request, res: Response, folder: string) {
   }
 }
 
-router.post("/image", upload.single("file"), (req: Request, res: Response) => {
+// SECURITY: All upload routes now require authentication and validate file types
+router.post("/image", authMiddleware, uploadImage.single("file"), (req: Request, res: Response) => {
   return handleUpload(req, res, "images");
 });
 
-router.post("/audio", upload.single("file"), (req: Request, res: Response) => {
+router.post("/audio", authMiddleware, uploadAudio.single("file"), (req: Request, res: Response) => {
   return handleUpload(req, res, "audio");
 });
 
-router.post("/video", upload.single("file"), (req: Request, res: Response) => {
+router.post("/video", authMiddleware, uploadVideo.single("file"), (req: Request, res: Response) => {
   return handleUpload(req, res, "video");
 });
 

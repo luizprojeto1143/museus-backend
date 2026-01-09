@@ -221,34 +221,121 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
 router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { tenantId } = req.params;
-    const { range } = req.query;
+    const { range } = req.query as { range?: string };
 
-    // TODO: Implementar filtros reais de data baseados no range ('7d', '30d', '90d')
+    // Calcular data de início baseada no range
+    const startDate = new Date();
+    switch (range) {
+      case '7d':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(startDate.getDate() - 30);
+        break;
+      case '90d':
+        startDate.setDate(startDate.getDate() - 90);
+        break;
+      default:
+        startDate.setDate(startDate.getDate() - 30); // Default 30 dias
+    }
+    startDate.setHours(0, 0, 0, 0);
 
-    // Mock data based on real counts where possible
-    const totalVisitors = await prisma.visitor.count({ where: { tenantId } });
+    // Counts com filtro de data
+    const totalVisitors = await prisma.visitor.count({
+      where: {
+        tenantId,
+        createdAt: { gte: startDate }
+      }
+    });
+
     const recurringVisitors = await prisma.visitor.count({
       where: {
         tenantId,
-        visits: { some: {} } // Simplificação: quem tem visitas é recorrente (ajustar lógica depois)
+        visits: { some: { createdAt: { gte: startDate } } }
       }
     });
+
+    // Visitas por dia no período
+    const visitorsByDay = [];
+    const daysCount = range === '7d' ? 7 : range === '90d' ? 90 : 30;
+    for (let i = daysCount - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+      const nextDate = new Date(date);
+      nextDate.setDate(date.getDate() + 1);
+
+      const count = await prisma.visitorVisit.count({
+        where: {
+          visitor: { tenantId },
+          createdAt: { gte: date, lt: nextDate }
+        }
+      });
+      visitorsByDay.push({
+        date: date.toLocaleDateString('pt-BR'),
+        count
+      });
+    }
 
     return res.json({
       totalVisitors,
       recurringVisitors,
-      averageAge: 0, // Não coletamos idade ainda
+      averageAge: 0,
       accessBySource: { qr: 0, app: 0, web: 0 },
       peakHours: [],
       hotWorks: [],
       hotTrails: [],
       hotEvents: [],
       visitorsByAge: [],
-      visitorsByDay: []
+      visitorsByDay,
+      dateRange: { start: startDate.toISOString(), end: new Date().toISOString() }
     });
   } catch (err) {
     console.error("Erro analytics advanced", err);
     return res.status(500).json({ message: "Erro ao carregar analytics avançado" });
+  }
+});
+// Sales & Ticket Analytics (Sympla Killer Dashboard)
+router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = user.tenantId;
+
+    if (!tenantId && user.role !== Role.MASTER) {
+      return res.status(400).json({ message: "Tenant obrigatório" });
+    }
+
+    // Filter by tenant
+    const whereClause: any = {
+      event: { tenantId: user.role === Role.MASTER ? undefined : tenantId },
+      status: { in: ['CONFIRMED', 'CHECKED_IN'] }
+    };
+
+    // Revenue & Sales
+    const aggregations = await prisma.registration.aggregate({
+      where: whereClause,
+      _sum: { pricePaid: true },
+      _count: { id: true }
+    });
+
+    // Check-in data
+    const checkIns = await prisma.registration.count({
+      where: {
+        ...whereClause,
+        status: 'CHECKED_IN'
+      }
+    });
+
+    return res.json({
+      totalRevenue: Number(aggregations._sum.pricePaid) || 0,
+      ticketsSold: aggregations._count.id || 0,
+      checkInCount: checkIns,
+      conversionRate: 0 // Placeholder: requires visit tracking to calc real conversion
+    });
+
+  } catch (err) {
+    console.error("Erro sales analytics", err);
+    return res.status(500).json({ message: "Erro ao buscar métricas de vendas" });
   }
 });
 

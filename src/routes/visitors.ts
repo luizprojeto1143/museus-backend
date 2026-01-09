@@ -4,38 +4,69 @@ import jwt from "jsonwebtoken";
 
 const router = Router();
 
-// Lista visitantes de um tenant
+// Lista visitantes de um tenant (com paginação)
 router.get("/", async (req, res) => {
   try {
     const { tenantId } = req.query as { tenantId?: string };
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const skip = (page - 1) * limit;
+
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
 
-    const visitors = await prisma.visitor.findMany({
-      where: { tenantId },
-      orderBy: { createdAt: "desc" },
-      include: {
-        _count: {
-          select: { visits: true }
+    const [visitors, total] = await Promise.all([
+      prisma.visitor.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+        include: {
+          _count: {
+            select: {
+              visits: true
+            }
+          },
+          visits: {
+            select: {
+              trailId: true,
+              eventId: true
+            }
+          }
         }
-      }
-    });
+      }),
+      prisma.visitor.count({ where: { tenantId } })
+    ]);
 
     // Mapear para o formato esperado pelo front
-    const formatted = visitors.map(v => ({
-      id: v.id,
-      name: v.name,
-      email: v.email,
-      xp: v.xp,
-      trailsCompleted: 0, // TODO: Implementar contagem real
-      worksVisited: v._count.visits,
-      eventsAccessed: 0, // TODO: Implementar contagem real
-      firstAccessAt: v.createdAt,
-      lastAccessAt: v.updatedAt // Ou pegar da última visita
-    }));
+    const formatted = visitors.map(v => {
+      // Count unique trails and events visited
+      const uniqueTrails = new Set(v.visits.filter(visit => visit.trailId).map(visit => visit.trailId));
+      const uniqueEvents = new Set(v.visits.filter(visit => visit.eventId).map(visit => visit.eventId));
 
-    return res.json(formatted);
+      return {
+        id: v.id,
+        name: v.name,
+        email: v.email,
+        xp: v.xp,
+        trailsCompleted: uniqueTrails.size,
+        worksVisited: v._count.visits,
+        eventsAccessed: uniqueEvents.size,
+        firstAccessAt: v.createdAt,
+        lastAccessAt: v.updatedAt
+      };
+    });
+
+    return res.json({
+      data: formatted,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (err) {
     console.error("Erro ao listar visitantes", err);
     return res.status(500).json({ message: "Erro ao listar visitantes" });
@@ -265,7 +296,7 @@ router.post("/visit-from-qr", async (req, res) => {
     if (authHeader) {
       const token = authHeader.split(" ")[1];
       try {
-        const JWT_SECRET = process.env.JWT_SECRET || "secret";
+        const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-only";
         const decoded = jwt.verify(token, JWT_SECRET) as { email: string };
         if (decoded && decoded.email) {
           visitorEmail = decoded.email;

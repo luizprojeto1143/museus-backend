@@ -5,18 +5,37 @@ import { Role } from "@prisma/client";
 
 const router = Router();
 
-// Lista obras públicas por tenant
+// Lista obras públicas por tenant (com paginação)
 router.get("/", async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const skip = (page - 1) * limit;
+
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
-    const works = await prisma.work.findMany({
-      where: { tenantId },
-      orderBy: { createdAt: "desc" }
+
+    const [works, total] = await Promise.all([
+      prisma.work.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit
+      }),
+      prisma.work.count({ where: { tenantId } })
+    ]);
+
+    return res.json({
+      data: works,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
     });
-    return res.json(works);
   } catch (err) {
     console.error("Erro listar obras", err);
     return res.status(500).json({ message: "Erro ao listar obras" });
@@ -82,12 +101,10 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         librasUrl: data.librasUrl,
         videoUrl: data.videoUrl,
 
-        // Geo-fencing - Cast to any to avoid stale type error
-        ...({
-          latitude: data.latitude ? parseFloat(data.latitude) : null,
-          longitude: data.longitude ? parseFloat(data.longitude) : null,
-          radius: data.radius ? parseInt(data.radius) : 5,
-        } as any),
+        // Geo-fencing - Strict Typing
+        latitude: data.latitude ? parseFloat(data.latitude) : null,
+        longitude: data.longitude ? parseFloat(data.longitude) : null,
+        radius: data.radius ? parseInt(data.radius) : 5,
 
         tenantId
       }
@@ -107,8 +124,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
     const { id } = req.params;
     const data = req.body;
 
-    // Build safe update object
-    const updateData: any = {
+    // Build safe update object with known Prisma types
+    // Using explicit fields instead of `any` cast
+    const updateData: Record<string, any> = {
       title: data.title,
       artist: data.artist,
       year: data.year,
@@ -120,8 +138,11 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
       librasUrl: data.librasUrl,
       videoUrl: data.videoUrl,
       published: data.published,
-      radius: data.radius ? parseInt(data.radius) : undefined,
     };
+
+    if (data.radius !== undefined) {
+      updateData.radius = parseInt(data.radius) || 5;
+    }
 
     // Handle category relation
     if (data.category !== undefined) {
