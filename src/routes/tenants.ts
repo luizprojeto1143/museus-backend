@@ -51,7 +51,9 @@ router.get("/:id/settings", async (req, res) => {
         featureCertificates: true,
         featureReviews: true,
         featureGuestbook: true,
-        featureAccessibility: true
+        featureGuestbook: true,
+        featureAccessibility: true,
+        featureMinigames: true
       }
     });
 
@@ -84,7 +86,9 @@ router.get("/:id/features", async (req, res) => {
         featureCertificates: true,
         featureReviews: true,
         featureGuestbook: true,
-        featureAccessibility: true
+        featureGuestbook: true,
+        featureAccessibility: true,
+        featureMinigames: true
       }
     });
 
@@ -234,7 +238,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       // Feature Flags
       featureWorks, featureTrails, featureEvents, featureGamification,
       featureQRCodes, featureChatAI, featureShop, featureDonations,
-      featureCertificates, featureReviews, featureGuestbook, featureAccessibility
+      featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames
     } = req.body;
 
     // Convert maxWorks to number if present
@@ -262,7 +266,9 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         ...(featureCertificates !== undefined && { featureCertificates }),
         ...(featureReviews !== undefined && { featureReviews }),
         ...(featureGuestbook !== undefined && { featureGuestbook }),
-        ...(featureAccessibility !== undefined && { featureAccessibility })
+        ...(featureGuestbook !== undefined && { featureGuestbook }),
+        ...(featureAccessibility !== undefined && { featureAccessibility }),
+        ...(featureMinigames !== undefined && { featureMinigames })
       }
     });
 

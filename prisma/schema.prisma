@@ -95,6 +95,7 @@ model Tenant {
   featureReviews      Boolean @default(true)   // Favoritos e avaliações
   featureGuestbook    Boolean @default(true)   // Livro de visitas
   featureAccessibility Boolean @default(true)  // Libras e acessibilidade
+  featureMinigames     Boolean @default(false)  // Minigame (Art Run)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
