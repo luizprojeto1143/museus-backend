@@ -51,7 +51,7 @@ router.get("/:id/settings", async (req, res) => {
         featureCertificates: true,
         featureReviews: true,
         featureGuestbook: true,
-        featureGuestbook: true,
+
         featureAccessibility: true,
         featureMinigames: true
       }
@@ -86,7 +86,7 @@ router.get("/:id/features", async (req, res) => {
         featureCertificates: true,
         featureReviews: true,
         featureGuestbook: true,
-        featureGuestbook: true,
+
         featureAccessibility: true,
         featureMinigames: true
       }
@@ -266,7 +266,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         ...(featureCertificates !== undefined && { featureCertificates }),
         ...(featureReviews !== undefined && { featureReviews }),
         ...(featureGuestbook !== undefined && { featureGuestbook }),
-        ...(featureGuestbook !== undefined && { featureGuestbook }),
+
         ...(featureAccessibility !== undefined && { featureAccessibility }),
         ...(featureMinigames !== undefined && { featureMinigames })
       }
