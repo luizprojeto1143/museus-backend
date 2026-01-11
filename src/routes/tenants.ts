@@ -148,17 +148,34 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     }
 
     const { name, slug, adminEmail, adminName, adminPassword, plan } = req.body as CreateTenantBody;
+
+    // Validation
     if (!name || !slug || !adminEmail || !adminPassword) {
-      return res.status(400).json({ message: "Campos obrigatórios faltando" });
+      return res.status(400).json({
+        message: "Campos obrigatórios faltando",
+        errors: [
+          !name && { field: "name", message: "Nome é obrigatório" },
+          !slug && { field: "slug", message: "Slug é obrigatório" },
+          !adminEmail && { field: "adminEmail", message: "Email do admin é obrigatório" },
+          !adminPassword && { field: "adminPassword", message: "Senha do admin é obrigatória" }
+        ].filter(Boolean)
+      });
     }
 
     let maxWorks = 50;
     if (plan === "PRO") maxWorks = 200;
     if (plan === "ENTERPRISE") maxWorks = 500;
 
+    // Check if slug is already in use
     const existsSlug = await prisma.tenant.findUnique({ where: { slug } });
     if (existsSlug) {
       return res.status(400).json({ message: "Slug já em uso" });
+    }
+
+    // Check if admin email is already in use
+    const existsEmail = await prisma.user.findUnique({ where: { email: adminEmail } });
+    if (existsEmail) {
+      return res.status(400).json({ message: "Email do admin já está em uso por outro usuário" });
     }
 
     const hash = await bcrypt.hash(adminPassword, 10);
@@ -184,9 +201,22 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     });
 
     return res.status(201).json(tenant);
-  } catch (err) {
+  } catch (err: any) {
     console.error("Erro criar tenant", err);
-    return res.status(500).json({ message: "Erro ao criar tenant" });
+
+    // Handle Prisma unique constraint errors
+    if (err.code === 'P2002') {
+      const target = err.meta?.target;
+      if (target?.includes('email')) {
+        return res.status(400).json({ message: "Email do admin já está em uso" });
+      }
+      if (target?.includes('slug')) {
+        return res.status(400).json({ message: "Slug já em uso" });
+      }
+      return res.status(400).json({ message: "Valor duplicado detectado" });
+    }
+
+    return res.status(500).json({ message: "Erro ao criar tenant", details: err.message });
   }
 });
 
