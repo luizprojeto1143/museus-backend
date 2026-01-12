@@ -47,10 +47,6 @@ import backupRoutes from "./routes/backup.js";
 const app = express();
 app.set('trust proxy', 1);
 
-app.use("/api/shop", shopRoutes);
-app.use("/api/backup", backupRoutes);
-app.set('trust proxy', 1);
-
 app.use(cors({
   origin: process.env.NODE_ENV === "production"
     ? (process.env.FRONTEND_URL || "*")
