@@ -41,6 +41,7 @@ import auditRoutes from "./routes/audit.js";
 import shopRoutes from "./routes/shop.js";
 import challengesRoutes from "./routes/challenges.js";
 import backupRoutes from "./routes/backup.js";
+import floorPlansRoutes from "./routes/floorPlans.js";
 
 // ...
 
@@ -121,6 +122,7 @@ app.use("/donations", donationsRoutes);
 app.use("/audit-logs", auditRoutes);
 app.use("/shop", shopRoutes);
 app.use("/challenges", challengesRoutes);
+app.use("/floor-plans", floorPlansRoutes);
 import publicCertificateRoutes from "./routes/public/certificates.js";
 app.use("/public/certificates", publicCertificateRoutes);
 
