@@ -96,6 +96,9 @@ model Tenant {
   featureGuestbook    Boolean @default(true)   // Livro de visitas
   featureAccessibility Boolean @default(true)  // Libras e acessibilidade
   featureMinigames     Boolean @default(false)  // Minigame (Art Run)
+  
+  // Mode: Museum or City
+  isCityMode Boolean @default(false) // false = Museu, true = Cidade/Roteiro Turístico
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
