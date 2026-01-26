@@ -42,7 +42,9 @@ import shopRoutes from "./routes/shop.js";
 import challengesRoutes from "./routes/challenges.js";
 import backupRoutes from "./routes/backup.js";
 import floorPlansRoutes from "./routes/floorPlans.js";
+import floorPlansRoutes from "./routes/floorPlans.js";
 import navigationRoutes from "./routes/navigation.js";
+import accessibilityRoutes from "./routes/accessibility.js";
 
 // ...
 
@@ -124,7 +126,9 @@ app.use("/audit-logs", auditRoutes);
 app.use("/shop", shopRoutes);
 app.use("/challenges", challengesRoutes);
 app.use("/floor-plans", floorPlansRoutes);
+app.use("/floor-plans", floorPlansRoutes);
 app.use("/navigation", navigationRoutes);
+app.use("/accessibility", accessibilityRoutes);
 import publicCertificateRoutes from "./routes/public/certificates.js";
 app.use("/public/certificates", publicCertificateRoutes);
 
