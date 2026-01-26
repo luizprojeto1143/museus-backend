@@ -87,16 +87,21 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { id } = req.params;
+        const user = req.user!;
         const { name, floor, imageUrl, order } = req.body;
+
+        // SECURITY: Verify floor plan belongs to user's tenant (unless MASTER)
+        const existing = await prisma.floorPlan.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ message: "Planta não encontrada" });
+        }
+        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: "Sem permissão para alterar esta planta" });
+        }
 
         const floorPlan = await prisma.floorPlan.update({
             where: { id },
-            data: {
-                name,
-                floor,
-                imageUrl,
-                order
-            }
+            data: { name, floor, imageUrl, order }
         });
 
         return res.json(floorPlan);
@@ -110,6 +115,17 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { id } = req.params;
+        const user = req.user!;
+
+        // SECURITY: Verify floor plan belongs to user's tenant (unless MASTER)
+        const existing = await prisma.floorPlan.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ message: "Planta não encontrada" });
+        }
+        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: "Sem permissão para excluir esta planta" });
+        }
+
         await prisma.floorPlan.delete({ where: { id } });
         return res.status(204).send();
     } catch (err) {

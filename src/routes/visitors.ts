@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import jwt from "jsonwebtoken";
+import { authMiddleware } from "../middleware/auth.js";
+import { z } from "zod";
 
 const router = Router();
 
@@ -177,25 +179,26 @@ router.get("/:id", async (req, res) => {
 });
 
 // Cria visitante anônimo simples vinculado a um tenant
+// Cria visitante anônimo simples vinculado a um tenant
 router.post("/register", async (req, res) => {
   try {
-    interface RegisterVisitorBody {
-      tenantId: string;
-      name?: string;
-      email?: string;
-      age?: number;
-    }
+    const registerSchema = z.object({
+      tenantId: z.string().min(1, "Tenant ID é obrigatório"),
+      name: z.string().optional(),
+      email: z.string().email("Email inválido").optional(),
+      age: z.number().int().positive().optional()
+    });
 
-    const { tenantId, name, email, age } = req.body as RegisterVisitorBody;
-    if (!tenantId) {
-      return res.status(400).json({ message: "tenantId é obrigatório" });
-    }
+    const data = registerSchema.parse(req.body);
+    const { tenantId, name, email, age } = data;
+
     // Use upsert to handle case where Visitor exists (orphan) but User is new
     if (email) {
+      const normalizedEmail = email.toLowerCase();
       const visitor = await prisma.visitor.upsert({
         where: {
           email_tenantId: {
-            email,
+            email: normalizedEmail,
             tenantId
           }
         },
@@ -206,13 +209,13 @@ router.post("/register", async (req, res) => {
         create: {
           tenantId,
           name: name || null,
-          email,
+          email: normalizedEmail,
           age: age || null
         }
       });
       return res.status(201).json(visitor);
     } else {
-      // Fallback for no email (should not happen in this flow but just in case)
+      // Fallback for no email
       const visitor = await prisma.visitor.create({
         data: {
           tenantId,
@@ -224,6 +227,9 @@ router.post("/register", async (req, res) => {
       return res.status(201).json(visitor);
     }
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+    }
     console.error("Erro criar visitante", err);
     return res.status(500).json({ message: "Erro ao criar visitante" });
   }
@@ -477,16 +483,18 @@ router.get("/:visitorId/summary", async (req, res) => {
 
 
 // Atualiza dados do visitante logado (ou identificado por email/tenant)
-router.put("/me", async (req, res) => {
+router.put("/me", authMiddleware, async (req, res) => {
   try {
-    const { email, tenantId, name, newEmail } = req.body;
+    const user = req.user!;
+    const { tenantId, name, newEmail } = req.body;
+    const email = user.email; // Use authenticated user's email
 
-    if (!email || !tenantId) {
-      return res.status(400).json({ message: "Email atual e Tenant ID são obrigatórios" });
+    if (!tenantId) {
+      return res.status(400).json({ message: "Tenant ID é obrigatório" });
     }
 
     const visitor = await prisma.visitor.findFirst({
-      where: { email, tenantId }
+      where: { email: email.toLowerCase(), tenantId }
     });
 
     if (!visitor) {
@@ -497,7 +505,7 @@ router.put("/me", async (req, res) => {
       where: { id: visitor.id },
       data: {
         name: name || visitor.name,
-        email: newEmail || visitor.email
+        email: newEmail ? newEmail.toLowerCase() : visitor.email
       }
     });
 

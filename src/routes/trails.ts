@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
+import { z } from "zod";
 
 const router = Router();
 
@@ -50,28 +51,31 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
-    interface TrailBody {
-      title: string;
-      description?: string;
-      duration?: number;
-      workIds?: string[];
-      tenantId?: string;
-      categoryId?: string;
-    }
+    const trailSchema = z.object({
+      title: z.string().min(1, "Título é obrigatório"),
+      description: z.string().optional(),
+      duration: z.number().int().positive().optional(),
+      workIds: z.array(z.string()).optional().default([]),
+      categoryId: z.string().optional().nullable()
+    });
 
-    const { title, description, duration, workIds, categoryId } = req.body as TrailBody;
+    const data = trailSchema.parse(req.body);
+
     const trail = await prisma.trail.create({
       data: {
-        title,
-        description,
-        duration,
-        workIds: workIds || [],
-        categoryId: categoryId && categoryId !== "" ? categoryId : null,
+        title: data.title,
+        description: data.description,
+        duration: data.duration,
+        workIds: data.workIds,
+        categoryId: data.categoryId && data.categoryId !== "" ? data.categoryId : null,
         tenantId
       }
     });
     return res.status(201).json(trail);
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+    }
     console.error("Erro criar trilha", err);
     return res.status(500).json({ message: "Erro ao criar trilha" });
   }

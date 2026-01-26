@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import bcrypt from "bcrypt";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
+import { z } from "zod";
 
 const router = Router();
 
@@ -138,29 +139,17 @@ router.get("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
 // Cria tenant + admin
 router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
-    interface CreateTenantBody {
-      name: string;
-      slug: string;
-      adminEmail: string;
-      adminName?: string;
-      adminPassword: string;
-      plan?: string;
-    }
+    const createTenantSchema = z.object({
+      name: z.string().min(1, "Nome é obrigatório"),
+      slug: z.string().min(1, "Slug é obrigatório"),
+      adminEmail: z.string().email("Email do admin inválido"),
+      adminName: z.string().optional(),
+      adminPassword: z.string().min(6, "Senha do admin deve ter no mínimo 6 caracteres"),
+      plan: z.string().optional()
+    });
 
-    const { name, slug, adminEmail, adminName, adminPassword, plan } = req.body as CreateTenantBody;
-
-    // Validation
-    if (!name || !slug || !adminEmail || !adminPassword) {
-      return res.status(400).json({
-        message: "Campos obrigatórios faltando",
-        errors: [
-          !name && { field: "name", message: "Nome é obrigatório" },
-          !slug && { field: "slug", message: "Slug é obrigatório" },
-          !adminEmail && { field: "adminEmail", message: "Email do admin é obrigatório" },
-          !adminPassword && { field: "adminPassword", message: "Senha do admin é obrigatória" }
-        ].filter(Boolean)
-      });
-    }
+    const data = createTenantSchema.parse(req.body);
+    const { name, slug, adminEmail, adminName, adminPassword, plan } = data;
 
     let maxWorks = 50;
     if (plan === "PRO") maxWorks = 200;
@@ -231,24 +220,54 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       return res.status(403).json({ message: "Sem permissão para alterar outro museu" });
     }
 
-    const {
-      mission, address, openingHours, whatsapp, email, website,
-      logoUrl, coverImageUrl, appIconUrl, bannerUrl, signatureUrl, certificateBackgroundUrl,
-      mapImageUrl, latitude, longitude,
-      primaryColor, secondaryColor, theme, historicalFont,
-      name // Admin também pode querer alterar o nome de exibição
-    } = req.body;
+    const settingsSchema = z.object({
+      mission: z.string().optional(),
+      address: z.string().optional(),
+      openingHours: z.string().optional(),
+      whatsapp: z.string().optional(),
+      email: z.string().email().optional().or(z.literal('')),
+      website: z.string().url().optional().or(z.literal('')),
+      logoUrl: z.string().optional(),
+      coverImageUrl: z.string().optional(),
+      appIconUrl: z.string().optional(),
+      bannerUrl: z.string().optional(),
+      signatureUrl: z.string().optional(),
+      certificateBackgroundUrl: z.string().optional(),
+      mapImageUrl: z.string().optional(),
+      latitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : undefined),
+      longitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : undefined),
+      primaryColor: z.string().optional(),
+      secondaryColor: z.string().optional(),
+      theme: z.string().optional(),
+      historicalFont: z.boolean().or(z.string().transform(v => v === 'true')).optional(),
+      name: z.string().optional()
+    });
+
+    const data = settingsSchema.parse(req.body);
 
     const tenant = await prisma.tenant.update({
       where: { id },
       data: {
-        mission, address, openingHours, whatsapp, email, website,
-        logoUrl, coverImageUrl, appIconUrl, bannerUrl, signatureUrl, certificateBackgroundUrl,
-        mapImageUrl,
-        latitude: latitude ? parseFloat(latitude) : undefined,
-        longitude: longitude ? parseFloat(longitude) : undefined,
-        primaryColor, secondaryColor, theme, historicalFont,
-        name
+        mission: data.mission,
+        address: data.address,
+        openingHours: data.openingHours,
+        whatsapp: data.whatsapp,
+        email: data.email,
+        website: data.website,
+        logoUrl: data.logoUrl,
+        coverImageUrl: data.coverImageUrl,
+        appIconUrl: data.appIconUrl,
+        bannerUrl: data.bannerUrl,
+        signatureUrl: data.signatureUrl,
+        certificateBackgroundUrl: data.certificateBackgroundUrl,
+        mapImageUrl: data.mapImageUrl,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        primaryColor: data.primaryColor,
+        secondaryColor: data.secondaryColor,
+        theme: data.theme,
+        historicalFont: data.historicalFont,
+        name: data.name
       }
     });
 
@@ -284,21 +303,20 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         logoUrl,
         signatureUrl,
         certificateBackgroundUrl,
-        // Feature Flags (only update if provided)
-        ...(featureWorks !== undefined && { featureWorks }),
-        ...(featureTrails !== undefined && { featureTrails }),
-        ...(featureEvents !== undefined && { featureEvents }),
-        ...(featureGamification !== undefined && { featureGamification }),
-        ...(featureQRCodes !== undefined && { featureQRCodes }),
-        ...(featureChatAI !== undefined && { featureChatAI }),
-        ...(featureShop !== undefined && { featureShop }),
-        ...(featureDonations !== undefined && { featureDonations }),
-        ...(featureCertificates !== undefined && { featureCertificates }),
-        ...(featureReviews !== undefined && { featureReviews }),
-        ...(featureGuestbook !== undefined && { featureGuestbook }),
-
-        ...(featureAccessibility !== undefined && { featureAccessibility }),
-        ...(featureMinigames !== undefined && { featureMinigames })
+        // Feature Flags (only update if provided) -> ensure boolean
+        ...(featureWorks !== undefined && { featureWorks: Boolean(featureWorks) }),
+        ...(featureTrails !== undefined && { featureTrails: Boolean(featureTrails) }),
+        ...(featureEvents !== undefined && { featureEvents: Boolean(featureEvents) }),
+        ...(featureGamification !== undefined && { featureGamification: Boolean(featureGamification) }),
+        ...(featureQRCodes !== undefined && { featureQRCodes: Boolean(featureQRCodes) }),
+        ...(featureChatAI !== undefined && { featureChatAI: Boolean(featureChatAI) }),
+        ...(featureShop !== undefined && { featureShop: Boolean(featureShop) }),
+        ...(featureDonations !== undefined && { featureDonations: Boolean(featureDonations) }),
+        ...(featureCertificates !== undefined && { featureCertificates: Boolean(featureCertificates) }),
+        ...(featureReviews !== undefined && { featureReviews: Boolean(featureReviews) }),
+        ...(featureGuestbook !== undefined && { featureGuestbook: Boolean(featureGuestbook) }),
+        ...(featureAccessibility !== undefined && { featureAccessibility: Boolean(featureAccessibility) }),
+        ...(featureMinigames !== undefined && { featureMinigames: Boolean(featureMinigames) })
       }
     });
 

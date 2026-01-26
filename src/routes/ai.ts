@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import OpenAI from "openai";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -378,8 +379,8 @@ router.post("/itinerary", async (req, res) => {
   }
 });
 
-// TTS Endpoint
-router.post("/tts", async (req, res) => {
+// TTS Endpoint (requires auth to prevent abuse)
+router.post("/tts", authMiddleware, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { z } from 'zod';
+import { Role } from '@prisma/client';
 
 const router = Router();
 
@@ -87,7 +88,17 @@ router.post('/products', authMiddleware, requireRole(['ADMIN', 'MASTER']), async
 router.put('/products/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const user = req.user!;
         const data = productSchema.partial().parse(req.body);
+
+        // SECURITY: Verify product belongs to user's tenant (unless MASTER)
+        const existing = await prisma.product.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ message: 'Produto não encontrado' });
+        }
+        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: 'Sem permissão para alterar este produto' });
+        }
 
         const product = await prisma.product.update({
             where: { id },
@@ -105,6 +116,16 @@ router.put('/products/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), as
 router.delete('/products/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const user = req.user!;
+
+        // SECURITY: Verify product belongs to user's tenant (unless MASTER)
+        const existing = await prisma.product.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ message: 'Produto não encontrado' });
+        }
+        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: 'Sem permissão para remover este produto' });
+        }
 
         await prisma.product.delete({ where: { id } });
         res.json({ message: 'Produto removido' });
@@ -116,8 +137,8 @@ router.delete('/products/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']),
 
 // ============ ORDERS ============
 
-// POST /shop/orders - Create order
-router.post('/orders', async (req, res) => {
+// POST /shop/orders - Create order (SECURITY: Now requires auth + atomic stock)
+router.post('/orders', authMiddleware, async (req, res) => {
     try {
         const {
             tenantId,
@@ -132,63 +153,71 @@ router.post('/orders', async (req, res) => {
             return res.status(400).json({ message: 'Dados incompletos' });
         }
 
-        // Calculate total and validate stock
-        let total = 0;
-        const orderItems: { productId: string; quantity: number; unitPrice: number }[] = [];
-
-        for (const item of items) {
-            const product = await prisma.product.findUnique({
-                where: { id: item.productId }
+        // SECURITY FIX: Use transaction to prevent race condition
+        const result = await prisma.$transaction(async (tx) => {
+            // Fetch all products at once (N+1 fix)
+            const productIds = items.map((i: { productId: string }) => i.productId);
+            const products = await tx.product.findMany({
+                where: { id: { in: productIds } }
             });
 
-            if (!product) {
-                return res.status(400).json({ message: `Produto ${item.productId} não encontrado` });
-            }
+            // Validate all products exist and have stock
+            let total = 0;
+            const orderItems: { productId: string; quantity: number; unitPrice: number }[] = [];
 
-            if (product.stock < item.quantity) {
-                return res.status(400).json({ message: `Estoque insuficiente: ${product.name}` });
-            }
-
-            const price = Number(product.price);
-            total += price * item.quantity;
-            orderItems.push({
-                productId: item.productId,
-                quantity: item.quantity,
-                unitPrice: price
-            });
-        }
-
-        // Create order with items
-        const order = await prisma.order.create({
-            data: {
-                tenantId,
-                customerName,
-                customerEmail,
-                customerPhone,
-                shippingAddress,
-                total,
-                items: {
-                    create: orderItems
+            for (const item of items as Array<{ productId: string; quantity: number }>) {
+                const product = products.find(p => p.id === item.productId);
+                if (!product) {
+                    throw new Error(`Produto ${item.productId} não encontrado`);
                 }
-            },
-            include: { items: { include: { product: true } } }
-        });
+                if (product.stock < item.quantity) {
+                    throw new Error(`Estoque insuficiente: ${product.name}`);
+                }
+                const price = Number(product.price);
+                total += price * item.quantity;
+                orderItems.push({
+                    productId: item.productId,
+                    quantity: item.quantity,
+                    unitPrice: price
+                });
+            }
 
-        // Update stock
-        for (const item of items) {
-            await prisma.product.update({
-                where: { id: item.productId },
-                data: { stock: { decrement: item.quantity } }
+            // Create order with items
+            const order = await tx.order.create({
+                data: {
+                    tenantId,
+                    customerName,
+                    customerEmail,
+                    customerPhone,
+                    shippingAddress,
+                    total,
+                    items: {
+                        create: orderItems
+                    }
+                },
+                include: { items: { include: { product: true } } }
             });
-        }
+
+            // Atomic stock decrement inside transaction
+            for (const item of items as Array<{ productId: string; quantity: number }>) {
+                await tx.product.update({
+                    where: { id: item.productId },
+                    data: { stock: { decrement: item.quantity } }
+                });
+            }
+
+            return order;
+        });
 
         res.status(201).json({
-            order,
+            order: result,
             message: 'Pedido criado. Aguardando pagamento.'
         });
-    } catch (error) {
+    } catch (error: unknown) {
         console.error('Error creating order:', error);
-        res.status(500).json({ message: 'Erro ao criar pedido' });
+        const message = error instanceof Error ? error.message : 'Erro ao criar pedido';
+        const status = message.includes('insuficiente') || message.includes('não encontrado') ? 400 : 500;
+        res.status(status).json({ message });
     }
 });
 

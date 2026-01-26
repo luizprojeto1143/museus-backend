@@ -9,7 +9,7 @@ const router = Router();
 router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
     const user = req.user!;
-    let whereClause: any = {};
+    const whereClause: Record<string, string> = {};
 
     if (user.role === Role.ADMIN) {
       if (!user.tenantId) {
@@ -51,6 +51,8 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const currentUser = req.user!;
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -72,6 +74,11 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ message: "Usuário não encontrado" });
+    }
+
+    // SECURITY: Admin users can only view users from their own tenant
+    if (currentUser.role === "ADMIN" && user.tenantId !== currentUser.tenantId) {
+      return res.status(403).json({ message: "Sem permissão para acessar este usuário" });
     }
 
     return res.json(user);

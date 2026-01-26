@@ -84,11 +84,27 @@ router.post('/generate', authMiddleware, async (req, res) => {
 // List My Certificates
 router.get('/mine', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user?.id;
-        if (!visitorId) return res.status(401).json({ message: "Unauthorized" });
+        const user = req.user!;
+        const { tenantId } = req.query;
+
+        // CRITICAL FIX: Find visitor by user's email
+        const whereClause: { email: string; tenantId?: string } = {
+            email: user.email.toLowerCase()
+        };
+        if (tenantId) {
+            whereClause.tenantId = tenantId as string;
+        }
+
+        const visitor = await prisma.visitor.findFirst({
+            where: whereClause
+        });
+
+        if (!visitor) {
+            return res.json([]); // No visitor profile = no certificates
+        }
 
         const certs = await prisma.certificate.findMany({
-            where: { visitorId },
+            where: { visitorId: visitor.id },
             orderBy: { generatedAt: 'desc' },
             include: { tenant: { select: { name: true } } }
         });

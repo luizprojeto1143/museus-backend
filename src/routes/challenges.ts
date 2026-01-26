@@ -53,10 +53,19 @@ router.get('/today', async (req, res) => {
 // GET /challenges/my-progress - Get user's progress on today's challenge
 router.get('/my-progress', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user?.id;
+        const user = req.user!;
         const { tenantId } = req.query;
 
-        if (!visitorId || !tenantId) {
+        if (!tenantId) {
+            return res.json({ progress: 0, completed: false });
+        }
+
+        // CRITICAL FIX: Find visitor by user's email, not user's ID
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: user.email.toLowerCase(), tenantId: tenantId as string }
+        });
+
+        if (!visitor) {
             return res.json({ progress: 0, completed: false });
         }
 
@@ -78,7 +87,7 @@ router.get('/my-progress', authMiddleware, async (req, res) => {
 
         const completion = await prisma.dailyChallengeCompletion.findUnique({
             where: {
-                visitorId_challengeId: { visitorId, challengeId: challenge.id }
+                visitorId_challengeId: { visitorId: visitor.id, challengeId: challenge.id }
             }
         });
 
@@ -97,12 +106,21 @@ router.get('/my-progress', authMiddleware, async (req, res) => {
 // POST /challenges/:id/progress - Update challenge progress
 router.post('/:id/progress', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user?.id;
+        const user = req.user!;
         const { id } = req.params;
-        const { increment = 1 } = req.body;
+        const { increment = 1, tenantId } = req.body;
 
-        if (!visitorId) {
-            return res.status(401).json({ message: 'Usuário não autenticado' });
+        if (!tenantId) {
+            return res.status(400).json({ message: 'tenantId é obrigatório' });
+        }
+
+        // CRITICAL FIX: Find visitor by user's email
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: user.email.toLowerCase(), tenantId }
+        });
+
+        if (!visitor) {
+            return res.status(404).json({ message: 'Perfil de visitante não encontrado' });
         }
 
         const challenge = await prisma.dailyChallenge.findUnique({
@@ -113,67 +131,73 @@ router.post('/:id/progress', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'Desafio não encontrado' });
         }
 
-        // Upsert completion
-        const existing = await prisma.dailyChallengeCompletion.findUnique({
-            where: { visitorId_challengeId: { visitorId, challengeId: id } }
+        // Use transaction to prevent race conditions
+        const result = await prisma.$transaction(async (tx) => {
+            const existing = await tx.dailyChallengeCompletion.findUnique({
+                where: { visitorId_challengeId: { visitorId: visitor.id, challengeId: id } }
+            });
+
+            let completion;
+            let xpAwarded = 0;
+
+            if (existing) {
+                if (existing.completed) {
+                    return { completion: existing, xpAwarded: 0, alreadyCompleted: true };
+                }
+
+                const newProgress = Math.min(existing.progress + increment, challenge.target);
+                const isComplete = newProgress >= challenge.target;
+
+                completion = await tx.dailyChallengeCompletion.update({
+                    where: { id: existing.id },
+                    data: { progress: newProgress, completed: isComplete }
+                });
+
+                if (isComplete && !existing.completed) {
+                    await tx.visitor.update({
+                        where: { id: visitor.id },
+                        data: { xp: { increment: challenge.xpReward } }
+                    });
+                    xpAwarded = challenge.xpReward;
+                }
+            } else {
+                const newProgress = Math.min(increment, challenge.target);
+                const isComplete = newProgress >= challenge.target;
+
+                completion = await tx.dailyChallengeCompletion.create({
+                    data: {
+                        visitorId: visitor.id,
+                        challengeId: id,
+                        progress: newProgress,
+                        completed: isComplete
+                    }
+                });
+
+                if (isComplete) {
+                    await tx.visitor.update({
+                        where: { id: visitor.id },
+                        data: { xp: { increment: challenge.xpReward } }
+                    });
+                    xpAwarded = challenge.xpReward;
+                }
+            }
+
+            return { completion, xpAwarded, alreadyCompleted: false };
         });
 
-        let completion;
-        if (existing) {
-            if (existing.completed) {
-                return res.json({ message: 'Desafio já completado', xpAwarded: 0 });
-            }
-
-            const newProgress = Math.min(existing.progress + increment, challenge.target);
-            const isComplete = newProgress >= challenge.target;
-
-            completion = await prisma.dailyChallengeCompletion.update({
-                where: { id: existing.id },
-                data: {
-                    progress: newProgress,
-                    completed: isComplete
-                }
-            });
-
-            // Award XP if completed
-            if (isComplete && !existing.completed) {
-                await prisma.visitor.update({
-                    where: { id: visitorId },
-                    data: { xp: { increment: challenge.xpReward } }
-                });
-                return res.json({
-                    ...completion,
-                    xpAwarded: challenge.xpReward,
-                    message: `Parabéns! Você ganhou ${challenge.xpReward} XP!`
-                });
-            }
-        } else {
-            const newProgress = Math.min(increment, challenge.target);
-            const isComplete = newProgress >= challenge.target;
-
-            completion = await prisma.dailyChallengeCompletion.create({
-                data: {
-                    visitorId,
-                    challengeId: id,
-                    progress: newProgress,
-                    completed: isComplete
-                }
-            });
-
-            if (isComplete) {
-                await prisma.visitor.update({
-                    where: { id: visitorId },
-                    data: { xp: { increment: challenge.xpReward } }
-                });
-                return res.json({
-                    ...completion,
-                    xpAwarded: challenge.xpReward,
-                    message: `Parabéns! Você ganhou ${challenge.xpReward} XP!`
-                });
-            }
+        if (result.alreadyCompleted) {
+            return res.json({ message: 'Desafio já completado', xpAwarded: 0 });
         }
 
-        res.json(completion);
+        if (result.xpAwarded > 0) {
+            return res.json({
+                ...result.completion,
+                xpAwarded: result.xpAwarded,
+                message: `Parabéns! Você ganhou ${result.xpAwarded} XP!`
+            });
+        }
+
+        res.json(result.completion);
     } catch (error) {
         console.error('Error updating progress:', error);
         res.status(500).json({ message: 'Erro ao atualizar progresso' });
@@ -252,15 +276,25 @@ router.get('/hunts/:id', async (req, res) => {
 // POST /challenges/hunts/:id/start - Start a hunt
 router.post('/hunts/:id/start', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user?.id;
+        const user = req.user!;
         const { id } = req.params;
+        const { tenantId } = req.body;
 
-        if (!visitorId) {
-            return res.status(401).json({ message: 'Usuário não autenticado' });
+        if (!tenantId) {
+            return res.status(400).json({ message: 'tenantId é obrigatório' });
+        }
+
+        // CRITICAL FIX: Find visitor by user's email
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: user.email.toLowerCase(), tenantId }
+        });
+
+        if (!visitor) {
+            return res.status(404).json({ message: 'Perfil de visitante não encontrado' });
         }
 
         const existing = await prisma.scavengerHuntParticipation.findUnique({
-            where: { visitorId_huntId: { visitorId, huntId: id } }
+            where: { visitorId_huntId: { visitorId: visitor.id, huntId: id } }
         });
 
         if (existing) {
@@ -272,7 +306,7 @@ router.post('/hunts/:id/start', authMiddleware, async (req, res) => {
 
         const participation = await prisma.scavengerHuntParticipation.create({
             data: {
-                visitorId,
+                visitorId: visitor.id,
                 huntId: id,
                 currentStep: 0
             }
@@ -297,16 +331,25 @@ router.post('/hunts/:id/start', authMiddleware, async (req, res) => {
 // POST /challenges/hunts/:id/answer - Submit answer for current step
 router.post('/hunts/:id/answer', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user?.id;
+        const user = req.user!;
         const { id } = req.params;
-        const { answer } = req.body;
+        const { answer, tenantId } = req.body;
 
-        if (!visitorId) {
-            return res.status(401).json({ message: 'Usuário não autenticado' });
+        if (!tenantId) {
+            return res.status(400).json({ message: 'tenantId é obrigatório' });
+        }
+
+        // CRITICAL FIX: Find visitor by user's email
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: user.email.toLowerCase(), tenantId }
+        });
+
+        if (!visitor) {
+            return res.status(404).json({ message: 'Perfil de visitante não encontrado' });
         }
 
         const participation = await prisma.scavengerHuntParticipation.findUnique({
-            where: { visitorId_huntId: { visitorId, huntId: id } }
+            where: { visitorId_huntId: { visitorId: visitor.id, huntId: id } }
         });
 
         if (!participation) {
@@ -340,31 +383,34 @@ router.post('/hunts/:id/answer', authMiddleware, async (req, res) => {
         });
 
         if (!nextStep) {
-            // Hunt completed!
-            const hunt = await prisma.scavengerHunt.findUnique({ where: { id } });
+            // Hunt completed - use transaction to award XP atomically
+            const result = await prisma.$transaction(async (tx) => {
+                const hunt = await tx.scavengerHunt.findUnique({ where: { id } });
 
-            await prisma.scavengerHuntParticipation.update({
-                where: { id: participation.id },
-                data: {
-                    currentStep: participation.currentStep + 1,
-                    completed: true,
-                    completedAt: new Date()
-                }
-            });
-
-            // Award XP
-            if (hunt?.xpReward) {
-                await prisma.visitor.update({
-                    where: { id: visitorId },
-                    data: { xp: { increment: hunt.xpReward } }
+                await tx.scavengerHuntParticipation.update({
+                    where: { id: participation.id },
+                    data: {
+                        currentStep: participation.currentStep + 1,
+                        completed: true,
+                        completedAt: new Date()
+                    }
                 });
-            }
+
+                if (hunt?.xpReward) {
+                    await tx.visitor.update({
+                        where: { id: visitor.id },
+                        data: { xp: { increment: hunt.xpReward } }
+                    });
+                }
+
+                return hunt;
+            });
 
             return res.json({
                 correct: true,
                 completed: true,
-                xpAwarded: hunt?.xpReward || 0,
-                message: `Parabéns! Você completou a caça ao tesouro e ganhou ${hunt?.xpReward || 0} XP!`
+                xpAwarded: result?.xpReward || 0,
+                message: `Parabéns! Você completou a caça ao tesouro e ganhou ${result?.xpReward || 0} XP!`
             });
         }
 

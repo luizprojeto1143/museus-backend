@@ -60,7 +60,7 @@ function runWithRetry(command, retries = 5, delayMs = 5000) {
             if (i < retries - 1) {
                 console.log(`⏳ Aguardando ${delayMs}ms antes de tentar novamente...`);
                 const start = Date.now();
-                while (Date.now() - start < delayMs) { } // Busy wait
+                while (Date.now() - start < delayMs) { /* busy wait */ }
             } else {
                 console.error("❌ Todas as tentativas de migração falharam.");
                 return false;

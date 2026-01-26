@@ -52,12 +52,22 @@ router.get('/', async (req, res) => {
 // POST /reviews - Create a review
 router.post('/', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user?.id;
-        if (!visitorId) {
-            return res.status(401).json({ message: 'Usuário não autenticado' });
+        const user = req.user!;
+        const data = reviewSchema.parse(req.body);
+        const { tenantId } = req.body;
+
+        if (!tenantId) {
+            return res.status(400).json({ message: 'tenantId é obrigatório' });
         }
 
-        const data = reviewSchema.parse(req.body);
+        // CRITICAL FIX: Find visitor by user's email
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: user.email.toLowerCase(), tenantId }
+        });
+
+        if (!visitor) {
+            return res.status(404).json({ message: 'Perfil de visitante não encontrado' });
+        }
 
         if (!data.workId && !data.eventId) {
             return res.status(400).json({ message: 'workId ou eventId é obrigatório' });
@@ -66,7 +76,7 @@ router.post('/', authMiddleware, async (req, res) => {
         // Check for existing review
         if (data.workId) {
             const existing = await prisma.review.findUnique({
-                where: { visitorId_workId: { visitorId, workId: data.workId } }
+                where: { visitorId_workId: { visitorId: visitor.id, workId: data.workId } }
             });
             if (existing) {
                 return res.status(409).json({ message: 'Você já avaliou esta obra' });
@@ -77,7 +87,7 @@ router.post('/', authMiddleware, async (req, res) => {
             data: {
                 rating: data.rating,
                 comment: data.comment,
-                visitorId,
+                visitorId: visitor.id,
                 workId: data.workId,
                 eventId: data.eventId,
                 approved: false // Requires moderation
@@ -112,17 +122,31 @@ router.patch('/:id/approve', authMiddleware, requireRole(['ADMIN', 'MASTER']), a
 router.delete('/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.user?.id;
-        const userRole = req.user?.role;
+        const user = req.user!;
+        const { tenantId } = req.query;
 
-        const review = await prisma.review.findUnique({ where: { id } });
+        const review = await prisma.review.findUnique({
+            where: { id },
+            include: { work: { select: { tenantId: true } } }
+        });
 
         if (!review) {
             return res.status(404).json({ message: 'Avaliação não encontrada' });
         }
 
-        // Only admin or owner can delete
-        if (review.visitorId !== userId && !['ADMIN', 'MASTER'].includes(userRole || '')) {
+        // Admin/Master can always delete
+        if (['ADMIN', 'MASTER'].includes(user.role || '')) {
+            await prisma.review.delete({ where: { id } });
+            return res.json({ message: 'Avaliação removida' });
+        }
+
+        // Find visitor to check ownership
+        const reviewTenantId = tenantId as string || review.work?.tenantId;
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: user.email.toLowerCase(), tenantId: reviewTenantId }
+        });
+
+        if (!visitor || review.visitorId !== visitor.id) {
             return res.status(403).json({ message: 'Sem permissão' });
         }
 

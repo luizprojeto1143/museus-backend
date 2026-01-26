@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
+import { z } from "zod";
 
 const router = Router();
 
@@ -73,7 +74,25 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
-    const data = req.body;
+    // Validation Schema
+    const workSchema = z.object({
+      title: z.string().min(1, "Título é obrigatório"),
+      artist: z.string().optional(),
+      year: z.string().optional(),
+      category: z.string().optional().nullable(),
+      room: z.string().optional(),
+      floor: z.string().optional(),
+      description: z.string().optional(),
+      imageUrl: z.string().optional(),
+      audioUrl: z.string().optional(),
+      librasUrl: z.string().optional(),
+      videoUrl: z.string().optional(),
+      latitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : null),
+      longitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : null),
+      radius: z.string().or(z.number()).optional().transform(v => v ? Number(v) : 5)
+    });
+
+    const data = workSchema.parse(req.body);
 
     // Check Plan Limits
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -85,14 +104,13 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         message: `Limite de obras atingido para o plano ${tenant.plan}. Atualize seu plano para continuar.`
       });
     }
+
     const work = await prisma.work.create({
       data: {
         title: data.title,
         artist: data.artist,
         year: data.year,
-        // Fix category assignment: Ensure empty string becomes null
         categoryId: data.category && data.category !== "" ? data.category : null,
-
         room: data.room,
         floor: data.floor,
         description: data.description,
@@ -100,18 +118,18 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         audioUrl: data.audioUrl,
         librasUrl: data.librasUrl,
         videoUrl: data.videoUrl,
-
-        // Geo-fencing - Strict Typing
-        latitude: data.latitude ? parseFloat(data.latitude) : null,
-        longitude: data.longitude ? parseFloat(data.longitude) : null,
-        radius: data.radius ? parseInt(data.radius) : 5,
-
+        latitude: data.latitude,
+        longitude: data.longitude,
+        radius: data.radius || 5,
         tenantId
       }
     });
     return res.status(201).json(work);
   } catch (err: any) {
     console.error("Erro criar obra", err);
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+    }
     if (err.code === 'P2003') {
       return res.status(400).json({ message: "Categoria fornecida é inválida ou não existe." });
     }

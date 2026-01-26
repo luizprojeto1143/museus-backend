@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, QRType } from "@prisma/client";
 import crypto from "crypto";
+import { z } from "zod";
 
 const router = Router();
 
@@ -35,16 +36,18 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
 router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
     const user = req.user!;
-    const { type, referenceId, title, xpReward, tenantId: bodyTenantId, code: customCode } = req.body as {
-      type: QRType;
-      referenceId?: string;
-      title?: string;
-      xpReward?: number;
-      tenantId?: string;
-      code?: string;
-    };
+    const qrSchema = z.object({
+      type: z.nativeEnum(QRType),
+      referenceId: z.string().optional(),
+      title: z.string().optional(),
+      xpReward: z.number().int().min(0).optional(),
+      tenantId: z.string().optional(),
+      code: z.string().optional()
+    });
 
-    let tenantId = bodyTenantId;
+    const data = qrSchema.parse(req.body);
+    let tenantId = data.tenantId;
+
     if (user.role === Role.ADMIN) {
       tenantId = user.tenantId || undefined;
     }
@@ -53,32 +56,31 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
 
-    if (!type) {
-      return res.status(400).json({ message: "type é obrigatório" });
-    }
-
     // Se customCode foi enviado, verificar unicidade
-    if (customCode) {
-      const existing = await prisma.qRCode.findUnique({ where: { code: customCode } });
+    if (data.code) {
+      const existing = await prisma.qRCode.findUnique({ where: { code: data.code } });
       if (existing) {
         return res.status(400).json({ message: "Este código já está em uso." });
       }
     }
 
-    const code = customCode || crypto.randomBytes(6).toString("hex");
+    const code = data.code || crypto.randomBytes(6).toString("hex");
     const qr = await prisma.qRCode.create({
       data: {
         code,
-        type,
-        referenceId: referenceId || null,
-        title: title || "QR Code",
-        xpReward: typeof xpReward === "number" ? xpReward : 5,
+        type: data.type,
+        referenceId: data.referenceId || null,
+        title: data.title || "QR Code",
+        xpReward: data.xpReward ?? 5,
         tenantId
       }
     });
 
     return res.status(201).json(qr);
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+    }
     console.error("Erro criar QR Code", err);
     return res.status(500).json({ message: "Erro ao criar QR Code" });
   }

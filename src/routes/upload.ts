@@ -174,7 +174,14 @@ router.get("/", authMiddleware, async (req, res) => {
 router.delete("/:filename", authMiddleware, async (req, res) => {
   try {
     const { filename } = req.params;
-    const filepath = path.join(uploadDir, filename);
+
+    // SECURITY: Sanitize filename to prevent path traversal
+    const sanitizedFilename = path.basename(filename);
+    if (sanitizedFilename !== filename || filename.includes('..')) {
+      return res.status(400).json({ message: "Nome de arquivo inválido" });
+    }
+
+    const filepath = path.join(uploadDir, sanitizedFilename);
 
     if (fs.existsSync(filepath)) {
       fs.unlinkSync(filepath);
@@ -189,3 +196,4 @@ router.delete("/:filename", authMiddleware, async (req, res) => {
 });
 
 export default router;
+

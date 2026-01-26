@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { sendCertificateEmail, generateCertificateBuffer } from "../services/email.js";
+import { z } from "zod";
 
 const router = Router();
 
@@ -241,67 +242,68 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
     }
 
     // Verificar se já fez check-in
-    const existing = await prisma.eventAttendance.findFirst({
-      where: { eventId: id, visitorId: targetVisitorId }
-    });
-
-    if (existing) {
-      return res.json({ message: "Check-in já realizado", attendance: existing });
-    }
-
-    // Registrar check-in
-    const attendance = await prisma.eventAttendance.create({
-      data: {
-        eventId: id,
-        visitorId: targetVisitorId,
-        status: "PRESENT",
-        checkInTime: new Date()
-      }
-    });
-
-    // Opcional: Registrar XP também se evento tiver recompensa (via VisitorVisit separada ou aqui)
-    // Vamos registrar uma VisitorVisit para constar no histórico geral e ganhar XP se não tiver ganho ainda
-    // Mas normalmente isso é feito via QR Code separado ou automático. 
-    // Vou adicionar VisitorVisit para garantir consistência com o histórico
-    await prisma.visitorVisit.create({
-      data: {
-        visitorId: targetVisitorId,
-        eventId: id,
-        source: "CHECKIN",
-        xpGained: 10 // Valor fixo ou buscar do evento se tiver campo XP
-      }
-    });
-
-    await prisma.visitor.update({
-      where: { id: targetVisitorId },
-      data: { xp: { increment: 10 } }
-    });
-
-    // Hook: Event Attended
+    // Race-condition free check-in using try/catch create
     try {
-      const { CertificateEngine } = await import('../services/certificate-engine.js');
-      await CertificateEngine.evaluate('EVENT_ATTENDED', {
-        tenantId: event.tenantId,
-        visitorId: targetVisitorId,
-        eventId: id
+      const attendance = await prisma.eventAttendance.create({
+        data: {
+          eventId: id,
+          visitorId: targetVisitorId,
+          status: "PRESENT",
+          checkInTime: new Date()
+        }
       });
-      // Also check XP threshold
-      const updatedVisitor = await prisma.visitor.findUnique({ where: { id: targetVisitorId } });
-      if (updatedVisitor) {
-        await CertificateEngine.evaluate('XP_THRESHOLD', {
+
+      // Add XP logic if check-in successful (first time)
+      await prisma.$transaction([
+        prisma.visitorVisit.create({
+          data: {
+            visitorId: targetVisitorId,
+            eventId: id,
+            source: "CHECKIN",
+            xpGained: 10
+          }
+        }),
+        prisma.visitor.update({
+          where: { id: targetVisitorId },
+          data: { xp: { increment: 10 } }
+        })
+      ]);
+
+      // Hook: Event Attended
+      try {
+        const { CertificateEngine } = await import('../services/certificate-engine.js');
+        await CertificateEngine.evaluate('EVENT_ATTENDED', {
           tenantId: event.tenantId,
           visitorId: targetVisitorId,
-          newXp: updatedVisitor.xp
+          eventId: id
         });
+        // Also check XP threshold
+        const updatedVisitor = await prisma.visitor.findUnique({ where: { id: targetVisitorId } });
+        if (updatedVisitor) {
+          await CertificateEngine.evaluate('XP_THRESHOLD', {
+            tenantId: event.tenantId,
+            visitorId: targetVisitorId,
+            newXp: updatedVisitor.xp
+          });
+        }
+      } catch (e) {
+        console.error("Hook Error", e);
       }
-    } catch (e) {
-      console.error("Hook Error", e);
-    }
 
-    return res.status(201).json({ message: "Check-in realizado com sucesso", attendance });
+      return res.json({ message: "Check-in realizado com sucesso", attendance });
+
+    } catch (err: any) {
+      if (err.code === 'P2002') {
+        const existing = await prisma.eventAttendance.findFirst({
+          where: { eventId: id, visitorId: targetVisitorId }
+        });
+        return res.json({ message: "Check-in já realizado", attendance: existing });
+      }
+      throw err; // Rethrow to outer catch
+    }
   } catch (err) {
-    console.error("Erro check-in", err);
-    return res.status(500).json({ message: "Erro ao realizar check-in" });
+    console.error("Erro check-in critical", err);
+    return res.status(500).json({ message: "Erro interno no check-in" });
   }
 });
 
@@ -356,14 +358,11 @@ router.get("/:id/certificate/download", authMiddleware, async (req, res) => {
 });
 
 // Enviar Certificado por Email
-router.post("/:id/certificate", async (req, res) => {
+router.post("/:id/certificate", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { visitorId } = req.body;
-
-    if (!visitorId) {
-      return res.status(400).json({ message: "visitorId é obrigatório" });
-    }
+    const user = req.user!;
+    let { visitorId } = req.body;
 
     const event = await prisma.event.findUnique({
       where: { id },
@@ -372,6 +371,17 @@ router.post("/:id/certificate", async (req, res) => {
 
     if (!event) {
       return res.status(404).json({ message: "Evento não encontrado" });
+    }
+
+    // If no visitorId, use authenticated user's visitor profile
+    if (!visitorId) {
+      const visitor = await prisma.visitor.findFirst({
+        where: { email: user.email.toLowerCase(), tenantId: event.tenantId }
+      });
+      if (!visitor) {
+        return res.status(404).json({ message: "Perfil de visitante não encontrado" });
+      }
+      visitorId = visitor.id;
     }
 
     // Verificar presença
