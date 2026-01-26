@@ -188,7 +188,21 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.work.delete({ where: { id } });
+
+    // Fetch work to get file URLs
+    const work = await prisma.work.findUnique({ where: { id } });
+
+    if (work) {
+      await prisma.work.delete({ where: { id } });
+
+      // Cleanup files in background (don't block response)
+      const { deleteFromStorage } = await import("./upload.js");
+      if (work.imageUrl) deleteFromStorage(work.imageUrl);
+      if (work.audioUrl) deleteFromStorage(work.audioUrl);
+      if (work.librasUrl) deleteFromStorage(work.librasUrl);
+      if (work.videoUrl) deleteFromStorage(work.videoUrl);
+    }
+
     return res.status(204).send();
   } catch (err) {
     console.error("Erro excluir obra", err);

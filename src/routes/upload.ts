@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
@@ -194,6 +194,48 @@ router.delete("/:filename", authMiddleware, async (req, res) => {
     return res.status(500).json({ message: "Erro ao excluir arquivo" });
   }
 });
+
+// Helper to delete from storage (Local or R2)
+export async function deleteFromStorage(fileUrl: string) {
+  if (!fileUrl) return;
+
+  try {
+    // 1. Check if it's an R2 URL
+    const publicBase = process.env.R2_PUBLIC_BASE_URL;
+    if (publicBase && fileUrl.startsWith(publicBase)) {
+      if (!hasR2Config()) return;
+
+      const bucket = process.env.R2_BUCKET_NAME!;
+      const key = fileUrl.replace(`${publicBase}/`, "");
+
+      // Clean up leading slash if present (rare)
+      const cleanKey = key.startsWith('/') ? key.substring(1) : key;
+
+      const client = createR2Client();
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: cleanKey
+        })
+      );
+      console.log(`[Storage] Deleted from R2: ${cleanKey}`);
+      return;
+    }
+
+    // 2. Local File (fallback)
+    // URL format: /uploads/filename.ext or http://domain/uploads/filename.ext
+    const filename = fileUrl.split("/uploads/").pop();
+    if (filename) {
+      const filepath = path.join(uploadDir, filename);
+      if (fs.existsSync(filepath)) {
+        fs.unlinkSync(filepath);
+        console.log(`[Storage] Deleted local file: ${filepath}`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[Storage] Failed to delete file ${fileUrl}`, err);
+  }
+}
 
 export default router;
 
