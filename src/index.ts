@@ -130,7 +130,11 @@ app.use("/floor-plans", floorPlansRoutes);
 app.use("/navigation", navigationRoutes);
 app.use("/accessibility", accessibilityRoutes);
 import publicCertificateRoutes from "./routes/public/certificates.js";
+
 app.use("/public/certificates", publicCertificateRoutes);
+
+import opsRoutes from "./routes/ops.js";
+app.use("/ops", opsRoutes);
 
 const PORT = process.env.PORT || 3000;
 
