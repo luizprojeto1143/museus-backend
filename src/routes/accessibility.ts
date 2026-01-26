@@ -61,11 +61,11 @@ router.get("/master", authMiddleware, requireRole([Role.MASTER]), async (req, re
     }
 });
 
-// Fulfill Request (MASTER) - Upload is handled by frontend (to storage), updates URL here
+// Fulfill Request (MASTER)
 router.post("/:id/fulfill", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
     try {
         const { id } = req.params;
-        const { fileUrl, fileType, masterNotes } = req.body; // fileType: 'LIBRAS' or 'AUDIO'
+        const { librasUrl, audioUrl, masterNotes } = req.body;
 
         const request = await prisma.accessibilityRequest.findUnique({ where: { id } });
         if (!request) {
@@ -74,8 +74,8 @@ router.post("/:id/fulfill", authMiddleware, requireRole([Role.MASTER]), async (r
 
         // Update Work
         const updateData: any = {};
-        if (fileType === "LIBRAS") updateData.librasUrl = fileUrl;
-        if (fileType === "AUDIO") updateData.audioUrl = fileUrl;
+        if (librasUrl) updateData.librasUrl = librasUrl;
+        if (audioUrl) updateData.audioUrl = audioUrl;
 
         await prisma.$transaction([
             prisma.work.update({
