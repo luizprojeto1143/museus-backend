@@ -10,7 +10,7 @@ const router = Router();
 // Para facilitar para o usuário agora, vou deixar protegido apenas por um token simples no header ou query string
 // chamaremos de ?secret=museus_admin_deploy_2024
 
-router.post("/migrate", async (req, res) => {
+router.get("/migrate", async (req, res) => {
     const { secret } = req.query;
 
     if (secret !== "museus_admin_deploy_2024") {
