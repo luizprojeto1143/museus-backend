@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { prisma } from "../prisma.js";
-import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { prisma } from "../../prisma.js";
+import { authMiddleware, requireRole } from "../../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { fakerPT_BR as faker } from '@faker-js/faker';
 
