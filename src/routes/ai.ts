@@ -12,7 +12,7 @@ const openai = process.env.OPENAI_API_KEY
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 // Chat simples usando persona do tenant
-router.post("/chat", async (req, res) => {
+router.post("/chat", authMiddleware, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -111,7 +111,7 @@ router.post("/chat", async (req, res) => {
 });
 
 // Streaming Chat using Server-Sent Events (SSE)
-router.post("/chat/stream", async (req, res) => {
+router.post("/chat/stream", authMiddleware, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -304,7 +304,7 @@ router.post("/souvenir", async (req, res) => {
 });
 
 // Roteiro Inteligente
-router.post("/itinerary", async (req, res) => {
+router.post("/itinerary", authMiddleware, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });

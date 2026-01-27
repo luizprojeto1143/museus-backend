@@ -39,9 +39,21 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
         if (!userId) return res.status(401).json({ message: "Não autorizado" });
 
         const { date, tenantId } = req.body;
+        const bookingDate = new Date(date);
 
-        // Verificar se já existe agendamento no mesmo horário (regra simples)
-        const existing = await prisma.booking.findFirst({
+        // 1. Validate Past Dates
+        if (bookingDate < new Date()) {
+            return res.status(400).json({ message: "Não é possível agendar datas no passado." });
+        }
+
+        // 2. Validate Opening Hours (Simple 09-17h check for now)
+        const hour = bookingDate.getHours();
+        if (hour < 9 || hour >= 17) {
+            return res.status(400).json({ message: "Horário fora de funcionamento (09h às 17h)." });
+        }
+
+        // 3. Capacity Check (Max 20 visitors per hour)
+        const bookingsCount = await prisma.booking.count({
             where: {
                 tenantId,
                 date: new Date(date),
@@ -49,8 +61,9 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
             }
         });
 
-        // Regra de negócio simplificada: permitir múltiplos por horário por enquanto, 
-        // mas em produção teria limite de capacidade.
+        if (bookingsCount >= 20) {
+            return res.status(400).json({ message: "Horário esgotado." });
+        }
 
         const booking = await prisma.booking.create({
             data: {

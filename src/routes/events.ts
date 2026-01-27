@@ -292,8 +292,8 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
 
       return res.json({ message: "Check-in realizado com sucesso", attendance });
 
-    } catch (err: any) {
-      if (err.code === 'P2002') {
+    } catch (err: unknown) {
+      if (err instanceof Error && 'code' in err && (err as any).code === 'P2002') {
         const existing = await prisma.eventAttendance.findFirst({
           where: { eventId: id, visitorId: targetVisitorId }
         });
@@ -481,11 +481,11 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
 
     return res.status(201).json({ message: "Inscrição realizada!", registration: result });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Erro inscrição evento", err);
     // Handle specific transaction errors
-    const message = err.message || "Erro ao realizar inscrição";
-    return res.status(err.message?.includes("esgotados") ? 400 : 500).json({ message });
+    const message = (err instanceof Error) ? err.message : "Erro ao realizar inscrição";
+    return res.status(message.includes("esgotados") ? 400 : 500).json({ message });
   }
 });
 

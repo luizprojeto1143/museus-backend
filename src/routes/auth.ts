@@ -9,7 +9,10 @@ import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
-// SECURITY: JWT_SECRET must be set in production
+// SECURITY: JWT_SECRET must be set
+if (!process.env.JWT_SECRET) {
+  console.warn("WARNING: JWT_SECRET is not set. Using insecure default. Set this env var immediately!");
+}
 if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
   throw new Error("FATAL: JWT_SECRET environment variable is not set in production!");
 }
@@ -108,41 +111,7 @@ router.post("/register", validate(registerSchema), async (req, res) => {
   }
 });
 
-// rota para seeding simples de MASTER (apenas dev)
-// SECURITY: This route is DISABLED in production
-router.post("/seed-master", async (req, res) => {
-  try {
-    // Block this route in production
-    if (process.env.NODE_ENV === "production") {
-      console.warn("SECURITY: Attempted to access /seed-master in production from IP:", req.ip);
-      return res.status(403).json({ message: "Esta rota está desabilitada em produção" });
-    }
-
-    const { email, password, name } = req.body as { email: string; password: string; name: string };
-
-    if (!email || !password || !name) {
-      return res.status(400).json({ message: "Email, password e name são obrigatórios" });
-    }
-
-    const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) {
-      return res.status(400).json({ message: "Já existe usuário com este email" });
-    }
-    const hash = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hash,
-        name,
-        role: Role.MASTER
-      }
-    });
-    return res.status(201).json({ id: user.id, email: user.email, role: user.role });
-  } catch (err) {
-    console.error("Erro seed-master", err);
-    return res.status(500).json({ message: "Erro ao criar master" });
-  }
-});
+// seed-master route removed for security audit compliance
 
 // Rota para trocar de museu (tenant)
 router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), async (req, res) => {

@@ -41,10 +41,15 @@ async function checkR2() {
         }));
         console.log("✅ Upload Test Successful!");
 
-    } catch (err: any) {
-        console.error("❌ R2 Connection Failed:", err.message);
-        if (err.name === "NetworkingError" || err.code === "ECONNREFUSED") {
-            console.error("   -> Network/Firewall issue or wrong Endpoint.");
+    } catch (err: unknown) {
+        if (err instanceof Error) {
+            console.error("❌ R2 Connection Failed:", err.message);
+            const errorObj = err as any;
+            if (errorObj.name === "NetworkingError" || errorObj.code === "ECONNREFUSED") {
+                console.error("   -> Network/Firewall issue or wrong Endpoint.");
+            }
+        } else {
+            console.error("❌ R2 Connection Failed:", String(err));
         }
     }
 }

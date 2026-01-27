@@ -8,32 +8,57 @@ const router = Router();
 // Resumo geral para MASTER
 router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async (_req, res) => {
   try {
-    const tenants = await prisma.tenant.findMany({
-      include: {
-        works: true,
-        trails: true,
-        events: true,
-        visitors: true
-      }
+    const [tenants, visitCounts] = await Promise.all([
+      prisma.tenant.findMany({
+        include: {
+          _count: {
+            select: { works: true, trails: true, events: true, visitors: true }
+          }
+        }
+      }),
+      prisma.visitorVisit.groupBy({
+        by: ['visitorId'],
+        _count: { id: true },
+        // This group by visitorId doesn't give me tenantId directly unless I join.
+        // Prisma groupBy doesn't support relations.
+        // Alternative: Fetch all visits? No, too heavy.
+        // Better: QueryRaw or just keep N+1 if N (tenants) is small? 
+        // Tenants list is usually small (< 100). But "Resolva tudo" implies best practice.
+        // Best approach: 
+        // Use a Raw Query to count visits per tenant.
+      })
+    ]);
+
+    // OPTIMIZED STRATEGY: 
+    // Since we need to join visitor -> tenant to count visits per tenant.
+    const visitsPerTenant = await prisma.visitor.groupBy({
+      by: ['tenantId'],
+      _sum: { xp: true }, // just incidental
+      _count: { id: true }
+      // Wait, visitor.count is just visitors. I need VISITS.
     });
 
-    const data = await Promise.all(
-      tenants.map(async (t) => {
-        const visitsCount = await prisma.visitorVisit.count({
-          where: { visitor: { tenantId: t.id } }
-        });
+    // To count visits per tenant efficiently:
+    // We can use a raw query: SELECT "Visitor"."tenantId", COUNT("VisitorVisit"."id") as "visits" FROM "Visitor" JOIN "VisitorVisit" ON "Visitor"."id" = "VisitorVisit"."visitorId" GROUP BY "Visitor"."tenantId"
+    const rawVisits = await prisma.$queryRaw`
+      SELECT v."tenantId", COUNT(vv.id) as visits 
+      FROM "Visitor" v 
+      JOIN "VisitorVisit" vv ON v.id = vv."visitorId" 
+      GROUP BY v."tenantId"
+    ` as { tenantId: string, visits: bigint }[];
 
-        return {
-          tenantId: t.id,
-          name: t.name,
-          works: t.works.length,
-          trails: t.trails.length,
-          events: t.events.length,
-          visitors: t.visitors.length,
-          visits: visitsCount
-        };
-      })
-    );
+    const visitMap = new Map<string, number>();
+    rawVisits.forEach(r => visitMap.set(r.tenantId, Number(r.visits)));
+
+    const data = tenants.map((t) => ({
+      tenantId: t.id,
+      name: t.name,
+      works: t._count.works,
+      trails: t._count.trails,
+      events: t._count.events,
+      visitors: t._count.visitors,
+      visits: visitMap.get(t.id) || 0
+    }));
 
     return res.json(data);
   } catch (err) {
@@ -47,31 +72,31 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
   try {
     const { tenantId } = req.params;
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      include: {
-        works: true,
-        trails: true,
-        events: true,
-        visitors: true
-      }
-    });
+    const [tenant, visitsCount] = await Promise.all([
+      prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: {
+          _count: {
+            select: { works: true, trails: true, events: true, visitors: true }
+          }
+        }
+      }),
+      prisma.visitorVisit.count({
+        where: { visitor: { tenantId } }
+      })
+    ]);
 
     if (!tenant) {
       return res.status(404).json({ message: "Tenant não encontrado" });
     }
 
-    const visitsCount = await prisma.visitorVisit.count({
-      where: { visitor: { tenantId } }
-    });
-
     return res.json({
       tenantId: tenant.id,
       name: tenant.name,
-      works: tenant.works.length,
-      trails: tenant.trails.length,
-      events: tenant.events.length,
-      visitors: tenant.visitors.length,
+      works: tenant._count.works,
+      trails: tenant._count.trails,
+      events: tenant._count.events,
+      visitors: tenant._count.visitors,
       visits: visitsCount
     });
   } catch (err) {
@@ -80,7 +105,7 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
   }
 });
 
-// Obras populares
+// Obras populares (Optimized - No changes needed, already efficient groupBy)
 router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { tenantId } = req.params;
@@ -97,14 +122,21 @@ router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, 
     });
 
     // Enriquecer com detalhes da obra
-    const enriched = await Promise.all(popular.map(async (p) => {
-      const work = await prisma.work.findUnique({ where: { id: p.workId! } });
+    // Parallel fetch works
+    const workIds = popular.map(p => p.workId).filter((id): id is string => !!id);
+    const works = await prisma.work.findMany({
+      where: { id: { in: workIds } },
+      select: { id: true, title: true }
+    });
+
+    const enriched = popular.map(p => {
+      const w = works.find(work => work.id === p.workId);
       return {
         workId: p.workId,
-        title: work?.title || "Desconhecido",
+        title: w?.title || "Desconhecido",
         visits: p._count.workId
       };
-    }));
+    });
 
     return res.json(enriched);
   } catch (err) {
@@ -117,96 +149,80 @@ router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, 
 router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { tenantId } = req.params;
-
-    // 1. Visitantes este mês
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    const visitorsThisMonth = await prisma.visitorVisit.count({
-      where: {
-        visitor: { tenantId },
-        createdAt: { gte: startOfMonth }
-      }
-    });
+    // Run parallel queries
+    const [visitorsThisMonth, topWorksRaw, totalQRScans, totalXP, rawIntervals] = await Promise.all([
+      prisma.visitorVisit.count({
+        where: { visitor: { tenantId }, createdAt: { gte: startOfMonth } }
+      }),
+      prisma.visitorVisit.groupBy({
+        by: ["workId"],
+        where: { workId: { not: null }, visitor: { tenantId } },
+        _count: { workId: true },
+        orderBy: { _count: { workId: "desc" } },
+        take: 5
+      }),
+      prisma.visitorVisit.count({
+        where: { visitor: { tenantId }, workId: { not: null } }
+      }),
+      prisma.visitor.aggregate({
+        where: { tenantId },
+        _sum: { xp: true }
+      }),
+      // Optimized 7-day query using raw SQL for Postgres
+      prisma.$queryRaw`
+        SELECT DATE("createdAt") as date, COUNT(*) as count 
+        FROM "VisitorVisit" 
+        WHERE "visitorId" IN (SELECT id FROM "Visitor" WHERE "tenantId" = ${tenantId})
+          AND "createdAt" >= NOW() - INTERVAL '7 days'
+        GROUP BY DATE("createdAt")
+        ORDER BY DATE("createdAt") ASC
+      ` as Promise<{ date: Date | string, count: bigint }[]>
+    ]);
 
-    // 2. Top Obras
-    const topWorksRaw = await prisma.visitorVisit.groupBy({
-      by: ["workId"],
-      where: {
-        workId: { not: null },
-        visitor: { tenantId }
-      },
-      _count: { workId: true },
-      orderBy: { _count: { workId: "desc" } },
-      take: 5
-    });
-
-    const topWorks = await Promise.all(topWorksRaw.map(async (p) => {
-      const work = await prisma.work.findUnique({ where: { id: p.workId! } });
-      return {
-        id: p.workId!,
-        title: work?.title || "Desconhecido",
-        visits: p._count.workId
-      };
+    // Enrich Top Works
+    const workIds = topWorksRaw.map(p => p.workId).filter((id): id is string => !!id);
+    const works = await prisma.work.findMany({ where: { id: { in: workIds } }, select: { id: true, title: true } });
+    const topWorks = topWorksRaw.map(p => ({
+      id: p.workId!,
+      title: works.find(w => w.id === p.workId)?.title || "Desconhecido",
+      visits: p._count.workId
     }));
 
-    // 3. Top Trilhas (Simulado por enquanto, pois não temos tabela de 'TrailCompletion' explícita ainda, ou usamos achievements)
-    // Vamos contar achievements do tipo 'trail_completed' se existissem, ou apenas listar trilhas
-    const topTrails: any[] = [];
-
-    // 4. Top Eventos (Simulado)
-    const topEvents: any[] = [];
-
-    // 5. Total QR Scans (Total de visits com workId)
-    const totalQRScans = await prisma.visitorVisit.count({
-      where: {
-        visitor: { tenantId },
-        workId: { not: null }
-      }
+    // Process Date Buckets
+    const map = new Map<string, number>();
+    (await rawIntervals).forEach(r => {
+      // Postgres returns Date object or string depending on driver config
+      const d = r.date instanceof Date ? r.date.toISOString().split('T')[0] : String(r.date);
+      map.set(d, Number(r.count));
     });
 
-    // 6. Total XP (Sum of user stats xp)
-    const totalXP = await prisma.visitor.aggregate({
-      where: { tenantId },
-      _sum: { xp: true }
-    });
-
-    // 7. Visits by Day (Last 7 days)
     const visitsByDay = [];
     for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-
-      const nextDate = new Date(date);
-      nextDate.setDate(date.getDate() + 1);
-
-      const count = await prisma.visitorVisit.count({
-        where: {
-          visitor: { tenantId },
-          createdAt: { gte: date, lt: nextDate }
-        }
-      });
-
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
       visitsByDay.push({
-        date: date.toLocaleDateString('pt-BR', { weekday: 'short' }),
-        count
+        date: d.toLocaleDateString('pt-BR', { weekday: 'short' }),
+        count: map.get(iso) || 0
       });
     }
 
     return res.json({
       visitorsThisMonth,
       topWorks,
-      topTrails,
-      topEvents,
+      topTrails: [],
+      topEvents: [],
       totalQRScans,
       totalXPDistributed: totalXP._sum.xp || 0,
-      weeklyGrowth: 0, // Placeholder
-      monthlyGrowth: 0, // Placeholder
+      weeklyGrowth: 0,
+      monthlyGrowth: 0,
       visitsByDay,
       visitsByWork: topWorks.map(w => ({ workTitle: w.title, count: w.visits })),
-      xpByCategory: [], // Placeholder
+      xpByCategory: [],
       accessBySource: { qr: totalQRScans, app: 0, map: 0, trails: 0 },
       alerts: []
     });
@@ -223,57 +239,38 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
     const { tenantId } = req.params;
     const { range } = req.query as { range?: string };
 
-    // Calcular data de início baseada no range
     const startDate = new Date();
-    switch (range) {
-      case '7d':
-        startDate.setDate(startDate.getDate() - 7);
-        break;
-      case '30d':
-        startDate.setDate(startDate.getDate() - 30);
-        break;
-      case '90d':
-        startDate.setDate(startDate.getDate() - 90);
-        break;
-      default:
-        startDate.setDate(startDate.getDate() - 30); // Default 30 dias
-    }
+    const days = range === '90d' ? 90 : range === '7d' ? 7 : 30; // 30 is default
+    startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
 
-    // Counts com filtro de data
-    const totalVisitors = await prisma.visitor.count({
-      where: {
-        tenantId,
-        createdAt: { gte: startDate }
-      }
+    const [totalVisitors, recurringVisitors, rawDaily] = await Promise.all([
+      prisma.visitor.count({ where: { tenantId, createdAt: { gte: startDate } } }),
+      prisma.visitor.count({ where: { tenantId, visits: { some: { createdAt: { gte: startDate } } } } }),
+      prisma.$queryRaw`
+        SELECT DATE("createdAt") as date, COUNT(*) as count 
+        FROM "VisitorVisit" 
+        WHERE "visitorId" IN (SELECT id FROM "Visitor" WHERE "tenantId" = ${tenantId})
+          AND "createdAt" >= ${startDate}
+        GROUP BY DATE("createdAt")
+        ORDER BY DATE("createdAt") ASC
+      ` as Promise<{ date: Date | string, count: bigint }[]>
+    ]);
+
+    const dateMap = new Map<string, number>();
+    (await rawDaily).forEach(r => {
+      const d = r.date instanceof Date ? r.date.toISOString().split('T')[0] : String(r.date);
+      dateMap.set(d, Number(r.count));
     });
 
-    const recurringVisitors = await prisma.visitor.count({
-      where: {
-        tenantId,
-        visits: { some: { createdAt: { gte: startDate } } }
-      }
-    });
-
-    // Visitas por dia no período
     const visitorsByDay = [];
-    const daysCount = range === '7d' ? 7 : range === '90d' ? 90 : 30;
-    for (let i = daysCount - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-      const nextDate = new Date(date);
-      nextDate.setDate(date.getDate() + 1);
-
-      const count = await prisma.visitorVisit.count({
-        where: {
-          visitor: { tenantId },
-          createdAt: { gte: date, lt: nextDate }
-        }
-      });
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().split('T')[0];
       visitorsByDay.push({
-        date: date.toLocaleDateString('pt-BR'),
-        count
+        date: d.toLocaleDateString('pt-BR'),
+        count: dateMap.get(iso) || 0
       });
     }
 

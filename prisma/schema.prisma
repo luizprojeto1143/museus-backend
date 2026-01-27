@@ -281,6 +281,8 @@ model EventAttendance {
   visitor     Visitor  @relation(fields: [visitorId], references: [id])
 
   createdAt DateTime @default(now())
+  
+  @@unique([eventId, visitorId])
 }
 
 // Update Event model to support Online Events
@@ -462,6 +464,12 @@ model VisitorVisit {
   event     Event?  @relation(fields: [eventId], references: [id])
 
   createdAt DateTime @default(now())
+  
+  @@index([visitorId])
+  @@index([workId])
+  @@index([eventId])
+  @@index([trailId])
+  @@index([createdAt]) // For date range queries
 }
 
 model Achievement {
@@ -778,6 +786,10 @@ model Order {
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([visitorId])
+  @@index([status])
 }
 
 model OrderItem {

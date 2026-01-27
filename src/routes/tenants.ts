@@ -194,22 +194,22 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     });
 
     return res.status(201).json(tenant);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Erro criar tenant", err);
 
     // Handle Prisma unique constraint errors
-    if (err.code === 'P2002') {
-      const target = err.meta?.target;
-      if (target?.includes('email')) {
+    if (err instanceof Error && 'code' in err && (err as { code: string }).code === 'P2002') {
+      const target = (err as { meta?: { target?: string[] } }).meta?.target;
+      if (Array.isArray(target) && target.includes('email')) {
         return res.status(400).json({ message: "Email do admin já está em uso" });
       }
-      if (target?.includes('slug')) {
+      if (Array.isArray(target) && target.includes('slug')) {
         return res.status(400).json({ message: "Slug já em uso" });
       }
       return res.status(400).json({ message: "Valor duplicado detectado" });
     }
 
-    return res.status(500).json({ message: "Erro ao criar tenant", details: err.message });
+    return res.status(500).json({ message: "Erro ao criar tenant", details: err instanceof Error ? err.message : String(err) });
   }
 });
 

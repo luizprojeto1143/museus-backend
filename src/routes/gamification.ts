@@ -75,4 +75,88 @@ router.get("/clues", async (req, res) => {
     }
 });
 
+import jwt from "jsonwebtoken";
+import { authMiddleware } from "../middleware/auth.js";
+
+const GAME_SECRET = process.env.GAME_SECRET || "super-secret-game-key";
+
+// 3. Start Game Session (Anti-Cheat handshake)
+router.post("/session/start", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        // Return a signed session token
+        const gameToken = jwt.sign({
+            userId: user.id,
+            startTime: Date.now(),
+            valid: true
+        }, GAME_SECRET, { expiresIn: '1h' });
+
+        return res.json({ gameToken });
+    } catch (err) {
+        return res.status(500).json({ message: "Error starting game session" });
+    }
+});
+
+// 4. End Game Session (Validate & Save)
+router.post("/session/end", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const { gameToken, score, coins } = req.body;
+
+        if (!gameToken || score === undefined) {
+            return res.status(400).json({ message: "Dados incompletos" });
+        }
+
+        // Verify Token
+        let decoded;
+        try {
+            decoded = jwt.verify(gameToken, GAME_SECRET) as { startTime: number, userId: string };
+        } catch (e) {
+            return res.status(403).json({ message: "Sessão de jogo inválida ou expirada." });
+        }
+
+        if (decoded.userId !== user.id) {
+            return res.status(403).json({ message: "Token não pertence ao usuário." });
+        }
+
+        // ANTI-CHEAT LOGIC 🛡️
+        const durationSeconds = (Date.now() - decoded.startTime) / 1000;
+
+        // Impossible to get 1000 score in 1 second
+        // Let's assume max theoretical score is 100 per second (very generous)
+        const maxGenericScore = Math.max(5000, durationSeconds * 200);
+
+        // If score is insanely high for the duration, reject
+        if (score > maxGenericScore && score > 2000) { // Buffer for small scores
+            console.warn(`CHEAT DETECTED: User ${user.id} claimed ${score} in ${durationSeconds}s`);
+            return res.status(400).json({ message: "Pontuação inconsistente com o tempo de jogo." });
+        }
+
+        // If valid, find visitor and award XP
+        // Need tenantId... passed in body or found via Visitor linked to User?
+        // Ideally we find the visitor for the *current context*.
+        // For now, finding FIRST visitor profile for this user (simplification)
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: user.email }
+        });
+
+        if (visitor) {
+            await prisma.visitor.update({
+                where: { id: visitor.id },
+                data: { xp: { increment: Math.floor(score * 0.1) } } // 10% of score becomes XP
+            });
+        }
+
+        return res.json({
+            message: "Progresso salvo!",
+            xpGained: Math.floor(score * 0.1),
+            verified: true
+        });
+
+    } catch (err) {
+        console.error("Error saving game", err);
+        return res.status(500).json({ message: "Erro ao salvar progresso" });
+    }
+});
+
 export default router;

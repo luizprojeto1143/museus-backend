@@ -103,93 +103,102 @@ export class MailService {
     }
 
     private async generateTicketPDF(event: string, guest: string, code: string, eventDate?: string, location?: string): Promise<Buffer> {
-        return new Promise(async (resolve, reject) => {
+        return new Promise((resolve, reject) => {
             try {
                 // Ticket size - similar to a real event ticket
                 const doc = new PDFDocument({
                     size: [600, 280], // Wide ticket format
                     margins: { top: 0, bottom: 0, left: 0, right: 0 }
                 });
-                const chunks: any[] = [];
+                const chunks: Buffer[] = [];
 
                 doc.on('data', chunk => chunks.push(chunk));
                 doc.on('end', () => resolve(Buffer.concat(chunks)));
+                doc.on('error', reject);
 
-                // QR Code Generation
-                const qrData = await QRCode.toDataURL(code, {
-                    width: 120,
-                    margin: 0,
-                    color: { dark: '#1e3a8a', light: '#ffffff' }
-                });
+                // Initialize async generation
+                (async () => {
+                    try {
+                        // QR Code Generation
+                        const qrData = await QRCode.toDataURL(code, {
+                            width: 120,
+                            margin: 0,
+                            color: { dark: '#1e3a8a', light: '#ffffff' }
+                        });
 
-                // === BACKGROUND GRADIENT (Dark Blue to Purple) ===
-                const gradient = doc.linearGradient(0, 0, 600, 280);
-                gradient.stop(0, '#0f172a')   // Slate 900
-                    .stop(0.5, '#1e1b4b')  // Indigo 950
-                    .stop(1, '#312e81');   // Indigo 900
-                doc.rect(0, 0, 600, 280).fill(gradient);
+                        // === BACKGROUND GRADIENT (Dark Blue to Purple) ===
+                        const gradient = doc.linearGradient(0, 0, 600, 280);
+                        gradient.stop(0, '#0f172a')   // Slate 900
+                            .stop(0.5, '#1e1b4b')  // Indigo 950
+                            .stop(1, '#312e81');   // Indigo 900
+                        doc.rect(0, 0, 600, 280).fill(gradient);
 
-                // === DECORATIVE ELEMENTS ===
-                // Top accent line
-                doc.rect(0, 0, 600, 4).fill('#f59e0b'); // Amber accent
+                        // === DECORATIVE ELEMENTS ===
+                        // Top accent line
+                        doc.rect(0, 0, 600, 4).fill('#f59e0b'); // Amber accent
 
-                // Circular pattern (subtle)
-                doc.opacity(0.05);
-                doc.circle(500, 140, 200).fill('#ffffff');
-                doc.circle(-50, 140, 150).fill('#ffffff');
-                doc.opacity(1);
+                        // Circular pattern (subtle)
+                        doc.opacity(0.05);
+                        doc.circle(500, 140, 200).fill('#ffffff');
+                        doc.circle(-50, 140, 150).fill('#ffffff');
+                        doc.opacity(1);
 
-                // === LEFT SECTION (Main Info) ===
-                // Event Title
-                doc.font('Helvetica-Bold').fontSize(28).fillColor('#ffffff');
-                doc.text(event.toUpperCase(), 30, 35, { width: 380 });
+                        // === LEFT SECTION (Main Info) ===
+                        // Event Title
+                        doc.font('Helvetica-Bold').fontSize(28).fillColor('#ffffff');
+                        doc.text(event.toUpperCase(), 30, 35, { width: 380 });
 
-                // Divider line
-                doc.rect(30, 85, 60, 3).fill('#f59e0b');
+                        // Divider line
+                        doc.rect(30, 85, 60, 3).fill('#f59e0b');
 
-                // Guest Name
-                doc.font('Helvetica').fontSize(12).fillColor('#94a3b8');
-                doc.text('PARTICIPANTE', 30, 105);
-                doc.font('Helvetica-Bold').fontSize(18).fillColor('#ffffff');
-                doc.text(guest, 30, 120);
+                        // Guest Name
+                        doc.font('Helvetica').fontSize(12).fillColor('#94a3b8');
+                        doc.text('PARTICIPANTE', 30, 105);
+                        doc.font('Helvetica-Bold').fontSize(18).fillColor('#ffffff');
+                        doc.text(guest, 30, 120);
 
-                // Date & Location (if provided)
-                doc.font('Helvetica').fontSize(11).fillColor('#94a3b8');
-                doc.text('DATA', 30, 160);
-                doc.font('Helvetica-Bold').fontSize(14).fillColor('#e2e8f0');
-                doc.text(eventDate || 'A confirmar', 30, 175);
+                        // Date & Location (if provided)
+                        doc.font('Helvetica').fontSize(11).fillColor('#94a3b8');
+                        doc.text('DATA', 30, 160);
+                        doc.font('Helvetica-Bold').fontSize(14).fillColor('#e2e8f0');
+                        doc.text(eventDate || 'A confirmar', 30, 175);
 
-                doc.font('Helvetica').fontSize(11).fillColor('#94a3b8');
-                doc.text('LOCAL', 30, 205);
-                doc.font('Helvetica-Bold').fontSize(14).fillColor('#e2e8f0');
-                doc.text(location || 'Ver detalhes no app', 30, 220, { width: 200 });
+                        doc.font('Helvetica').fontSize(11).fillColor('#94a3b8');
+                        doc.text('LOCAL', 30, 205);
+                        doc.font('Helvetica-Bold').fontSize(14).fillColor('#e2e8f0');
+                        doc.text(location || 'Ver detalhes no app', 30, 220, { width: 200 });
 
-                // === PERFORATED LINE (Dashed separator) ===
-                doc.strokeColor('#475569').lineWidth(1).dash(5, { space: 5 });
-                doc.moveTo(430, 20).lineTo(430, 260).stroke();
-                doc.undash();
+                        // === PERFORATED LINE (Dashed separator) ===
+                        doc.strokeColor('#475569').lineWidth(1).dash(5, { space: 5 });
+                        doc.moveTo(430, 20).lineTo(430, 260).stroke();
+                        doc.undash();
 
-                // === RIGHT SECTION (QR Code) ===
-                // White background for QR
-                doc.roundedRect(455, 40, 120, 120, 8).fill('#ffffff');
+                        // === RIGHT SECTION (QR Code) ===
+                        // White background for QR
+                        doc.roundedRect(455, 40, 120, 120, 8).fill('#ffffff');
 
-                // QR Code
-                doc.image(qrData, 460, 45, { width: 110 });
+                        // QR Code
+                        doc.image(qrData, 460, 45, { width: 110 });
 
-                // Code text
-                doc.font('Helvetica-Bold').fontSize(14).fillColor('#f59e0b');
-                doc.text(code, 455, 175, { width: 120, align: 'center' });
+                        // Code text
+                        doc.font('Helvetica-Bold').fontSize(14).fillColor('#f59e0b');
+                        doc.text(code, 455, 175, { width: 120, align: 'center' });
 
-                // Instructions
-                doc.font('Helvetica').fontSize(9).fillColor('#64748b');
-                doc.text('Apresente este', 455, 200, { width: 120, align: 'center' });
-                doc.text('QR Code na entrada', 455, 212, { width: 120, align: 'center' });
+                        // Instructions
+                        doc.font('Helvetica').fontSize(9).fillColor('#64748b');
+                        doc.text('Apresente este', 455, 200, { width: 120, align: 'center' });
+                        doc.text('QR Code na entrada', 455, 212, { width: 120, align: 'center' });
 
-                // === BOTTOM BRANDING ===
-                doc.font('Helvetica').fontSize(8).fillColor('#475569');
-                doc.text('Powered by Museus Enterprise', 30, 255);
+                        // === BOTTOM BRANDING ===
+                        doc.font('Helvetica').fontSize(8).fillColor('#475569');
+                        doc.text('Powered by Museus Enterprise', 30, 255);
 
-                doc.end();
+                        doc.end();
+                    } catch (err) {
+                        reject(err);
+                    }
+                })();
+
             } catch (e) {
                 reject(e);
             }
@@ -210,13 +219,14 @@ export async function generateCertificateBuffer(
     signatureUrl?: string | null,
     backgroundUrl?: string | null
 ): Promise<Buffer> {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument({ size: 'A4', layout: 'landscape' });
-            const chunks: any[] = [];
+            const chunks: Buffer[] = [];
 
             doc.on('data', chunk => chunks.push(chunk));
             doc.on('end', () => resolve(Buffer.concat(chunks)));
+            doc.on('error', reject);
 
             // Background
             doc.rect(0, 0, doc.page.width, doc.page.height).fill('#f8f9fa');

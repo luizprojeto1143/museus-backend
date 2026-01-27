@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { createUserSchema, updateUserSchema } from "../schemas/user.schema.js";
 import { Role } from "@prisma/client";
 import bcrypt from "bcrypt";
 
@@ -88,27 +90,9 @@ router.get("/:id", authMiddleware, async (req, res) => {
   }
 });
 
-router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.MASTER]), validate(createUserSchema), async (req, res) => {
   try {
-    const { email, password, name, role, tenantId } = req.body as {
-      email?: string;
-      password?: string;
-      name?: string;
-      role?: string;
-      tenantId?: string;
-    };
-
-    if (!email || !password || !name || !role) {
-      return res.status(400).json({ message: "email, password, name e role são obrigatórios" });
-    }
-
-    if (!["MASTER", "ADMIN", "VISITOR"].includes(role)) {
-      return res.status(400).json({ message: "role deve ser MASTER, ADMIN ou VISITOR" });
-    }
-
-    if (role === "ADMIN" && !tenantId) {
-      return res.status(400).json({ message: "tenantId é obrigatório para role ADMIN" });
-    }
+    const { email, password, name, role, tenantId } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -142,16 +126,10 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
   }
 });
 
-router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUserSchema), async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, name, role, tenantId, password } = req.body as {
-      email?: string;
-      name?: string;
-      role?: string;
-      tenantId?: string;
-      password?: string;
-    };
+    const { email, name, role, tenantId, password } = req.body;
 
     interface UserUpdateData {
       email?: string;

@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import jwt from "jsonwebtoken";
 import { authMiddleware } from "../middleware/auth.js";
 import { z } from "zod";
+import { CertificateEngine } from "../services/certificate-engine.js";
 
 const router = Router();
 
@@ -238,17 +239,20 @@ router.post("/register", async (req, res) => {
 // Rastreia uma visita genérica (não via QR)
 router.post("/track", async (req, res) => {
   try {
-    const { visitorId, workId, trailId, eventId, xpGained } = req.body as {
-      visitorId?: string;
-      workId?: string;
-      trailId?: string;
-      eventId?: string;
-      xpGained?: number;
-    };
+    const trackSchema = z.object({
+      visitorId: z.string().uuid("visitorId inválido"),
+      workId: z.string().optional(),
+      trailId: z.string().optional(),
+      eventId: z.string().optional(),
+      xpGained: z.number().int().nonnegative().max(100, "XP máximo por ação excede limite").optional()
+    });
 
-    if (!visitorId) {
-      return res.status(400).json({ message: "visitorId é obrigatório" });
+    const parsed = trackSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     }
+
+    const { visitorId, workId, trailId, eventId, xpGained } = parsed.data;
 
     const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
     if (!visitor) {
@@ -367,6 +371,22 @@ router.post("/visit-from-qr", async (req, res) => {
     if (qr.type === "TRAIL") trailId = qr.referenceId;
     if (qr.type === "EVENT") eventId = qr.referenceId;
 
+    // ANTI-CHEAT / XP FARMING PREVENTION 🛡️
+    // Check if user visited this item in the last 10 minutes
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const recentVisit = await prisma.visitorVisit.findFirst({
+      where: {
+        visitorId: visitor.id,
+        workId,
+        eventId,
+        createdAt: { gte: tenMinutesAgo }
+      }
+    });
+
+    // If recently visited, track it but give 0 XP
+    const calculatedXp = recentVisit ? 0 : (qr.xpReward || 5);
+    const xpMessage = recentVisit ? "Visita registrada (sem XP extra por frequência)" : undefined;
+
     const operations: any[] = [
       prisma.visitorVisit.create({
         data: {
@@ -375,14 +395,19 @@ router.post("/visit-from-qr", async (req, res) => {
           trailId,
           eventId,
           source: "QR",
-          xpGained: xpToAdd
+          xpGained: calculatedXp
         }
-      }),
-      prisma.visitor.update({
-        where: { id: visitor.id },
-        data: { xp: { increment: xpToAdd } }
       })
     ];
+
+    if (calculatedXp > 0) {
+      operations.push(
+        prisma.visitor.update({
+          where: { id: visitor.id },
+          data: { xp: { increment: calculatedXp } }
+        })
+      );
+    }
 
     // ... (existing logic)
 
@@ -390,7 +415,6 @@ router.post("/visit-from-qr", async (req, res) => {
 
     // Hook: Check XP Threshold & Event/Trails
     try {
-      const { CertificateEngine } = await import('../services/certificate-engine.js');
       const updatedVisitor = await prisma.visitor.findUnique({ where: { id: visitor.id } });
 
       if (updatedVisitor) {
@@ -424,8 +448,8 @@ router.post("/visit-from-qr", async (req, res) => {
 
 
     return res.status(201).json({
-      message: "Visita via QR registrada",
-      xpGained: xpToAdd,
+      message: xpMessage || "Visita via QR registrada",
+      xpGained: calculatedXp,
       type: qr.type,
       referenceId: qr.referenceId,
       visitorName: visitor.name

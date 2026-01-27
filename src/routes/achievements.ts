@@ -116,6 +116,15 @@ router.post("/unlock", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "visitorId e achievementId são obrigatórios" });
     }
 
+    // 1. Buscamos a conquista para saber quanto XP ela vale
+    const achievement = await prisma.achievement.findUnique({
+      where: { id: achievementId }
+    });
+
+    if (!achievement) {
+      return res.status(404).json({ message: "Conquista não encontrada" });
+    }
+
     const existing = await prisma.visitorAchievement.findFirst({
       where: { visitorId, achievementId }
     });
@@ -124,17 +133,26 @@ router.post("/unlock", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Conquista já desbloqueada" });
     }
 
-    const unlocked = await prisma.visitorAchievement.create({
-      data: {
-        visitorId,
-        achievementId
-      },
-      include: {
-        achievement: true
-      }
-    });
+    // 2. Transaction: Cria o registro E incrementa o XP do visitante
+    const [unlocked, updatedVisitor] = await prisma.$transaction([
+      prisma.visitorAchievement.create({
+        data: {
+          visitorId,
+          achievementId
+        },
+        include: {
+          achievement: true
+        }
+      }),
+      prisma.visitor.update({
+        where: { id: visitorId },
+        data: {
+          xp: { increment: achievement.xpReward }
+        }
+      })
+    ]);
 
-    return res.status(201).json(unlocked);
+    return res.status(201).json({ ...unlocked, newTotalXp: updatedVisitor.xp });
   } catch (err) {
     console.error("Erro ao desbloquear conquista", err);
     return res.status(500).json({ message: "Erro ao desbloquear conquista" });
