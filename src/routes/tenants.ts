@@ -54,7 +54,7 @@ router.get("/:id/settings", async (req, res) => {
         featureGuestbook: true,
 
         featureAccessibility: true,
-        featureAccessibility: true,
+
         featureMinigames: true,
         isCityMode: true
       }
@@ -91,7 +91,7 @@ router.get("/:id/features", async (req, res) => {
         featureGuestbook: true,
 
         featureAccessibility: true,
-        featureAccessibility: true,
+
         featureMinigames: true,
         isCityMode: true
       }
