@@ -287,7 +287,8 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       // Feature Flags
       featureWorks, featureTrails, featureEvents, featureGamification,
       featureQRCodes, featureChatAI, featureShop, featureDonations,
-      featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames
+      featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames,
+      isCityMode
     } = req.body;
 
     // Convert maxWorks to number if present
@@ -316,7 +317,8 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         ...(featureReviews !== undefined && { featureReviews: Boolean(featureReviews) }),
         ...(featureGuestbook !== undefined && { featureGuestbook: Boolean(featureGuestbook) }),
         ...(featureAccessibility !== undefined && { featureAccessibility: Boolean(featureAccessibility) }),
-        ...(featureMinigames !== undefined && { featureMinigames: Boolean(featureMinigames) })
+        ...(featureMinigames !== undefined && { featureMinigames: Boolean(featureMinigames) }),
+        ...(isCityMode !== undefined && { isCityMode: Boolean(isCityMode) })
       }
     });
 
