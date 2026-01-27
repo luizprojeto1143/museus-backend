@@ -626,7 +626,10 @@ model Favorite {
   
   createdAt DateTime @default(now())
   
+  createdAt DateTime @default(now())
+  
   @@unique([visitorId, workId])
+  @@index([workId]) // D-001 Reverse lookup
 }
 
 // Reviews - Star ratings and comments
@@ -652,6 +655,8 @@ model Review {
   
   @@unique([visitorId, workId])
   @@unique([visitorId, eventId])
+  @@index([workId]) // D-002 Sorting reviews by work
+  @@index([eventId])
 }
 
 // Audit Log - Track admin actions

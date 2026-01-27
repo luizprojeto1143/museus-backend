@@ -20,7 +20,7 @@ export class MailService {
                 }
             });
         } else {
-            console.log("Using Ethereal Mail Mock");
+            console.info("Using Ethereal Mail Mock");
             this.transporter = nodemailer.createTransport({
                 host: "smtp.ethereal.email",
                 port: 587,
@@ -96,7 +96,7 @@ export class MailService {
                 ]
             });
 
-            console.log("Message sent: %s", info.messageId);
+            // console.info("Message sent: %s", info.messageId);
         } catch (error) {
             console.error("Email error (non-blocking):", error);
         }

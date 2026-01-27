@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { limiter } from '../middleware/rateLimiter.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -15,7 +16,7 @@ const donationSchema = z.object({
 });
 
 // POST /donations - Create a donation (placeholder for payment integration)
-router.post('/', async (req, res) => {
+router.post('/', limiter, async (req, res) => {
     try {
         const data = donationSchema.parse(req.body);
 
