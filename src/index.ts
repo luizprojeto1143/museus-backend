@@ -30,6 +30,7 @@ import cluesRoutes from "./routes/clues.js";
 import certificatesRoutes from "./routes/certificates.js";
 import certificateTemplatesRoutes from "./routes/certificate-templates.js";
 import certificateRulesRoutes from "./routes/certificate-rules.js";
+import seederRoutes from "./routes/master/seeder.js";
 import { ticketsRouter } from "./routes/tickets.js";
 import { registrationsRouter } from "./routes/registrations.js";
 import favoritesRoutes from "./routes/favorites.js";

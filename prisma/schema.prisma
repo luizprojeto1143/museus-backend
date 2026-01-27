@@ -428,6 +428,8 @@ model Visitor {
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  isFake   Boolean @default(false)
+
   visits       VisitorVisit[]
   achievements VisitorAchievement[]
   stamps       PassportStamp[]
