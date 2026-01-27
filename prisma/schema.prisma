@@ -628,7 +628,7 @@ model Favorite {
   
   createdAt DateTime @default(now())
   
-  createdAt DateTime @default(now())
+
   
   @@unique([visitorId, workId])
   @@index([workId]) // D-001 Reverse lookup

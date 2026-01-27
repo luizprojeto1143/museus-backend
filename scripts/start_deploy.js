@@ -51,9 +51,9 @@ console.log("🚀 Iniciando Script de Deploy (v4 - Optimized for Render)...");
 function runWithRetry(command, retries = 5, delayMs = 5000) {
     for (let i = 0; i < retries; i++) {
         try {
-            console.log(`1️⃣ Executando Migrações (Tentativa ${i + 1}/${retries})...`);
+            console.log(`1️⃣ Executando DB Push (Tentativa ${i + 1}/${retries})...`);
             execSync(command, { stdio: 'inherit', env: process.env });
-            console.log("✅ Migrações concluídas com sucesso.");
+            console.log("✅ DB Push concluído com sucesso.");
             return true;
         } catch (error) {
             console.error(`❌ Falha na tentativa ${i + 1}: ${error.message}`);
@@ -69,7 +69,7 @@ function runWithRetry(command, retries = 5, delayMs = 5000) {
     }
 }
 
-if (!runWithRetry('npx prisma migrate deploy')) {
+if (!runWithRetry('npx prisma db push --accept-data-loss')) {
     process.exit(1);
 }
 
