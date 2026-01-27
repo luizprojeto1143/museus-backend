@@ -221,7 +221,7 @@ router.post("/chat/stream", authMiddleware, async (req, res) => {
 });
 
 // Rota de teste para o Admin (sem salvar persona)
-router.post("/test", async (req, res) => {
+router.post("/test", authMiddleware, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });

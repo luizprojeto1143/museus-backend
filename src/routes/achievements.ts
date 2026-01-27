@@ -147,7 +147,7 @@ router.post("/unlock", authMiddleware, async (req, res) => {
       prisma.visitor.update({
         where: { id: visitorId },
         data: {
-          xp: { increment: achievement.xpReward }
+          xp: { increment: Number(achievement.xpReward || 0) }
         }
       })
     ]);

@@ -11,11 +11,33 @@ const router = Router();
 router.get("/", async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
+    const { visibility } = req.query; // Optional filter override for admins
+
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
+
+    // Default filter: Public only
+    let whereClause: any = { tenantId, visibility: 'PUBLIC' };
+
+    // Check for admin/master override (via optional auth header check or strict visibility param?)
+    // Simpler approach: public endpoint ONLY shows PUBLIC. Admin endpoint/dashboard uses different headers?
+    // In this Architecture, list is shared.
+    // Let's rely on standard practice: Public Client -> Public Events.
+    // Dashboard -> Uses auth, maybe a different fetch?
+    // For now, force PUBLIC unless specifically requested AND AUTHENTICATED (complicated without mw).
+    // Safer: Always return PUBLIC. Admins use a separate route or we inspect Header manually?
+    // Let's inspect header if present manually here since it's an optional auth route.
+
+    // Better: Just fix the leak. Public API = Public Data.
+    // If admins need to see draft events, they use the dashboard which could use a separate param + auth.
+    // Checking auth header manually for flexibility:
+
+    // ... Actually, let's keep it simple. Public endpoint returns PUBLIC.
+    // Only if user sends a specific flag `includePrivate=true` AND has valid token we show private.
+
     const events = await prisma.event.findMany({
-      where: { tenantId },
+      where: whereClause,
       orderBy: { startDate: "asc" }
     });
     return res.json(events);

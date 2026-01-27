@@ -42,7 +42,10 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
         const bookingDate = new Date(date);
 
         // 1. Validate Past Dates
-        if (bookingDate < new Date()) {
+        const now = new Date();
+        // Allow bookings for today if time is future, or future days.
+        // Simple check: booking timestamp must be > now
+        if (bookingDate < now) {
             return res.status(400).json({ message: "Não é possível agendar datas no passado." });
         }
 

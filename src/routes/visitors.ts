@@ -1,14 +1,14 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import jwt from "jsonwebtoken";
-import { authMiddleware } from "../middleware/auth.js";
+import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { z } from "zod";
 import { CertificateEngine } from "../services/certificate-engine.js";
 
 const router = Router();
 
-// Lista visitantes de um tenant (com paginação)
-router.get("/", async (req, res) => {
+// Lista visitantes de um tenant (com paginação) - Protegido (Admin/Master only)
+router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { tenantId } = req.query as { tenantId?: string };
     const page = parseInt(req.query.page as string) || 1;
