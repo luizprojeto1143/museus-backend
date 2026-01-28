@@ -195,7 +195,7 @@ async function main() {
             room: "Sala 3 - Arte Moderna",
             floor: "2º Andar",
             description: "Resposta de Picasso ao bombardeio da cidade basca de Guernica durante a Guerra Civil Espanhola. A obra em preto, branco e cinza é um poderoso símbolo anti-guerra.",
-            imageUrl: "https://ik.imagekit.io/moma/paintings/pablo-picasso-guernica-1937.jpg" // Tentative better link or use placeholder if needed. Trying direct reputable CDN or Wiki mirror.
+            imageUrl: "https://upload.wikimedia.org/wikipedia/commons/6/6f/Pablo_Picasso%27s_Guernica.jpg"
         },
         {
             title: "A Persistência da Memória",
@@ -205,7 +205,7 @@ async function main() {
             room: "Sala 3 - Arte Moderna",
             floor: "2º Andar",
             description: "Uma das obras surrealistas mais reconhecidas, apresenta relógios derretendo em uma paisagem onírica. Dalí explora a natureza subjetiva do tempo e a fragilidade da memória.",
-            imageUrl: "https://uploads2.wikiart.org/images/salvador-dali/the-persistence-of-memory-1931.jpg!Large.jpg"
+            imageUrl: "https://upload.wikimedia.org/wikipedia/en/d/dd/The_Persistence_of_Memory.jpg"
         },
         {
             title: "Les Demoiselles d'Avignon",
@@ -215,7 +215,7 @@ async function main() {
             room: "Sala 3 - Arte Moderna",
             floor: "2º Andar",
             description: "Considerada uma das obras mais influentes do século XX, marca a transição para o Cubismo. As cinco figuras femininas são representadas com formas angulares e fragmentadas.",
-            imageUrl: "https://uploads7.wikiart.org/images/pablo-picasso/les-demoiselles-d-avignon-1907.jpg!Large.jpg"
+            imageUrl: "https://upload.wikimedia.org/wikipedia/en/4/4c/Les_Demoiselles_d%27Avignon.jpg"
         },
 
         // Escultura
