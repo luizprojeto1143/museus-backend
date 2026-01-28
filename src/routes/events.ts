@@ -101,7 +101,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       meetingLink, platform,
       producerName, producerDescription, producerLogoUrl, coverImageUrl,
       // Sympla Killer Features 🚀
-      customFormSchema, galleryUrls
+      customFormSchema, galleryUrls,
+      certificateRequiresSurvey
     } = req.body;
 
     const event = await prisma.event.create({
@@ -133,10 +134,12 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         producerDescription,
         producerLogoUrl,
         coverImageUrl,
-
         // Sympla Killer Features
         customFormSchema,
         galleryUrls: galleryUrls ? JSON.stringify(galleryUrls) : null, // Ensure string if SQLite, or use proper JSON handling
+
+        surveyQuestions: undefined, // Ignored in creation here usually
+        certificateRequiresSurvey: Boolean(certificateRequiresSurvey),
 
         tenant: { connect: { id: tenantId } }
       }
@@ -160,7 +163,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
       meetingLink, platform,
       coverImageUrl,
       // Sympla Killer Features
-      customFormSchema, galleryUrls
+      customFormSchema, galleryUrls,
+      // New
+      certificateRequiresSurvey
     } = req.body;
 
     const event = await prisma.event.update({
@@ -176,6 +181,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         format, visibility, isOnline,
         zipCode, address, number, complement, neighborhood, city, state,
         meetingLink, platform,
+
+        certificateRequiresSurvey: certificateRequiresSurvey !== undefined ? Boolean(certificateRequiresSurvey) : undefined,
 
         coverImageUrl,
         // Sympla Killer Features
@@ -358,6 +365,24 @@ router.get("/:id/certificate/download", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Presença não confirmada." });
     }
 
+    // [INTEGRATION FIX] Check if Survey is required
+    if (event.certificateRequiresSurvey) {
+      const answersStart = await prisma.surveyResponse.count({
+        where: {
+          visitorId: visitor.id,
+          question: { eventId: id }
+        }
+      });
+      // Assuming if they answered at least one question, it's valid. 
+      // Strictly we should check if they answered all *required* questions, but count > 0 is a good MVP check.
+      if (answersStart === 0) {
+        return res.status(403).json({
+          message: "É necessário responder a pesquisa de satisfação para baixar o certificado.",
+          code: "SURVEY_REQUIRED"
+        });
+      }
+    }
+
     const pdfBuffer = await generateCertificateBuffer(
       visitor.name || "Visitante",
       event.title,
@@ -413,6 +438,22 @@ router.post("/:id/certificate", authMiddleware, async (req, res) => {
 
     if (!attendance || attendance.status !== "PRESENT") {
       return res.status(400).json({ message: "Visitante não participou do evento ou não fez check-in." });
+    }
+
+    // [INTEGRATION FIX] Check if Survey is required
+    if (event.certificateRequiresSurvey) {
+      const answersStart = await prisma.surveyResponse.count({
+        where: {
+          visitorId: visitorId,
+          question: { eventId: id }
+        }
+      });
+      if (answersStart === 0) {
+        return res.status(403).json({
+          message: "O visitante precisa responder a pesquisa de satisfação antes de receber o certificado.",
+          code: "SURVEY_REQUIRED"
+        });
+      }
     }
 
     const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });

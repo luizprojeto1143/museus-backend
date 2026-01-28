@@ -342,6 +342,7 @@ model Event {
   registrations Registration[]
   reviews     Review[]
   surveyQuestions SurveyQuestion[]
+  certificateRequiresSurvey Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

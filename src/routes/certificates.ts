@@ -54,6 +54,26 @@ router.post('/generate', authMiddleware, async (req, res) => {
                 });
             }
             metadata = { title: event.title, date: event.startDate };
+
+            // Check if Survey is required
+            if (event.certificateRequiresSurvey) {
+                const hasResponse = await prisma.surveyResponse.findFirst({
+                    where: {
+                        visitorId: visitorId,
+                        question: {
+                            eventId: relatedId
+                        }
+                    }
+                });
+
+                if (!hasResponse) {
+                    return res.status(403).json({
+                        message: "É necessário responder à pesquisa de satisfação para emitir o certificado.",
+                        requiresSurvey: true,
+                        eventId: relatedId
+                    });
+                }
+            }
         } else if (type === 'TRAIL') {
             const trail = await prisma.trail.findUnique({ where: { id: relatedId } });
             if (trail) metadata = { title: trail.title };
