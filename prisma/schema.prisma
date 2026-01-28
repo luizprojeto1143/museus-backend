@@ -341,11 +341,54 @@ model Event {
   tickets     Ticket[]
   registrations Registration[]
   reviews     Review[]
+  surveyQuestions SurveyQuestion[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId, startDate])
+}
+
+// ========== SURVEY / SATISFACTION POLL ==========
+
+enum SurveyQuestionType {
+  STARS     // 1-5 stars rating
+  TEXT      // Free text answer
+  CHOICE    // Multiple choice (radio)
+  NPS       // Net Promoter Score (0-10)
+}
+
+model SurveyQuestion {
+  id        String   @id @default(uuid())
+  eventId   String
+  question  String
+  type      SurveyQuestionType @default(STARS)
+  options   Json?    // Array of strings for CHOICE type
+  required  Boolean  @default(true)
+  order     Int      @default(0)
+  
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  responses SurveyResponse[]
+  
+  createdAt DateTime @default(now())
+  
+  @@index([eventId])
+}
+
+model SurveyResponse {
+  id         String   @id @default(uuid())
+  questionId String
+  visitorId  String?
+  guestEmail String?
+  answer     String   // Text, number (1-5 or 0-10), or selected option
+  
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  createdAt  DateTime @default(now())
+  
+  @@unique([questionId, visitorId])
+  @@unique([questionId, guestEmail])
+  @@index([questionId])
 }
 
 enum TicketType {

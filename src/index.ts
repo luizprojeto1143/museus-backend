@@ -46,6 +46,7 @@ import floorPlansRoutes from "./routes/floorPlans.js";
 
 import navigationRoutes from "./routes/navigation.js";
 import accessibilityRoutes from "./routes/accessibility.js";
+import surveysRoutes from "./routes/surveys.js";
 
 // ...
 
@@ -130,6 +131,7 @@ app.use("/floor-plans", floorPlansRoutes);
 
 app.use("/navigation", navigationRoutes);
 app.use("/accessibility", accessibilityRoutes);
+app.use(surveysRoutes); // Uses /events/:eventId/survey pattern
 import publicCertificateRoutes from "./routes/public/certificates.js";
 
 app.use("/public/certificates", publicCertificateRoutes);

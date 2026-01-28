@@ -511,4 +511,189 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
   }
 });
 
+// ========== EVENT REPORT (Admin) ==========
+router.get("/:id/report", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Get Event with related data
+    const event = await prisma.event.findUnique({
+      where: { id },
+      include: {
+        tenant: { select: { name: true, slug: true } },
+        category: { select: { name: true } },
+        tickets: true,
+        registrations: {
+          include: {
+            ticket: { select: { name: true, price: true } },
+            visitor: { select: { name: true, email: true, photoUrl: true } }
+          },
+          orderBy: { createdAt: "desc" }
+        },
+        surveyQuestions: {
+          include: {
+            responses: true
+          },
+          orderBy: { order: "asc" }
+        }
+      }
+    });
+
+    if (!event) {
+      return res.status(404).json({ error: "Evento não encontrado" });
+    }
+
+    // 2. Calculate Stats
+    const totalRegistrations = event.registrations.length;
+    const totalCheckedIn = event.registrations.filter(r => r.status === "CHECKED_IN").length;
+    const attendanceRate = totalRegistrations > 0
+      ? Math.round((totalCheckedIn / totalRegistrations) * 100)
+      : 0;
+
+    // Revenue
+    const totalRevenue = event.registrations.reduce(
+      (sum, r) => sum + Number(r.pricePaid || 0),
+      0
+    );
+
+    // Tickets breakdown
+    const ticketsBreakdown = event.tickets.map(t => ({
+      id: t.id,
+      name: t.name,
+      quantity: t.quantity,
+      sold: t.sold,
+      available: t.quantity - t.sold,
+      price: Number(t.price),
+      revenue: t.sold * Number(t.price)
+    }));
+
+    // 3. Survey Results
+    const surveyResults = event.surveyQuestions.map(q => {
+      const responses = q.responses;
+      const totalResponses = responses.length;
+
+      let aggregation: Record<string, unknown> = { count: totalResponses };
+
+      if (q.type === "STARS" || q.type === "NPS") {
+        const numericAnswers = responses
+          .map(r => parseFloat(r.answer))
+          .filter(n => !isNaN(n));
+
+        const average = numericAnswers.length > 0
+          ? numericAnswers.reduce((a, b) => a + b, 0) / numericAnswers.length
+          : 0;
+
+        const distribution: Record<string, number> = {};
+        numericAnswers.forEach(n => {
+          const key = String(Math.round(n));
+          distribution[key] = (distribution[key] || 0) + 1;
+        });
+
+        aggregation = {
+          average: Math.round(average * 10) / 10,
+          distribution,
+          count: numericAnswers.length
+        };
+
+        if (q.type === "NPS") {
+          const promoters = numericAnswers.filter(n => n >= 9).length;
+          const detractors = numericAnswers.filter(n => n <= 6).length;
+          const npsScore = totalResponses > 0
+            ? Math.round(((promoters - detractors) / totalResponses) * 100)
+            : 0;
+          (aggregation as any).npsScore = npsScore;
+          (aggregation as any).promoters = promoters;
+          (aggregation as any).detractors = detractors;
+          (aggregation as any).passives = numericAnswers.length - promoters - detractors;
+        }
+      } else if (q.type === "CHOICE") {
+        const distribution: Record<string, number> = {};
+        responses.forEach(r => {
+          distribution[r.answer] = (distribution[r.answer] || 0) + 1;
+        });
+        aggregation = { distribution, count: totalResponses };
+      } else {
+        aggregation = {
+          recentAnswers: responses.slice(-5).map(r => r.answer),
+          count: totalResponses
+        };
+      }
+
+      return {
+        id: q.id,
+        question: q.question,
+        type: q.type,
+        options: q.options,
+        totalResponses,
+        aggregation
+      };
+    });
+
+    // Survey overall satisfaction
+    const starsQuestions = event.surveyQuestions.filter(q => q.type === "STARS");
+    let overallSatisfaction = 0;
+    if (starsQuestions.length > 0) {
+      const allStarsResponses = starsQuestions.flatMap(q =>
+        q.responses.map(r => parseFloat(r.answer)).filter(n => !isNaN(n))
+      );
+      if (allStarsResponses.length > 0) {
+        overallSatisfaction = Math.round(
+          (allStarsResponses.reduce((a, b) => a + b, 0) / allStarsResponses.length) * 10
+        ) / 10;
+      }
+    }
+
+    // 4. Participants list
+    const participants = event.registrations.map(r => ({
+      id: r.id,
+      name: r.guestName || r.visitor?.name || "Anônimo",
+      email: r.guestEmail || r.visitor?.email || "",
+      photoUrl: r.visitor?.photoUrl || null,
+      ticketName: r.ticket.name,
+      status: r.status,
+      checkInDate: r.checkInDate,
+      registeredAt: r.createdAt
+    }));
+
+    // 5. Build Report
+    const report = {
+      event: {
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        location: event.location,
+        format: event.format,
+        category: event.category?.name || null,
+        tenant: event.tenant.name
+      },
+      stats: {
+        totalRegistrations,
+        totalCheckedIn,
+        attendanceRate,
+        totalRevenue,
+        ticketsBreakdown
+      },
+      survey: {
+        questionsCount: event.surveyQuestions.length,
+        totalResponses: surveyResults.reduce((sum, q) => sum + q.totalResponses, 0),
+        uniqueRespondents: new Set(
+          event.surveyQuestions.flatMap(q =>
+            q.responses.map(r => r.visitorId || r.guestEmail)
+          )
+        ).size,
+        overallSatisfaction,
+        questions: surveyResults
+      },
+      participants
+    };
+
+    res.json(report);
+  } catch (error) {
+    console.error("Error generating report:", error);
+    res.status(500).json({ error: "Erro ao gerar relatório" });
+  }
+});
+
 export default router;
