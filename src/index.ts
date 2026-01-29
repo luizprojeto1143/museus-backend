@@ -47,6 +47,7 @@ import floorPlansRoutes from "./routes/floorPlans.js";
 import navigationRoutes from "./routes/navigation.js";
 import accessibilityRoutes from "./routes/accessibility.js";
 import surveysRoutes from "./routes/surveys.js";
+import notificationsRoutes from "./routes/notifications.js";
 
 // ...
 
@@ -138,6 +139,7 @@ app.use("/public/certificates", publicCertificateRoutes);
 
 import opsRoutes from "./routes/ops.js";
 app.use("/ops", opsRoutes);
+app.use("/notifications", notificationsRoutes);
 
 const PORT = process.env.PORT || 3000;
 

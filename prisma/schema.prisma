@@ -150,6 +150,7 @@ model User {
   lastLogin DateTime?
 
   bookings  Booking[]
+  deviceTokens DeviceToken[]
 }
 
 // File - Gerencia uploads no sistema
@@ -500,6 +501,7 @@ model Visitor {
   orders       Order[]
   challengeCompletions DailyChallengeCompletion[]
   huntParticipations   ScavengerHuntParticipation[]
+  deviceTokens         DeviceToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1007,4 +1009,30 @@ model AccessibilityRequest {
 
   @@index([tenantId])
   @@index([status])
+}
+
+// Push Notification Device Tokens
+model DeviceToken {
+  id        String   @id @default(uuid())
+  token     String   @unique // FCM token
+  platform  String   @default("web") // web, android, ios
+  userAgent String?
+  
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  visitorId String?
+  visitor   Visitor? @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  tenantId  String?
+  
+  active    Boolean  @default(true)
+  lastUsed  DateTime @default(now())
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([visitorId])
+  @@index([active])
 }
