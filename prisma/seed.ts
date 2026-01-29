@@ -289,7 +289,7 @@ async function main() {
             room: "Sala 5 - Arte Brasileira",
             floor: "2º Andar",
             description: "Considerada precursora do Movimento Antropofágico, a obra representa a herança africana na formação da identidade brasileira. A figura monumental e as formas simplificadas são características marcantes.",
-            imageUrl: "https://cdn.ebiografia.com/TA/rs/tarsila_do_amaral_a_negra.jpg"
+            imageUrl: "https://upload.wikimedia.org/wikipedia/en/8/8a/A_Negra.jpg"
         }
     ];
 
