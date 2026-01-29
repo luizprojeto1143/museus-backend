@@ -89,9 +89,21 @@ router.get("/me/summary", async (req, res) => {
     const visitor = await prisma.visitor.findFirst({
       where: { email, tenantId },
       include: {
-        visits: { orderBy: { createdAt: "desc" }, take: 20, include: { work: true } },
+        visits: {
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          include: {
+            work: {
+              select: {
+                id: true,
+                title: true,
+                imageUrl: true
+              }
+            }
+          }
+        },
         achievements: { include: { achievement: true } },
-        stamps: { include: { work: true } }
+        stamps: { include: { work: { select: { id: true, title: true, imageUrl: true } } } }
       }
     });
 
@@ -100,6 +112,7 @@ router.get("/me/summary", async (req, res) => {
       return res.json({
         xp: 0,
         stamps: [],
+        visits: [],
         achievements: [],
         visitsCount: 0,
         level: 1,
@@ -107,16 +120,34 @@ router.get("/me/summary", async (req, res) => {
       });
     }
 
+    // Format stamps with work info
     const stamps = visitor.stamps.map(s => ({
+      workId: s.work?.id,
       workTitle: s.work?.title || "Obra",
+      workImageUrl: s.work?.imageUrl,
       date: s.stampedAt
     }));
+
+    // Format visits with work info
+    const visits = visitor.visits
+      .filter(v => v.work)
+      .map(v => ({
+        id: v.id,
+        work: v.work ? {
+          id: v.work.id,
+          title: v.work.title,
+          imageUrl: v.work.imageUrl
+        } : null,
+        createdAt: v.createdAt,
+        xpGained: v.xpGained
+      }));
 
     return res.json({
       id: visitor.id,
       name: visitor.name,
       xp: visitor.xp,
       stamps,
+      visits,
       achievements: visitor.achievements.map((va) => ({
         id: va.achievement.id,
         code: va.achievement.code,
@@ -126,7 +157,7 @@ router.get("/me/summary", async (req, res) => {
         unlockedAt: va.unlockedAt
       })),
       visitsCount: visitor.visits.length,
-      level: Math.floor(visitor.xp / 100) + 1, // Exemplo simples
+      level: Math.floor(visitor.xp / 100) + 1,
       nextLevelXp: (Math.floor(visitor.xp / 100) + 1) * 100
     });
   } catch (err) {
