@@ -56,7 +56,10 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       description: z.string().optional(),
       duration: z.number().int().positive().optional(),
       workIds: z.array(z.string()).optional().default([]),
-      categoryId: z.string().optional().nullable()
+      categoryId: z.string().optional().nullable(),
+      imageUrl: z.string().optional().nullable(),
+      audioUrl: z.string().optional().nullable(),
+      videoUrl: z.string().optional().nullable()
     });
 
     const data = trailSchema.parse(req.body);
@@ -68,6 +71,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         duration: data.duration,
         workIds: data.workIds,
         categoryId: data.categoryId && data.categoryId !== "" ? data.categoryId : null,
+        imageUrl: data.imageUrl,
+        audioUrl: data.audioUrl,
+        videoUrl: data.videoUrl,
         tenantId
       }
     });
@@ -84,11 +90,14 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, duration, workIds } = req.body as {
+    const { title, description, duration, workIds, imageUrl, audioUrl, videoUrl } = req.body as {
       title: string;
       description?: string;
       duration?: number;
       workIds?: string[];
+      imageUrl?: string;
+      audioUrl?: string;
+      videoUrl?: string;
     };
     const trail = await prisma.trail.update({
       where: { id },
@@ -96,7 +105,10 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         title,
         description,
         duration,
-        workIds: workIds || []
+        workIds: workIds || [],
+        imageUrl,
+        audioUrl,
+        videoUrl
       }
     });
     return res.json(trail);

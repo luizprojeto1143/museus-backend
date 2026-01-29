@@ -40,6 +40,9 @@ router.get("/:id/settings", async (req, res) => {
         mapImageUrl: true,
         latitude: true,
         longitude: true,
+        // Welcome Media
+        welcomeAudioUrl: true,
+        welcomeVideoUrl: true,
         // Feature Flags
         featureWorks: true,
         featureTrails: true,
@@ -244,7 +247,10 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       secondaryColor: z.string().optional(),
       theme: z.string().optional(),
       historicalFont: z.boolean().or(z.string().transform(v => v === 'true')).optional(),
-      name: z.string().optional()
+      name: z.string().optional(),
+      // Welcome Audio/Video
+      welcomeAudioUrl: z.string().optional().nullable(),
+      welcomeVideoUrl: z.string().optional().nullable()
     });
 
     const data = settingsSchema.parse(req.body);
@@ -271,7 +277,9 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         secondaryColor: data.secondaryColor,
         theme: data.theme,
         historicalFont: data.historicalFont,
-        name: data.name
+        name: data.name,
+        welcomeAudioUrl: data.welcomeAudioUrl,
+        welcomeVideoUrl: data.welcomeVideoUrl
       }
     });
 

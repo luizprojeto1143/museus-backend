@@ -76,6 +76,10 @@ model Tenant {
   latitude      Float?
   longitude     Float?
   
+  // Welcome Audio/Video (Boas-vindas)
+  welcomeAudioUrl String? // Áudio de boas-vindas ao museu
+  welcomeVideoUrl String? // Vídeo institucional de boas-vindas
+  
   // Theme
   primaryColor   String   @default("#d4af37")
   secondaryColor String   @default("#cd7f32")
@@ -239,6 +243,11 @@ model Trail {
   duration    Int?     // minutos
   workIds     String[] // lista de IDs de obras na ordem
   
+  // Media
+  imageUrl    String?
+  audioUrl    String?  // Áudio-guia de introdução da trilha
+  videoUrl    String?  // Vídeo de apresentação da trilha
+  
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
 
@@ -324,6 +333,10 @@ model Event {
   certificateBackgroundUrl String?
   certificateText String?
   minMinutesForCertificate Int?
+  
+  // Media
+  audioUrl    String?  // Áudio-guia de introdução do evento
+  videoUrl    String?  // Vídeo promocional do evento
 
   // Sympla Killer Features 🚀
   customFormSchema Json?   // Array of { id, label, type, required, options }

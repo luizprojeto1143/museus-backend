@@ -102,7 +102,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       producerName, producerDescription, producerLogoUrl, coverImageUrl,
       // Sympla Killer Features 🚀
       customFormSchema, galleryUrls,
-      certificateRequiresSurvey
+      certificateRequiresSurvey,
+      // Media - Audio Guide
+      audioUrl, videoUrl
     } = req.body;
 
     // Validate categoryId if provided
@@ -149,6 +151,10 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         surveyQuestions: undefined, // Ignored in creation here usually
         certificateRequiresSurvey: Boolean(certificateRequiresSurvey),
 
+        // Media - Audio Guide
+        audioUrl,
+        videoUrl,
+
         tenant: { connect: { id: tenantId } }
       }
     });
@@ -173,7 +179,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
       // Sympla Killer Features
       customFormSchema, galleryUrls,
       // New
-      certificateRequiresSurvey
+      certificateRequiresSurvey,
+      // Media - Audio Guide
+      audioUrl, videoUrl
     } = req.body;
 
     const event = await prisma.event.update({
@@ -195,7 +203,11 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         coverImageUrl,
         // Sympla Killer Features
         customFormSchema,
-        galleryUrls: galleryUrls ? JSON.stringify(galleryUrls) : undefined
+        galleryUrls: galleryUrls ? JSON.stringify(galleryUrls) : undefined,
+
+        // Media - Audio Guide
+        audioUrl,
+        videoUrl
       }
     });
 
