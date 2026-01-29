@@ -126,38 +126,33 @@ router.post('/checkin', authMiddleware, requireRole(['ADMIN', 'MASTER']), async 
             return res.status(400).json({ error: 'Participante já fez check-in', registration });
         }
 
-        const updated = await prisma.registration.update({
-            where: { id: registration.id },
-            data: {
-                status: 'CHECKED_IN',
-                checkInDate: new Date()
+        const XP_AMOUNT = 50;
+
+        // Use transaction to ensure check-in + XP update happen atomically
+        const result = await prisma.$transaction(async (tx) => {
+            const updated = await tx.registration.update({
+                where: { id: registration.id },
+                data: {
+                    status: 'CHECKED_IN',
+                    checkInDate: new Date()
+                }
+            });
+
+            let xpAwarded = 0;
+            if (registration.visitorId) {
+                await tx.visitor.update({
+                    where: { id: registration.visitorId },
+                    data: { xp: { increment: XP_AMOUNT } }
+                });
+                xpAwarded = XP_AMOUNT;
             }
+
+            return { updated, xpAwarded };
         });
 
-        // Gamification Hook: Award XP
-        if (registration.visitorId) {
-            try {
-                // Award 50 XP for attending an event
-                // Check if we have a service or direct DB call. Assuming direct for now or logic similar to trails
-                const XP_AMOUNT = 50;
-
-                // Update visitor XP
-                await prisma.visitor.update({
-                    where: { id: registration.visitorId },
-                    data: {
-                        xp: { increment: XP_AMOUNT }
-                    }
-                });
-
-                // Create Achievement/History Log if needed
-                // await prisma.achievementLog.create(...)
-            } catch (e) {
-                console.error("Failed to award XP", e);
-            }
-        }
-
-        res.json({ success: true, registration: updated, xpAwarded: 50 });
+        res.json({ success: true, registration: result.updated, xpAwarded: result.xpAwarded });
     } catch (error) {
+        console.error("Check-in error:", error);
         res.status(500).json({ error: 'Check-in failed' });
     }
 });

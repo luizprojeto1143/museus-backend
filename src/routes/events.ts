@@ -105,6 +105,14 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
       certificateRequiresSurvey
     } = req.body;
 
+    // Validate categoryId if provided
+    if (categoryId && categoryId !== "") {
+      const categoryExists = await prisma.category.findUnique({ where: { id: categoryId } });
+      if (!categoryExists) {
+        return res.status(400).json({ message: "Categoria não encontrada. Selecione uma categoria válida." });
+      }
+    }
+
     const event = await prisma.event.create({
       data: {
         title,
