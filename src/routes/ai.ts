@@ -407,9 +407,10 @@ router.post("/tts", authMiddleware, async (req, res) => {
 
     return res.send(buffer);
 
-  } catch (err) {
-    console.error("Erro IA TTS", err);
-    return res.status(500).json({ message: "Erro ao gerar áudio" });
+  } catch (err: any) {
+    console.error("Erro IA TTS", err?.message || err);
+    const errorMessage = err?.message || "Erro desconhecido ao gerar áudio";
+    return res.status(500).json({ message: errorMessage });
   }
 });
 
