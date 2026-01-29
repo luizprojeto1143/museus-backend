@@ -27,8 +27,6 @@ let modifiedUrl = DB_URL;
 
 // RENDER EXTERNAL URL FIX:
 // Se a URL for externa (.render.com) ela EXIGE SSL.
-// O log mostrou que a URL atual não tem params ("Params: "), causando erro P1017 (Server closed connection) pois tentamos plaintext.
-// Vamos garantir que se for externa, tenha sslmode=no-verify.
 const isExternalRender = urlObj.hostname.includes('.render.com');
 const hasSSLParam = urlObj.searchParams.has('sslmode');
 
@@ -45,15 +43,15 @@ console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS || 'default'}`);
 // Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
 
-console.log("🚀 Iniciando Script de Deploy (v4 - Optimized for Render)...");
+console.log("🚀 Iniciando Script de Deploy (v5 - Safe Production Mode)...");
 
 // Função para tentar executar comando com retries
 function runWithRetry(command, retries = 5, delayMs = 5000) {
     for (let i = 0; i < retries; i++) {
         try {
-            console.log(`1️⃣ Executando DB Push (Tentativa ${i + 1}/${retries})...`);
+            console.log(`1️⃣ Executando Migrate Deploy (Tentativa ${i + 1}/${retries})...`);
             execSync(command, { stdio: 'inherit', env: process.env });
-            console.log("✅ DB Push concluído com sucesso.");
+            console.log("✅ Migrate Deploy concluído com sucesso.");
             return true;
         } catch (error) {
             console.error(`❌ Falha na tentativa ${i + 1}: ${error.message}`);
@@ -69,19 +67,24 @@ function runWithRetry(command, retries = 5, delayMs = 5000) {
     }
 }
 
-if (!runWithRetry('npx prisma db push --accept-data-loss')) {
-    process.exit(1);
+// CORREÇÃO CRÍTICA: Usar migrate deploy em vez de db push --accept-data-loss
+// migrate deploy NÃO deleta dados, apenas aplica novas migrations
+if (!runWithRetry('npx prisma migrate deploy')) {
+    // Se migrate deploy falhar (ex: banco novo sem migrations), tenta db push SEM --accept-data-loss
+    console.log("⚠️ Migrate deploy falhou. Tentando db push sem perda de dados...");
+    try {
+        execSync('npx prisma db push', { stdio: 'inherit', env: process.env });
+        console.log("✅ DB Push concluído.");
+    } catch (e) {
+        console.error("❌ Falha no db push:", e.message);
+        process.exit(1);
+    }
 }
 
-// Executar Seed automaticamente se o comando existir
-console.log("🌱 Executando Seeding (Populando dados iniciais)...");
-try {
-    // Executa de forma síncrona. Ignora erro se falhar para não travar deploy.
-    execSync('npm run prisma:seed', { stdio: 'inherit', env: process.env });
-    console.log("✅ Seed concluído.");
-} catch (e) {
-    console.warn("⚠️ Aviso: Seed falhou ou já foi executado. Continuando...", e.message);
-}
+// REMOVIDO: Seed automático em cada deploy
+// O seed só deve ser executado UMA VEZ quando o banco é criado, não em cada deploy!
+// Se precisar executar seed, faça manualmente: npm run prisma:seed
+console.log("ℹ️ Seed automático DESATIVADO para proteger dados em produção.");
 
 console.log("2️⃣ Iniciando Aplicação...");
 
