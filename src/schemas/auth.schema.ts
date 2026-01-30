@@ -23,3 +23,12 @@ export const switchTenantSchema = z.object({
         targetTenantId: z.string().uuid({ message: "ID do museu inválido" }),
     }),
 });
+
+export const registerTenantSchema = z.object({
+    body: z.object({
+        projectName: z.string().min(3, { message: "O nome do projeto/museu deve ter no mínimo 3 caracteres" }),
+        name: z.string().min(2, { message: "O nome do responsável deve ter no mínimo 2 caracteres" }),
+        email: z.string().email({ message: "Email inválido" }),
+        password: z.string().min(6, { message: "A senha deve ter no mínimo 6 caracteres" }),
+    }),
+});
