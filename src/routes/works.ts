@@ -66,6 +66,104 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// Obras relacionadas
+router.get("/:id/related", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tenantId, visitorEmail } = req.query;
+    const limit = 4;
+
+    // 1. Buscar a obra referência para saber artista e categoria
+    const sourceWork = await prisma.work.findUnique({
+      where: { id }
+    });
+
+    if (!sourceWork) {
+      return res.status(404).json({ message: "Obra não encontrada" });
+    }
+
+    // Identificar obras já visitadas para priorizar inéditas
+    // Só é possível se tivermos o email do visitante e o tenantId
+    let visitedWorkIds: string[] = [];
+    if (visitorEmail && tenantId) {
+      const visitor = await prisma.visitor.findUnique({
+        where: {
+          email_tenantId: {
+            email: String(visitorEmail),
+            tenantId: String(tenantId)
+          }
+        }
+      });
+      if (visitor) {
+        const visits = await prisma.visitorVisit.findMany({
+          where: { visitorId: visitor.id, workId: { not: null } },
+          select: { workId: true }
+        });
+        visitedWorkIds = visits.map(v => v.workId!);
+      }
+    }
+
+    // 2. Buscar candidatos (Mesmo Artista OU Mesma Categoria), excluindo a própria obra
+    const conditions: any[] = [];
+
+    // Critério 1: Mesmo artista (alta relevância)
+    if (sourceWork.artist && sourceWork.artist !== "Artista desconhecido") {
+      conditions.push({ artist: sourceWork.artist });
+    }
+
+    // Critério 2: Mesma categoria (relevância média)
+    if (sourceWork.categoryId) {
+      conditions.push({ categoryId: sourceWork.categoryId });
+    }
+
+    // Se não tiver critérios, retorna vazio
+    if (conditions.length === 0) {
+      return res.json([]);
+    }
+
+    const relatedCandidates = await prisma.work.findMany({
+      where: {
+        tenantId: sourceWork.tenantId,
+        id: { not: id },
+        OR: conditions.length > 0 ? conditions : undefined,
+        published: true
+      },
+      take: 20 // Pega um conjunto maior para poder ordenar/filtrar
+    });
+
+    // 3. Ordenação Inteligente
+    // Pontuação:
+    // +100: Não Visitado (Novidade)
+    // +10: Mesmo Artista
+    // +5: Mesma Categoria
+
+    const sorted = relatedCandidates.sort((a, b) => {
+      let scoreA = 0;
+      let scoreB = 0;
+
+      const aVisited = visitedWorkIds.includes(a.id);
+      const bVisited = visitedWorkIds.includes(b.id);
+
+      if (!aVisited) scoreA += 100;
+      if (!bVisited) scoreB += 100;
+
+      if (a.artist === sourceWork.artist) scoreA += 10;
+      if (b.artist === sourceWork.artist) scoreB += 10;
+
+      if (a.categoryId === sourceWork.categoryId) scoreA += 5;
+      if (b.categoryId === sourceWork.categoryId) scoreB += 5;
+
+      return scoreB - scoreA;
+    });
+
+    return res.json(sorted.slice(0, limit));
+
+  } catch (err) {
+    console.error("Erro ao buscar obras relacionadas", err);
+    return res.json([]);
+  }
+});
+
 // CRUD Admin
 router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
