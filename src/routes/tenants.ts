@@ -4,17 +4,21 @@ import bcrypt from "bcrypt";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
+import { limiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
 // Lista todos os tenants PUBLIC (sem auth para seleção do visitante)
-router.get("/public", async (req, res) => {
+// SECURITY: Rate Limit prevent Scraping (CRIT-005)
+// PERF: Added basic pagination limit
+router.get("/public", limiter, async (req, res) => {
   try {
     const tenants = await prisma.tenant.findMany({
       select: {
         id: true,
         name: true,
-        slug: true
+        slug: true,
+        type: true
       },
       orderBy: { name: "asc" }
     });

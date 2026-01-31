@@ -1,14 +1,15 @@
 import { Router } from 'express';
-import { prisma } from '../prisma.js'; // Use singleton instead of new PrismaClient()
+import { prisma } from '../prisma.js';
 import { CertificateService } from '../services/certificate.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { limiter } from '../middleware/rateLimiter.js';
 import { z } from 'zod';
 
 const router = Router();
-// Removed: const prisma = new PrismaClient(); - Using singleton instead
 
 // Generate Certificate (User triggers this after completing criteria)
-router.post('/generate', authMiddleware, async (req, res) => {
+// SECURITY: Rate Limit prevent PDF DoS (CRIT-007)
+router.post('/generate', authMiddleware, limiter, async (req, res) => {
     try {
         const { type, relatedId } = req.body;
         const userId = req.user?.id;
@@ -79,19 +80,36 @@ router.post('/generate', authMiddleware, async (req, res) => {
             if (trail) metadata = { title: trail.title };
         }
 
-        const code = CertificateService.generateCode();
+        // Generate Code with Retry logic (CODE-006)
+        let cert;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 3;
 
-        const cert = await prisma.certificate.create({
-            data: {
-                code,
-                visitorId,
-                tenantId,
-                type,
-                relatedId,
-                metadata,
-                status: 'VALID'
+        while (!cert && attempts < MAX_ATTEMPTS) {
+            try {
+                const code = CertificateService.generateCode();
+                cert = await prisma.certificate.create({
+                    data: {
+                        code,
+                        visitorId,
+                        tenantId,
+                        type,
+                        relatedId,
+                        metadata,
+                        status: 'VALID'
+                    }
+                });
+            } catch (err: unknown) {
+                // Check for Unique Constraint Violation (P2002)
+                if ((err as any)?.code === 'P2002') {
+                    attempts++;
+                    console.warn(`Certificate code collision detected. Retrying ${attempts}/${MAX_ATTEMPTS}...`);
+                    if (attempts === MAX_ATTEMPTS) throw new Error("Failed to generate unique certificate code after retries.");
+                } else {
+                    throw err;
+                }
             }
-        });
+        }
 
         return res.status(201).json(cert);
 
@@ -136,7 +154,8 @@ router.get('/mine', authMiddleware, async (req, res) => {
 });
 
 // Download PDF
-router.get('/:id/pdf', async (req, res) => {
+// SECURITY: Rate Limit prevent Resource Exhaustion (CRIT-007)
+router.get('/:id/pdf', limiter, async (req, res) => {
     try {
         // Public or protected? Certificates are validatable publicly, but downloading the PDF might need ownership? 
         // For simplicity, let's allow if you have the ID (UUID is secret enough) OR prevent caching.
@@ -169,10 +188,21 @@ router.get('/verify/:code', async (req, res) => {
 
         if (!cert) return res.status(404).json({ valid: false, message: "Certificado não encontrado" });
 
+        // Fetch context (Event or Trail title)
+        let relatedTitle = "Atividade da Instituição";
+        if (cert.type === 'EVENT' && cert.relatedId) {
+            const event = await prisma.event.findUnique({ where: { id: cert.relatedId }, select: { title: true } });
+            if (event) relatedTitle = event.title;
+        } else if (cert.type === 'TRAIL' && cert.relatedId) {
+            const trail = await prisma.trail.findUnique({ where: { id: cert.relatedId }, select: { title: true } });
+            if (trail) relatedTitle = trail.title;
+        }
+
         return res.json({
             valid: cert.status === 'VALID',
             visitorName: cert.visitor.name,
             tenantName: cert.tenant.name,
+            title: relatedTitle, // Enhanced UX: Show what the cert is FOR
             type: cert.type,
             metadata: cert.metadata,
             generatedAt: cert.generatedAt,

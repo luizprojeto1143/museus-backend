@@ -28,16 +28,37 @@ router.post('/', limiter, async (req, res) => {
                 message: data.message,
                 anonymous: data.anonymous,
                 tenantId: data.tenantId,
-                status: 'PENDING' // Will be updated by payment webhook
+                status: 'PENDING'
             }
         });
 
-        // TODO: Integrate with Asaas payment gateway
-        // For now, just return the pending donation
+        // MOCK PAYMENT INTEGRATION (Asaas Style)
+        // In a real scenario, this would call the Payment Gateway API
+        const mockPixCode = `00020126580014BR.GOV.BCB.PIX0136123e4567-e89b-12d3-a456-426614174000520400005303986540${data.amount.toFixed(2).replace('.', '')}5802BR5913Museus System6008Brasilia62070503***6304`;
+        const mockQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(mockPixCode)}`;
+
+        // Auto-approve after 30 seconds (Simulation for Demo)
+        setTimeout(async () => {
+            try {
+                await prisma.donation.update({
+                    where: { id: donation.id },
+                    data: { status: 'COMPLETED', paymentId: `PAY-${Math.random().toString(36).substring(7)}` }
+                });
+                console.log(`[Mock Payment] Donation ${donation.id} auto-approved.`);
+            } catch (e) {
+                console.error("[Mock Payment] Auto-approval failed", e);
+            }
+        }, 30000);
 
         res.status(201).json({
             donation,
-            message: 'Doação registrada. Integração de pagamento pendente.'
+            payment: {
+                method: 'PIX',
+                pixCode: mockPixCode,
+                qrCodeUrl: mockQrCodeUrl,
+                expirationPayload: new Date(Date.now() + 3600000) // 1 hour
+            },
+            message: 'Doação registrada. Use o código PIX para pagar.'
         });
     } catch (error) {
         console.error('Error creating donation:', error);

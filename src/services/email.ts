@@ -204,6 +204,52 @@ export class MailService {
             }
         });
     }
+
+    // Generic Helper
+    async sendGenericEmail(to: string, subject: string, html: string) {
+        try {
+            const info = await this.transporter.sendMail({
+                from: '"Museus Ent" <noreply@museus.ent>',
+                to,
+                subject,
+                html
+            });
+            // console.info("Generic email sent: %s", info.messageId);
+            return true;
+        } catch (error) {
+            console.error("Generic email error:", error);
+            return false;
+        }
+    }
+
+    async sendAccessibilityAlert(type: "NEW_REQUEST" | "UPDATED", data: any) {
+        // Mock Master Email
+        const MASTER_EMAIL = "master@museus.ent";
+
+        if (type === "NEW_REQUEST") {
+            const subject = `♿ Nova Solicitação: ${data.workTitle}`;
+            const html = `
+                <h2>Nova Solicitação de Acessibilidade</h2>
+                <p><strong>Museu:</strong> ${data.tenantName}</p>
+                <p><strong>Obra:</strong> ${data.workTitle}</p>
+                <p><strong>Tipo:</strong> ${data.type}</p>
+                <p><strong>Solicitante:</strong> ${data.requestedBy}</p>
+                <p><strong>Notas:</strong> ${data.notes || "Nenhuma"}</p>
+            `;
+            await this.sendGenericEmail(MASTER_EMAIL, subject, html);
+        } else if (type === "UPDATED") {
+            const subject = `✅ Solicitação Atendida: ${data.workTitle}`;
+            const html = `
+                <h2>Solicitação de Acessibilidade Concluída</h2>
+                <p>Sua solicitação para a obra <strong>${data.workTitle}</strong> foi processada.</p>
+                <p><strong>Status:</strong> CONCLUÍDO</p>
+                <p>Os recursos de acessibilidade já estão vinculados à obra.</p>
+                <br/>
+                <p><em>Equipe Museus Enterprise</em></p>
+            `;
+            await this.sendGenericEmail(data.requestedBy, subject, html);
+        }
+    }
 }
 
 export const mailService = new MailService();

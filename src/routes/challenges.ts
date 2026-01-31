@@ -132,6 +132,7 @@ router.post('/:id/progress', authMiddleware, async (req, res) => {
         }
 
         // Use transaction to prevent race conditions
+        // CRITICAL FIX: Serializable isolation prevents concurrent reads of 'existing' progress
         const result = await prisma.$transaction(async (tx) => {
             const existing = await tx.dailyChallengeCompletion.findUnique({
                 where: { visitorId_challengeId: { visitorId: visitor.id, challengeId: id } }

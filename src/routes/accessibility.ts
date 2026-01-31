@@ -4,7 +4,11 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
 
+import { mailService } from "../services/email.js"; // Import added
+
 const router = Router();
+
+// ... (rest of imports)
 
 // Create Request (ADMIN)
 router.post("/", authMiddleware, requireRole([Role.ADMIN]), async (req, res) => {
@@ -34,8 +38,17 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN]), async (req, res) => 
             include: { work: true }
         });
 
-        // TODO: Send email to Master
-        console.log(`[Email Mock] New Accessibility Request from ${user.tenantId} for work ${work.title}`);
+        // Send email to Master
+        const tenant = await prisma.tenant.findUnique({ where: { id: user.tenantId }, select: { name: true } });
+
+        // Non-blocking email
+        mailService.sendAccessibilityAlert("NEW_REQUEST", {
+            tenantName: tenant?.name || "Desconhecido",
+            workTitle: work.title,
+            type: type,
+            requestedBy: user.email,
+            notes: notes
+        }).catch((err: unknown) => console.error("Failed to send accessibility alert", err));
 
         return res.status(201).json(request);
     } catch (err) {
@@ -73,7 +86,7 @@ router.post("/:id/fulfill", authMiddleware, requireRole([Role.MASTER]), async (r
         }
 
         // Update Work
-        const updateData: any = {};
+        const updateData: { librasUrl?: string; audioUrl?: string } = {};
         if (librasUrl) updateData.librasUrl = librasUrl;
         if (audioUrl) updateData.audioUrl = audioUrl;
 

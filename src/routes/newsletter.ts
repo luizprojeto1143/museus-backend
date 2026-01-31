@@ -23,15 +23,15 @@ router.post('/subscribe', async (req, res) => {
         });
 
         if (existing) {
-            if (existing.active) {
-                return res.status(409).json({ message: 'Email já está inscrito' });
+            if (!existing.active) {
+                // Reactivate silently
+                await prisma.newsletterSubscription.update({
+                    where: { id: existing.id },
+                    data: { active: true }
+                });
             }
-            // Reactivate subscription
-            await prisma.newsletterSubscription.update({
-                where: { id: existing.id },
-                data: { active: true }
-            });
-            return res.json({ message: 'Inscrição reativada com sucesso!' });
+            // Idempotent success (anti-enumeration)
+            return res.status(201).json({ message: 'Inscrito com sucesso!' });
         }
 
         await prisma.newsletterSubscription.create({
@@ -45,17 +45,19 @@ router.post('/subscribe', async (req, res) => {
         res.status(201).json({ message: 'Inscrito com sucesso!' });
     } catch (error) {
         console.error('Error subscribing:', error);
-        res.status(500).json({ message: 'Erro ao inscrever' });
+        // Generic error
+        res.status(500).json({ message: 'Erro ao processar inscrição' });
     }
 });
 
 // POST /newsletter/unsubscribe - Unsubscribe from newsletter
+// Rate Limit needed here to prevent mass unsubscription attacks
 router.post('/unsubscribe', async (req, res) => {
     try {
         const { email, tenantId } = req.body;
 
         if (!email || !tenantId) {
-            return res.status(400).json({ message: 'Email e tenantId são obrigatórios' });
+            return res.status(400).json({ message: 'Dados inválidos' });
         }
 
         const subscription = await prisma.newsletterSubscription.findUnique({
@@ -64,19 +66,18 @@ router.post('/unsubscribe', async (req, res) => {
             }
         });
 
-        if (!subscription) {
-            return res.status(404).json({ message: 'Inscrição não encontrada' });
+        if (subscription) {
+            await prisma.newsletterSubscription.update({
+                where: { id: subscription.id },
+                data: { active: false }
+            });
         }
 
-        await prisma.newsletterSubscription.update({
-            where: { id: subscription.id },
-            data: { active: false }
-        });
-
-        res.json({ message: 'Desinscrição realizada com sucesso' });
+        // Anti-enumeration/Privacy: Always return success
+        res.json({ message: 'Solicitação processada' });
     } catch (error) {
         console.error('Error unsubscribing:', error);
-        res.status(500).json({ message: 'Erro ao desinscrever' });
+        res.status(500).json({ message: 'Erro ao processar' });
     }
 });
 

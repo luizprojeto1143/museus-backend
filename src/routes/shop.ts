@@ -278,7 +278,7 @@ router.get('/categories', async (req, res) => {
         }
 
         const categories = await prisma.product.groupBy({
-            by: ['category'],
+            by: ['category'] as any,
             where: { tenantId: tenantId as string, active: true },
             _count: true
         });

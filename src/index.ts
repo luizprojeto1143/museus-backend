@@ -48,6 +48,7 @@ import navigationRoutes from "./routes/navigation.js";
 import accessibilityRoutes from "./routes/accessibility.js";
 import surveysRoutes from "./routes/surveys.js";
 import notificationsRoutes from "./routes/notifications.js";
+import contactRoutes from "./routes/contact.js";
 
 // ...
 
@@ -140,6 +141,7 @@ app.use("/public/certificates", publicCertificateRoutes);
 import opsRoutes from "./routes/ops.js";
 app.use("/ops", opsRoutes);
 app.use("/notifications", notificationsRoutes);
+app.use("/contact", contactRoutes);
 
 const PORT = process.env.PORT || 3000;
 
@@ -147,7 +149,11 @@ const PORT = process.env.PORT || 3000;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("❌ Global Error:", err);
-  res.status(500).json({ error: "Internal Server Error", details: err.message });
+  const isDev = process.env.NODE_ENV !== 'production';
+  res.status(500).json({
+    error: "Internal Server Error",
+    details: isDev ? err.message : undefined
+  });
 });
 
 app.listen(PORT, () => {

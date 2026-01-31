@@ -48,10 +48,16 @@ enum TriggerType {
   MANUAL
 }
 
+enum TenantType {
+  MUSEUM
+  PRODUCER
+}
+
 model Tenant {
-  id        String   @id @default(uuid())
+  id        String     @id @default(uuid())
+  type      TenantType @default(MUSEUM)
   name      String
-  slug      String   @unique
+  slug      String     @unique
   
   // Plan & Limits
   plan          String   @default("START")
@@ -803,10 +809,8 @@ model Product {
   name        String
   description String?
   price       Decimal  @db.Decimal(10, 2)
-  imageUrl    String?
-  
-  category    String?  // souvenirs, books, prints, etc.
   sku         String?
+  imageUrl    String?
   stock       Int      @default(0)
   active      Boolean  @default(true)
   
@@ -820,6 +824,22 @@ model Product {
   
   @@unique([sku, tenantId])
 }
+
+// Contact Requests (Landing Page)
+model ContactRequest {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  subject   String?
+  message   String
+  status    String   @default("NEW") // NEW, READ, ARCHIVED, REPLIED
+  
+  tenantId  String?  // Optional, if related to a specific tenant/project
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 
 // Order - Shop purchases
 model Order {

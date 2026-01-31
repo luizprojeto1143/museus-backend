@@ -3,8 +3,12 @@ import { prisma } from "../prisma.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
+import { Prisma } from "@prisma/client";
 
 const router = Router();
+
+// TODO: Move this to Tenant settings in Database
+const HOURLY_CAPACITY = 20;
 
 const createBookingSchema = z.object({
     body: z.object({
@@ -32,7 +36,7 @@ router.get("/my", authMiddleware, async (req, res) => {
     }
 });
 
-// Criar agendamento
+// Criar agendamento (Transaction Protected)
 router.post("/", authMiddleware, validate(createBookingSchema), async (req, res) => {
     try {
         const userId = req.user?.id;
@@ -43,42 +47,49 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
 
         // 1. Validate Past Dates
         const now = new Date();
-        // Allow bookings for today if time is future, or future days.
-        // Simple check: booking timestamp must be > now
         if (bookingDate < now) {
             return res.status(400).json({ message: "Não é possível agendar datas no passado." });
         }
 
-        // 2. Validate Opening Hours (Simple 09-17h check for now)
+        // 2. Validate Opening Hours (09h - 17h)
         const hour = bookingDate.getHours();
         if (hour < 9 || hour >= 17) {
             return res.status(400).json({ message: "Horário fora de funcionamento (09h às 17h)." });
         }
 
-        // 3. Capacity Check (Max 20 visitors per hour)
-        const bookingsCount = await prisma.booking.count({
-            where: {
-                tenantId,
-                date: new Date(date),
-                status: "CONFIRMED"
-            }
-        });
+        // 3. Transaction for Consistency (Race Condition Fix)
+        // We use Serializable isolation to ensure that concurrent reads of 'count' are safe.
+        const result = await prisma.$transaction(async (tx) => {
+            // Check Capacity
+            const bookingsCount = await tx.booking.count({
+                where: {
+                    tenantId,
+                    date: bookingDate, // Exact match on timestamp (assuming frontend sends specific slots)
+                    status: "CONFIRMED"
+                }
+            });
 
-        if (bookingsCount >= 20) {
+            if (bookingsCount >= HOURLY_CAPACITY) {
+                throw new Error("CAPACITY_REACHED");
+            }
+
+            // Create Booking
+            return await tx.booking.create({
+                data: {
+                    userId,
+                    tenantId,
+                    date: bookingDate,
+                    status: "CONFIRMED"
+                }
+            });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+        return res.status(201).json(result);
+
+    } catch (err: any) {
+        if (err.message === "CAPACITY_REACHED") {
             return res.status(400).json({ message: "Horário esgotado." });
         }
-
-        const booking = await prisma.booking.create({
-            data: {
-                userId,
-                tenantId,
-                date: new Date(date),
-                status: "CONFIRMED"
-            }
-        });
-
-        return res.status(201).json(booking);
-    } catch (err) {
         console.error("Erro ao criar agendamento", err);
         return res.status(500).json({ message: "Erro ao criar agendamento" });
     }
@@ -113,3 +124,4 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 });
 
 export default router;
+

@@ -21,6 +21,51 @@ const ticketSchema = z.object({
     status: z.enum(['ACTIVE', 'PAUSED', 'SOLD_OUT', 'EXPIRED']).optional()
 });
 
+// GET /tickets - List all tickets for the authenticated user's tenant
+router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+
+        if (!tenantId && user.role !== 'MASTER') {
+            return res.status(400).json({ error: 'Tenant context required' });
+        }
+
+        const where: any = {};
+        if (tenantId) {
+            where.event = { tenantId };
+        }
+
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 20;
+        const skip = (page - 1) * limit;
+
+        const [tickets, total] = await Promise.all([
+            prisma.ticket.findMany({
+                where,
+                include: { event: { select: { title: true } } },
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                skip: skip
+            }),
+            prisma.ticket.count({ where })
+        ]);
+
+        res.json({
+            data: tickets,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error("Error fetching tickets", error);
+        res.status(500).json({ error: 'Failed to fetch tickets' });
+    }
+});
+
 // GET /events/:eventId/tickets - public or logic based
 router.get('/events/:eventId/tickets', async (req, res) => {
     const { eventId } = req.params;

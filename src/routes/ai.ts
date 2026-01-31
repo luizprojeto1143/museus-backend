@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import OpenAI from "openai";
 import { authMiddleware } from "../middleware/auth.js";
+import { limiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -12,7 +13,8 @@ const openai = process.env.OPENAI_API_KEY
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 // Chat simples usando persona do tenant
-router.post("/chat", authMiddleware, async (req, res) => {
+// SECURITY: Rate Limiting applied (CRIT-008)
+router.post("/chat", authMiddleware, limiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -36,7 +38,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
     const works = await prisma.work.findMany({
       where: { tenantId: tenantId as string, published: true },
       select: { title: true, artist: true, room: true, description: true },
-      take: 20
+      take: 100 // Increased from 20 to 100 (FUNC-007)
     });
     const worksText = works.map(w =>
       `- Obra: "${w.title}" (${w.artist || "?"}, Sala ${w.room || "?"}). Detalhes: ${w.description ? w.description.substring(0, 150) + "..." : "N/A"}`

@@ -6,6 +6,7 @@ import { Role } from "@prisma/client";
 import { validate } from "../middleware/validate.js";
 import { loginSchema, registerSchema, switchTenantSchema, registerTenantSchema } from "../schemas/auth.schema.js";
 import { authMiddleware } from "../middleware/auth.js";
+import { limiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -22,11 +23,16 @@ const JWT_SECRET = process.env.JWT_SECRET || "TEMP_DEV_SECRET_DO_NOT_USE_IN_PROD
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
 // Login
-router.post("/login", validate(loginSchema), async (req, res) => {
+// Login
+router.post("/login", limiter, validate(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { tenant: { select: { type: true } } }
+    });
+
     if (!user) {
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
@@ -40,7 +46,8 @@ router.post("/login", validate(loginSchema), async (req, res) => {
       {
         email: user.email,
         role: user.role,
-        tenantId: user.tenantId
+        tenantId: user.tenantId,
+        type: user.tenant?.type
       },
       JWT_SECRET as jwt.Secret,
       { subject: user.id, expiresIn: JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
@@ -50,12 +57,14 @@ router.post("/login", validate(loginSchema), async (req, res) => {
       accessToken: token,
       role: user.role,
       tenantId: user.tenantId,
+      tenantType: user.tenant?.type, // MUSEUM or PRODUCER
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
-        tenantId: user.tenantId
+        tenantId: user.tenantId,
+        tenantType: user.tenant?.type
       }
     });
   } catch (err) {
@@ -65,7 +74,8 @@ router.post("/login", validate(loginSchema), async (req, res) => {
 });
 
 // Registro de visitante
-router.post("/register", validate(registerSchema), async (req, res) => {
+// Registro de visitante
+router.post("/register", limiter, validate(registerSchema), async (req, res) => {
   try {
     const { email, password, name, tenantId } = req.body;
 
@@ -114,82 +124,86 @@ router.post("/register", validate(registerSchema), async (req, res) => {
 });
 
 // Registro de Novo Tenant (Produtor Cultural)
-router.post("/register-tenant", validate(registerTenantSchema), async (req, res) => {
-  try {
-    const { email, password, name, projectName } = req.body;
+// Registro de Novo Tenant (Produtor Cultural) - DISABLED for Monetization Control
+// router.post("/register-tenant", validate(registerTenantSchema), async (req, res) => {
+//   return res.status(403).json({ message: "Registration disabled. Please contact sales." });
+/*
+try {
+  const { email, password, name, projectName } = req.body;
 
-    // 1. Verifica email
-    const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) {
-      return res.status(400).json({ message: "Email já cadastrado" });
-    }
-
-    // 2. Gera Slug a partir do nome do projeto
-    const slug = projectName
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "") + "-" + Math.floor(Math.random() * 1000);
-
-    // 3. Hash Senha
-    const hash = await bcrypt.hash(password, 10);
-
-    // 4. Cria Tenant e Usuário Admin (Transaction idealmente, mas sequencial ok por enquanto)
-    const tenant = await prisma.tenant.create({
-      data: {
-        name: projectName,
-        slug: slug,
-        plan: "TRIAL", // Começa como Trial
-        featureWorks: true,
-        featureTrails: true,
-        featureEvents: true,
-        featureQRCodes: true,
-        featureAccessibility: false // Contratar depois
-      }
-    });
-
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hash,
-        name,
-        role: Role.ADMIN, // É admin do próprio museu
-        tenantId: tenant.id
-      }
-    });
-
-    // 5. Gera Token
-    const token = jwt.sign(
-      {
-        email: user.email,
-        role: user.role,
-        tenantId: user.tenantId
-      },
-      JWT_SECRET as jwt.Secret,
-      { subject: user.id, expiresIn: JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
-    );
-
-    return res.status(201).json({
-      accessToken: token,
-      role: user.role,
-      tenantId: user.tenantId,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        tenantId: user.tenantId
-      },
-      tenantSlug: tenant.slug
-    });
-
-  } catch (err) {
-    console.error("Erro register-tenant", err);
-    return res.status(500).json({ message: "Erro ao criar museu" });
+  // 1. Verifica email
+  const exists = await prisma.user.findUnique({ where: { email } });
+  if (exists) {
+    return res.status(400).json({ message: "Email já cadastrado" });
   }
-});
+
+  // 2. Gera Slug a partir do nome do projeto
+  const slug = projectName
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") + "-" + Math.floor(Math.random() * 1000);
+
+  // 3. Hash Senha
+  const hash = await bcrypt.hash(password, 10);
+
+  // 4. Cria Tenant e Usuário Admin (Transaction idealmente, mas sequencial ok por enquanto)
+  const tenant = await prisma.tenant.create({
+    data: {
+      name: projectName,
+      slug: slug,
+      plan: "TRIAL", // Começa como Trial
+      featureWorks: true,
+      featureTrails: true,
+      featureEvents: true,
+      featureQRCodes: true,
+      featureAccessibility: false // Contratar depois
+    }
+  });
+
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: hash,
+      name,
+      role: Role.ADMIN, // É admin do próprio museu
+      tenantId: tenant.id
+    }
+  });
+
+  // 5. Gera Token
+  const token = jwt.sign(
+    {
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId
+    },
+    JWT_SECRET as jwt.Secret,
+    { subject: user.id, expiresIn: JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] }
+  );
+
+  return res.status(201).json({
+    accessToken: token,
+    role: user.role,
+    tenantId: user.tenantId,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      tenantId: user.tenantId
+    },
+    tenantSlug: tenant.slug
+  });
+
+} catch (err) {
+  console.error("Erro register-tenant", err);
+  return res.status(500).json({ message: "Erro ao criar museu" });
+}
+*/
+// });
 
 // seed-master route removed for security audit compliance
 

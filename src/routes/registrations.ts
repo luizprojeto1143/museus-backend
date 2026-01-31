@@ -27,41 +27,107 @@ router.post('/', authMiddleware, async (req, res) => {
         const code = `TKT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
 
         // 3. Register Transaction
-        const [registration] = await prisma.$transaction([
-            prisma.registration.create({
-                data: {
-                    eventId,
-                    ticketId,
-                    visitorId: visitorId || req.user?.id,
-                    guestName,
-                    guestEmail,
-                    code,
-                    status: 'CONFIRMED'
-                }
-            }),
-            prisma.ticket.update({
-                where: { id: ticketId },
-                data: { sold: { increment: 1 } }
-            })
-        ]);
+        // RACE CONDITION FIX: Use atomic update with condition to prevent overselling
+        try {
+            const [registration] = await prisma.$transaction([
+                prisma.registration.create({
+                    data: {
+                        eventId,
+                        ticketId,
+                        visitorId: visitorId || req.user?.id,
+                        guestName,
+                        guestEmail,
+                        code,
+                        status: 'CONFIRMED'
+                    }
+                }),
+                prisma.ticket.update({
+                    where: { id: ticketId, sold: { lt: ticket.quantity } }, // Atomic Check
+                    data: { sold: { increment: 1 } }
+                })
+            ]);
 
-        // Send Email Async (Fire and Forget)
-        const eventData = await prisma.event.findUnique({
-            where: { id: eventId },
-            select: { title: true, startDate: true, location: true }
-        });
-        const eventTitle = eventData?.title || "Evento";
-        const eventDate = eventData?.startDate ? new Date(eventData.startDate).toLocaleDateString('pt-BR', {
-            weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
-        }) : undefined;
-        const eventLocation = eventData?.location || undefined;
+            // ... continue with email ...
 
-        mailService.sendTicketEmail(guestEmail, eventTitle, guestName, code, eventDate, eventLocation);
+            // Send Email Async (Fire and Forget)
+            const eventData = await prisma.event.findUnique({
+                where: { id: eventId },
+                select: { title: true, startDate: true, location: true }
+            });
+            const eventTitle = eventData?.title || "Evento";
+            const eventDate = eventData?.startDate ? new Date(eventData.startDate).toLocaleDateString('pt-BR', {
+                weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+            }) : undefined;
+            const eventLocation = eventData?.location || undefined;
 
-        res.status(201).json(registration);
+            mailService.sendTicketEmail(guestEmail, eventTitle, guestName, code, eventDate, eventLocation);
+
+            return res.status(201).json(registration);
+
+        } catch (txError: any) {
+            // Prisma error P2025 means "Record to update not found", implying condition failed (Sold Out)
+            if (txError.code === 'P2025') {
+                return res.status(400).json({ error: 'Esgotado (Race Condition Protected)' });
+            }
+            throw txError;
+        }
+
+
     } catch (e) {
         console.error("Registration error", e);
         res.status(500).json({ error: 'Erro ao processar inscrição' });
+    }
+});
+
+// GET / (List Registrations - Audience/CRM)
+router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        const { eventId } = req.query;
+
+        const where: any = {
+            status: { not: 'CANCELED' }
+        };
+
+        if (tenantId) {
+            where.event = { tenantId };
+        }
+        if (eventId) {
+            where.eventId = String(eventId);
+        }
+
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 50; // Higher default for registrations
+        const skip = (page - 1) * limit;
+
+        const [registrations, total] = await Promise.all([
+            prisma.registration.findMany({
+                where,
+                include: {
+                    event: { select: { title: true } },
+                    ticket: { select: { name: true } },
+                    visitor: { select: { name: true, email: true, photoUrl: true } }
+                },
+                orderBy: { createdAt: 'desc' },
+                take: limit,
+                skip: skip
+            }),
+            prisma.registration.count({ where })
+        ]);
+
+        res.json({
+            data: registrations,
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (e) {
+        console.error("Error fetching registrations", e);
+        res.status(500).json({ error: 'Erro ao buscar participantes' });
     }
 });
 

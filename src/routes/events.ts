@@ -7,40 +7,51 @@ import { z } from "zod";
 
 const router = Router();
 
-// Lista eventos
+// Lista eventos (Suporta Discovery Mode / Agenda Unificada)
 router.get("/", async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
-    const { visibility } = req.query; // Optional filter override for admins
+    const { visibility, discovery } = req.query; // discovery=true ignores tenantId
 
-    if (!tenantId) {
-      return res.status(400).json({ message: "tenantId é obrigatório" });
+    let whereClause: import("@prisma/client").Prisma.EventWhereInput = { visibility: 'PUBLIC' };
+
+    if (!discovery) {
+      if (!tenantId) {
+        return res.status(400).json({ message: "tenantId é obrigatório (ou use ?discovery=true)" });
+      }
+      whereClause.tenantId = tenantId;
+    } else {
+      // Discovery mode: Shows events from ALL tenants
+      // Optional: Filter by date (upcoming only) for better UX
+      whereClause.startDate = { gte: new Date() };
     }
 
-    // Default filter: Public only
-    let whereClause: any = { tenantId, visibility: 'PUBLIC' };
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
 
-    // Check for admin/master override (via optional auth header check or strict visibility param?)
-    // Simpler approach: public endpoint ONLY shows PUBLIC. Admin endpoint/dashboard uses different headers?
-    // In this Architecture, list is shared.
-    // Let's rely on standard practice: Public Client -> Public Events.
-    // Dashboard -> Uses auth, maybe a different fetch?
-    // For now, force PUBLIC unless specifically requested AND AUTHENTICATED (complicated without mw).
-    // Safer: Always return PUBLIC. Admins use a separate route or we inspect Header manually?
-    // Let's inspect header if present manually here since it's an optional auth route.
+    const [events, total] = await Promise.all([
+      prisma.event.findMany({
+        where: whereClause,
+        include: {
+          tenant: { select: { id: true, name: true, slug: true, type: true } }
+        },
+        orderBy: { startDate: "asc" },
+        take: limit,
+        skip: skip
+      }),
+      prisma.event.count({ where: whereClause })
+    ]);
 
-    // Better: Just fix the leak. Public API = Public Data.
-    // If admins need to see draft events, they use the dashboard which could use a separate param + auth.
-    // Checking auth header manually for flexibility:
-
-    // ... Actually, let's keep it simple. Public endpoint returns PUBLIC.
-    // Only if user sends a specific flag `includePrivate=true` AND has valid token we show private.
-
-    const events = await prisma.event.findMany({
-      where: whereClause,
-      orderBy: { startDate: "asc" }
+    return res.json({
+      data: events,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
     });
-    return res.json(events);
   } catch (err) {
     console.error("Erro listar eventos", err);
     return res.status(500).json({ message: "Erro ao listar eventos" });
@@ -302,6 +313,12 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
         }
       });
 
+      // Update Registration Status if exists (Sync with Producer Dashboard)
+      await prisma.registration.updateMany({
+        where: { eventId: id, visitorId: targetVisitorId, status: "CONFIRMED" },
+        data: { status: "CHECKED_IN", checkInDate: new Date() }
+      });
+
       // Add XP logic if check-in successful (first time)
       await prisma.$transaction([
         prisma.visitorVisit.create({
@@ -342,7 +359,9 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
       return res.json({ message: "Check-in realizado com sucesso", attendance });
 
     } catch (err: unknown) {
-      if (err instanceof Error && 'code' in err && (err as any).code === 'P2002') {
+      // Prisma P2002: Unique constraint violation
+      // @ts-ignore - Prisma error types are tricky to import generically without dedicated helper
+      if (err?.code === 'P2002') {
         const existing = await prisma.eventAttendance.findFirst({
           where: { eventId: id, visitorId: targetVisitorId }
         });

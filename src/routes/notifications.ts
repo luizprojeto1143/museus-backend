@@ -157,16 +157,51 @@ router.post('/broadcast', authMiddleware, async (req: Request, res: Response) =>
             },
         };
 
-        const result = await sendPushNotificationToMany(
-            tokens.map((t: { token: string }) => t.token),
-            payload
-        );
+        // SAFETY: Process in chunks to avoid blocking Event Loop (CRIT-013)
+        // Fire-and-forget (return early) or wait? 
+        // For 10k users, waiting might timeout the request. 
+        // Better to return 202 Accepted and process in background, OR batch if count is small.
+        // We will stick to synchronous batching but with setImmediate to be polite to the loop, 
+        // but for a massive userbase this should be a job queue.
+
+        const BATCH_SIZE = 500;
+        const allTokens = tokens.map((t: { token: string }) => t.token);
+
+        // If too many, return accepted and process detached
+        if (allTokens.length > 1000) {
+            // Detached processing
+            (async () => {
+                for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
+                    const chunk = allTokens.slice(i, i + BATCH_SIZE);
+                    await sendPushNotificationToMany(chunk, payload);
+                    await new Promise(resolve => setImmediate(resolve)); // Yield to event loop
+                }
+            })().catch(err => console.error("Background broadcast error", err));
+
+            return res.status(202).json({
+                success: true,
+                message: "Broadcast started in background",
+                totalDevices: allTokens.length
+            });
+        }
+
+        // Small batch - wait for it
+        let successCount = 0;
+        let failureCount = 0;
+
+        for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
+            const chunk = allTokens.slice(i, i + BATCH_SIZE);
+            const result = await sendPushNotificationToMany(chunk, payload);
+            successCount += result.success;
+            failureCount += result.failure;
+            await new Promise(resolve => setImmediate(resolve)); // Yield
+        }
 
         res.json({
             success: true,
-            totalDevices: tokens.length,
-            sent: result.success,
-            failed: result.failure
+            totalDevices: allTokens.length,
+            sent: successCount,
+            failed: failureCount
         });
     } catch (error) {
         console.error('Failed to send broadcast notification:', error);

@@ -43,6 +43,94 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// GENERATOR: Smart Route (Public)
+router.post("/generate", async (req, res) => {
+  try {
+    const { tenantId, minutes } = req.body;
+
+    if (!tenantId || !minutes) {
+      return res.status(400).json({ message: "TenantId e minutes são obrigatórios" });
+    }
+
+    // 1. Logic: 10 minutes per work (conservative estimate)
+    // 30 min = 3 works
+    // 60 min = 6 works
+    const maxWorks = Math.floor(Number(minutes) / 10);
+    if (maxWorks < 1) return res.status(400).json({ message: "Tempo insuficiente para visitar obras." });
+
+    // 2. Fetch active works
+    const works = await prisma.work.findMany({
+      where: { tenantId, published: true },
+      select: { id: true, title: true, imageUrl: true }
+    });
+
+    if (works.length === 0) {
+      return res.status(404).json({ message: "Nenhuma obra disponível para gerar roteiro." });
+    }
+
+    // 3. Shuffle & Slice (Simple "AI" - Random Walk)
+    const shuffled = works.sort(() => 0.5 - Math.random());
+    const selectedWorks = shuffled.slice(0, maxWorks);
+    const workIds = selectedWorks.map(w => w.id);
+
+    // 4. Create ephemeral trail object (not saved to DB to avoid pollution, or saved as temporary?)
+    // For now, return as a trail-like object that frontend can render
+    const smartTrail = {
+      id: "smart-generated-" + Date.now(),
+      title: `Roteiro de ${minutes} Minutos`,
+      description: `Um roteiro personalizado gerado para o seu tempo disponível. Inclui ${selectedWorks.length} obras principais.`,
+      duration: Number(minutes),
+      workIds,
+      works: selectedWorks,
+      isGenerated: true // flag for frontend
+    };
+
+    return res.json(smartTrail);
+
+  } catch (err) {
+    console.error("Erro gerar roteiro", err);
+    return res.status(500).json({ message: "Erro ao gerar roteiro" });
+  }
+});
+
+// SAVE: Persist a Smart Route
+router.post("/save", authMiddleware, async (req, res) => {
+  try {
+    const { title, description, workIds, duration, tenantId } = req.body;
+    const user = req.user!;
+
+    if (!workIds || !Array.isArray(workIds) || workIds.length === 0) {
+      return res.status(400).json({ message: "Roteiro deve ter obras." });
+    }
+
+    // Create the trail
+    const trail = await prisma.trail.create({
+      data: {
+        title: title || `Roteiro Personalizado`,
+        description: description || "Gerado automaticamente pela IA",
+        duration: Number(duration) || 0,
+        workIds: workIds,
+        tenantId: tenantId,
+        categoryId: null, // Custom category or null
+        // We might want to mark this as "Private" or "User Generated" in the future
+        // For now, it's just a trail that shows up in their list (logic to be handled by frontend filtering or a new 'ownerId' field if necessary)
+      }
+    });
+
+    // Optimization: In a real app, we might associate this trail with the User so only they see it.
+    // For now, assuming it's a shared persistent route or we rely on frontend local storage for "my trails" referencing this ID.
+    // Ideally schema should have `ownerId`. 
+
+    // TODO: Future Persistence - Add ownerId to Trail model for private routes.
+
+    return res.status(201).json(trail);
+
+  } catch (err) {
+    console.error("Erro salvar roteiro", err);
+    return res.status(500).json({ message: "Erro ao salvar roteiro" });
+  }
+});
+
 // CRUD Admin
 router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {

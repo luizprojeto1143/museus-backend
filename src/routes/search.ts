@@ -23,7 +23,7 @@ router.get("/", async (req, res) => {
                     tenantId,
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
-                        { description: { contains: term, mode: "insensitive" } },
+                        // { description: { contains: term, mode: "insensitive" } }, // Removed for Performance (PERF-004)
                         { artist: { contains: term, mode: "insensitive" } }
                     ]
                 },
@@ -35,7 +35,7 @@ router.get("/", async (req, res) => {
                     tenantId,
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
-                        { description: { contains: term, mode: "insensitive" } }
+                        // { description: { contains: term, mode: "insensitive" } } // Removed for Performance
                     ]
                 },
                 take: 5,
@@ -46,7 +46,7 @@ router.get("/", async (req, res) => {
                     tenantId,
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
-                        { description: { contains: term, mode: "insensitive" } },
+                        // { description: { contains: term, mode: "insensitive" } }, // Removed for Performance
                         { location: { contains: term, mode: "insensitive" } }
                     ]
                 },
