@@ -219,11 +219,12 @@ router.post("/register", async (req, res) => {
       tenantId: z.string().min(1, "Tenant ID é obrigatório"),
       name: z.string().optional(),
       email: z.string().email("Email inválido").optional(),
-      age: z.number().int().positive().optional()
+      age: z.number().int().positive().optional(),
+      photoUrl: z.string().optional()
     });
 
     const data = registerSchema.parse(req.body);
-    const { tenantId, name, email, age } = data;
+    const { tenantId, name, email, age, photoUrl } = data;
 
     // Use upsert to handle case where Visitor exists (orphan) but User is new
     if (email) {
@@ -237,13 +238,15 @@ router.post("/register", async (req, res) => {
         },
         update: {
           name: name || undefined,
-          age: age || undefined
+          age: age || undefined,
+          photoUrl: photoUrl || undefined
         },
         create: {
           tenantId,
           name: name || null,
           email: normalizedEmail,
-          age: age || null
+          age: age || null,
+          photoUrl: photoUrl || null
         }
       });
       return res.status(201).json(visitor);
@@ -254,7 +257,8 @@ router.post("/register", async (req, res) => {
           tenantId,
           name: name || null,
           email: null,
-          age: age || null
+          age: age || null,
+          photoUrl: photoUrl || null
         }
       });
       return res.status(201).json(visitor);
