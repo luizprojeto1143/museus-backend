@@ -128,62 +128,61 @@ router.post("/", authMiddleware, async (req, res) => {
         // Verificar se tenant tem feature habilitada
         const tenant = await prisma.tenant.findUnique({
             where: { id: data.tenantId },
-            select: { featureProjects: true }
+            select: { featureProjects: true, featureEditaisSubmission: true }
         });
 
         if (!tenant?.featureProjects && user.role !== Role.MASTER) {
             return res.status(403).json({ message: "Módulo de projetos não habilitado" });
         }
 
-        // Se vincular a edital, verificar se tem permissão de submissão
+        // Se vincular a edital, verificar regras
         if (data.noticeId) {
+            // 1. Verificar permissão de submissão
             if (!tenant?.featureEditaisSubmission && user.role !== Role.MASTER) {
                 return res.status(403).json({ message: "Submissão de editais não habilitada para este produtor/cidade." });
             }
 
-
-            // Se vincular a edital, verificar se está aberto
-            if (data.noticeId) {
-                const notice = await prisma.publicNotice.findUnique({ where: { id: data.noticeId } });
-                if (!notice) {
-                    return res.status(404).json({ message: "Edital não encontrado" });
-                }
-                if (notice.status !== "INSCRIPTIONS_OPEN") {
-                    return res.status(400).json({ message: "Edital não está com inscrições abertas" });
-                }
+            // 2. Verificar se está aberto
+            const notice = await prisma.publicNotice.findUnique({ where: { id: data.noticeId } });
+            if (!notice) {
+                return res.status(404).json({ message: "Edital não encontrado" });
             }
-
-            const project = await prisma.culturalProject.create({
-                data: {
-                    title: data.title,
-                    summary: data.summary,
-                    description: data.description,
-                    justification: data.justification,
-                    culturalCategory: data.culturalCategory,
-                    targetRegion: data.targetRegion,
-                    targetAudience: data.targetAudience,
-                    startDate: data.startDate ? new Date(data.startDate) : null,
-                    endDate: data.endDate ? new Date(data.endDate) : null,
-                    requestedBudget: data.requestedBudget,
-                    expectedAudience: data.expectedAudience,
-                    proposalUrl: data.proposalUrl,
-                    accessibilityPlan: data.accessibilityPlan,
-                    noticeId: data.noticeId,
-                    proponentId: user.id,
-                    tenantId: data.tenantId,
-                    status: "DRAFT"
-                }
-            });
-
-            return res.status(201).json(project);
-        } catch (err) {
-            if (err instanceof z.ZodError) {
-                return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+            if (notice.status !== "INSCRIPTIONS_OPEN") {
+                return res.status(400).json({ message: "Edital não está com inscrições abertas" });
             }
-            console.error("Erro ao criar projeto", err);
-            return res.status(500).json({ message: "Erro ao criar projeto" });
         }
-    });
+
+        const project = await prisma.culturalProject.create({
+            data: {
+                title: data.title,
+                summary: data.summary,
+                description: data.description,
+                justification: data.justification,
+                culturalCategory: data.culturalCategory,
+                targetRegion: data.targetRegion,
+                targetAudience: data.targetAudience,
+                startDate: data.startDate ? new Date(data.startDate) : null,
+                endDate: data.endDate ? new Date(data.endDate) : null,
+                requestedBudget: data.requestedBudget,
+                expectedAudience: data.expectedAudience,
+                proposalUrl: data.proposalUrl,
+                accessibilityPlan: data.accessibilityPlan,
+                noticeId: data.noticeId,
+                proponentId: user.id,
+                tenantId: data.tenantId,
+                status: "DRAFT"
+            }
+        });
+
+        return res.status(201).json(project);
+    } catch (err) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        }
+        console.error("Erro ao criar projeto", err);
+        return res.status(500).json({ message: "Erro ao criar projeto" });
+    }
+});
 
 // Atualizar projeto
 router.put("/:id", authMiddleware, async (req, res) => {
