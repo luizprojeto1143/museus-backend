@@ -4,6 +4,8 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { sendCertificateEmail, generateCertificateBuffer } from "../services/email.js";
 import { z } from "zod";
+import { validate } from "../middleware/validate.js";
+import { createEventSchema, updateEventSchema } from "../schemas/event.schema.js";
 
 const router = Router();
 
@@ -102,7 +104,7 @@ router.post("/:id/view", async (req, res) => {
 });
 
 // CRUD Admin
-router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(createEventSchema), async (req, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string) : user.tenantId;
@@ -193,7 +195,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
   }
 });
 
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(updateEventSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const {

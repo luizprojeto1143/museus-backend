@@ -187,8 +187,12 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Museus backend enterprise running on port ${PORT}`);
-  console.log(`🔧 Environment: ${process.env.NODE_ENV || "dev"}`);
-  console.log(`🌐 Allowed Origin: ${process.env.NODE_ENV === "production" ? (process.env.FRONTEND_URL || "*") : "*"}`);
-});
+export { app };
+
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`✅ Museus backend enterprise running on port ${PORT}`);
+    console.log(`🔧 Environment: ${process.env.NODE_ENV || "dev"}`);
+    console.log(`🌐 Allowed Origin: ${process.env.NODE_ENV === "production" ? (process.env.FRONTEND_URL || "*") : "*"}`);
+  });
+}

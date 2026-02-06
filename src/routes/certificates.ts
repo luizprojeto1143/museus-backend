@@ -29,92 +29,21 @@ router.post('/generate', authMiddleware, limiter, async (req, res) => {
             return res.status(404).json({ message: "Perfil de visitante não encontrado. Visite o museu primeiro." });
         }
 
-        const visitorId = visitor.id;
-
-        // Check if already exists
-        const existing = await prisma.certificate.findFirst({
-            where: { visitorId, type, relatedId }
-        });
-
-        if (existing) {
-            return res.json(existing);
-        }
-
-        // Fetch Metadata
-        let metadata = {};
-        if (type === 'EVENT') {
-            const event = await prisma.event.findUnique({ where: { id: relatedId } });
-            if (!event) {
-                return res.status(404).json({ message: "Evento não encontrado" });
-            }
-            // Impedir certificado antes do evento terminar
-            const eventEndDate = event.endDate || event.startDate;
-            if (new Date() < new Date(eventEndDate)) {
-                return res.status(400).json({
-                    message: "Certificado só pode ser gerado após o término do evento"
-                });
-            }
-            metadata = { title: event.title, date: event.startDate };
-
-            // Check if Survey is required
-            if (event.certificateRequiresSurvey) {
-                const hasResponse = await prisma.surveyResponse.findFirst({
-                    where: {
-                        visitorId: visitorId,
-                        question: {
-                            eventId: relatedId
-                        }
-                    }
-                });
-
-                if (!hasResponse) {
-                    return res.status(403).json({
-                        message: "É necessário responder à pesquisa de satisfação para emitir o certificado.",
-                        requiresSurvey: true,
-                        eventId: relatedId
-                    });
-                }
-            }
-        } else if (type === 'TRAIL') {
-            const trail = await prisma.trail.findUnique({ where: { id: relatedId } });
-            if (trail) metadata = { title: trail.title };
-        }
-
-        // Generate Code with Retry logic (CODE-006)
-        let cert;
-        let attempts = 0;
-        const MAX_ATTEMPTS = 3;
-
-        while (!cert && attempts < MAX_ATTEMPTS) {
-            try {
-                const code = CertificateService.generateCode();
-                cert = await prisma.certificate.create({
-                    data: {
-                        code,
-                        visitorId,
-                        tenantId,
-                        type,
-                        relatedId,
-                        metadata,
-                        status: 'VALID'
-                    }
-                });
-            } catch (err: unknown) {
-                // Check for Unique Constraint Violation (P2002)
-                if ((err as any)?.code === 'P2002') {
-                    attempts++;
-                    console.warn(`Certificate code collision detected. Retrying ${attempts}/${MAX_ATTEMPTS}...`);
-                    if (attempts === MAX_ATTEMPTS) throw new Error("Failed to generate unique certificate code after retries.");
-                } else {
-                    throw err;
-                }
-            }
-        }
-
+        const cert = await CertificateService.issueCertificate(tenantId, visitor.id, type, relatedId);
         return res.status(201).json(cert);
 
-    } catch (err) {
+    } catch (err: any) {
         console.error(err);
+        if (err.requiresSurvey) {
+            return res.status(403).json({
+                message: err.message,
+                requiresSurvey: true,
+                eventId: err.eventId
+            });
+        }
+        if (err.message === "Evento não encontrado") return res.status(404).json({ message: err.message });
+        if (err.message.includes("término do evento")) return res.status(400).json({ message: err.message });
+
         return res.status(500).json({ message: "Erro ao gerar certificado" });
     }
 });

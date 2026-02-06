@@ -3,6 +3,9 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
+import { validate } from "../middleware/validate.js";
+import { createWorkSchema, updateWorkSchema } from "../schemas/work.schema.js";
+import { WorkService } from "../services/work.js";
 
 const router = Router();
 
@@ -71,126 +74,40 @@ router.get("/:id/related", async (req, res) => {
   try {
     const { id } = req.params;
     const { tenantId, visitorEmail } = req.query;
-    const limit = 4;
 
-    // 1. Buscar a obra referência para saber artista e categoria
-    const sourceWork = await prisma.work.findUnique({
-      where: { id }
-    });
+    const relatedWorks = await WorkService.getRelatedWorks(
+      id,
+      tenantId as string,
+      visitorEmail as string
+    );
 
-    if (!sourceWork) {
+    return res.json(relatedWorks);
+
+  } catch (err: any) {
+    if (err.message === "Obra não encontrada") {
       return res.status(404).json({ message: "Obra não encontrada" });
     }
-
-    // Identificar obras já visitadas para priorizar inéditas
-    // Só é possível se tivermos o email do visitante e o tenantId
-    let visitedWorkIds: string[] = [];
-    if (visitorEmail && tenantId) {
-      const visitor = await prisma.visitor.findUnique({
-        where: {
-          email_tenantId: {
-            email: String(visitorEmail),
-            tenantId: String(tenantId)
-          }
-        }
-      });
-      if (visitor) {
-        const visits = await prisma.visitorVisit.findMany({
-          where: { visitorId: visitor.id, workId: { not: null } },
-          select: { workId: true }
-        });
-        visitedWorkIds = visits.map(v => v.workId!);
-      }
-    }
-
-    // 2. Buscar candidatos (Mesmo Artista OU Mesma Categoria), excluindo a própria obra
-    const conditions: any[] = [];
-
-    // Critério 1: Mesmo artista (alta relevância)
-    if (sourceWork.artist && sourceWork.artist !== "Artista desconhecido") {
-      conditions.push({ artist: sourceWork.artist });
-    }
-
-    // Critério 2: Mesma categoria (relevância média)
-    if (sourceWork.categoryId) {
-      conditions.push({ categoryId: sourceWork.categoryId });
-    }
-
-    // Se não tiver critérios, retorna vazio
-    if (conditions.length === 0) {
-      return res.json([]);
-    }
-
-    const relatedCandidates = await prisma.work.findMany({
-      where: {
-        tenantId: sourceWork.tenantId,
-        id: { not: id },
-        OR: conditions.length > 0 ? conditions : undefined,
-        published: true
-      },
-      take: 20 // Pega um conjunto maior para poder ordenar/filtrar
-    });
-
-    // 3. Ordenação Inteligente
-    // Pontuação:
-    // +100: Não Visitado (Novidade)
-    // +10: Mesmo Artista
-    // +5: Mesma Categoria
-
-    const sorted = relatedCandidates.sort((a, b) => {
-      let scoreA = 0;
-      let scoreB = 0;
-
-      const aVisited = visitedWorkIds.includes(a.id);
-      const bVisited = visitedWorkIds.includes(b.id);
-
-      if (!aVisited) scoreA += 100;
-      if (!bVisited) scoreB += 100;
-
-      if (a.artist === sourceWork.artist) scoreA += 10;
-      if (b.artist === sourceWork.artist) scoreB += 10;
-
-      if (a.categoryId === sourceWork.categoryId) scoreA += 5;
-      if (b.categoryId === sourceWork.categoryId) scoreB += 5;
-
-      return scoreB - scoreA;
-    });
-
-    return res.json(sorted.slice(0, limit));
-
-  } catch (err) {
     console.error("Erro ao buscar obras relacionadas", err);
     return res.json([]);
   }
 });
 
 // CRUD Admin
-router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(createWorkSchema), async (req, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string) : user.tenantId;
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
-    // Validation Schema
-    const workSchema = z.object({
-      title: z.string().min(1, "Título é obrigatório"),
-      artist: z.string().optional(),
-      year: z.string().optional(),
-      category: z.string().optional().nullable(),
-      room: z.string().optional(),
-      floor: z.string().optional(),
-      description: z.string().optional(),
-      imageUrl: z.string().optional(),
-      audioUrl: z.string().optional(),
-      librasUrl: z.string().optional(),
-      videoUrl: z.string().optional(),
-      latitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : null),
-      longitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : null),
-      radius: z.string().or(z.number()).optional().transform(v => v ? Number(v) : 5)
-    });
 
-    const data = workSchema.parse(req.body);
+    const {
+      title, artist, year, categoryId,
+      room, floor, description,
+      imageUrl, audioUrl, librasUrl, videoUrl, audioDescriptionUrl,
+      latitude, longitude, radius,
+      qrCode, isHighlight, isAccessible, order
+    } = req.body;
 
     // Check Plan Limits
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -205,29 +122,26 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
 
     const work = await prisma.work.create({
       data: {
-        title: data.title,
-        artist: data.artist,
-        year: data.year,
-        categoryId: data.category && data.category !== "" ? data.category : null,
-        room: data.room,
-        floor: data.floor,
-        description: data.description,
-        imageUrl: data.imageUrl,
-        audioUrl: data.audioUrl,
-        librasUrl: data.librasUrl,
-        videoUrl: data.videoUrl,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        radius: data.radius || 5,
+        title,
+        artist,
+        year,
+        categoryId: categoryId || null,
+        room,
+        floor,
+        description,
+        imageUrl,
+        audioUrl,
+        librasUrl,
+        videoUrl,
+        latitude: latitude ? Number(latitude) : null,
+        longitude: longitude ? Number(longitude) : null,
+        radius: radius ? Number(radius) : 5,
         tenantId
       }
     });
     return res.status(201).json(work);
   } catch (err: any) {
     console.error("Erro criar obra", err);
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
-    }
     if (err.code === 'P2003') {
       return res.status(400).json({ message: "Categoria fornecida é inválida ou não existe." });
     }
@@ -235,7 +149,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
   }
 });
 
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+// Update Work
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(updateWorkSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;

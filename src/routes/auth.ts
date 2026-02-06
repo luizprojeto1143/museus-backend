@@ -12,14 +12,8 @@ import crypto from "crypto";
 const router = Router();
 
 // SECURITY: JWT_SECRET must be set
-if (!process.env.JWT_SECRET) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error("FATAL: JWT_SECRET environment variable is not set in production!");
-  } else {
-    console.warn("WARNING: JWT_SECRET not set. Using temporary unsafe secret for development.");
-  }
-}
-const JWT_SECRET = process.env.JWT_SECRET || "TEMP_DEV_SECRET_DO_NOT_USE_IN_PROD";
+// SECURITY: JWT_SECRET must be set (validated on boot)
+const JWT_SECRET = process.env.JWT_SECRET!;
 // Access Token: 15 minutos (Curta duração para segurança)
 const ACCESS_TOKEN_EXPIRES_IN = "15m";
 // Refresh Token: 7 dias (Longa duração para UX)

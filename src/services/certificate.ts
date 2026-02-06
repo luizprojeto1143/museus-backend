@@ -174,4 +174,90 @@ export class CertificateService {
             }
         });
     }
+
+    /**
+     * Issues a certificate for a visitor
+     */
+    static async issueCertificate(
+        tenantId: string,
+        visitorId: string,
+        type: 'EVENT' | 'TRAIL',
+        relatedId: string
+    ) {
+        // 1. Check if already exists
+        const existing = await prisma.certificate.findFirst({
+            where: { visitorId, type, relatedId }
+        });
+
+        if (existing) {
+            return existing;
+        }
+
+        // 2. Fetch Metadata & Validate Rules
+        let metadata = {};
+
+        if (type === 'EVENT') {
+            const event = await prisma.event.findUnique({ where: { id: relatedId } });
+            if (!event) throw new Error("Evento não encontrado");
+
+            // Rule: Check end date
+            const eventEndDate = event.endDate || event.startDate;
+            if (new Date() < new Date(eventEndDate)) {
+                throw new Error("Certificado só pode ser gerado após o término do evento");
+            }
+
+            metadata = { title: event.title, date: event.startDate };
+
+            // Rule: Check Survey
+            if (event.certificateRequiresSurvey) {
+                const hasResponse = await prisma.surveyResponse.findFirst({
+                    where: {
+                        visitorId: visitorId,
+                        question: { eventId: relatedId }
+                    }
+                });
+
+                if (!hasResponse) {
+                    const error = new Error("É necessário responder à pesquisa de satisfação para emitir o certificado.");
+                    (error as any).requiresSurvey = true;
+                    (error as any).eventId = relatedId;
+                    throw error;
+                }
+            }
+        } else if (type === 'TRAIL') {
+            const trail = await prisma.trail.findUnique({ where: { id: relatedId } });
+            if (trail) metadata = { title: trail.title };
+        }
+
+        // 3. Generate Code with Retry Logic
+        let cert;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 3;
+
+        while (!cert && attempts < MAX_ATTEMPTS) {
+            try {
+                const code = this.generateCode();
+                cert = await prisma.certificate.create({
+                    data: {
+                        code,
+                        visitorId,
+                        tenantId,
+                        type,
+                        relatedId,
+                        metadata,
+                        status: 'VALID'
+                    }
+                });
+            } catch (err: any) {
+                if (err?.code === 'P2002') {
+                    attempts++;
+                    if (attempts === MAX_ATTEMPTS) throw new Error("Falha ao gerar código único para o certificado.");
+                } else {
+                    throw err;
+                }
+            }
+        }
+
+        return cert;
+    }
 }
