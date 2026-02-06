@@ -57,6 +57,74 @@ enum TenantType {
   CITY            // Cidade/Prefeitura (tenant pai)
 }
 
+// ========== GOVERNANCE / CONTRACT PLANS ==========
+
+enum AITier {
+  BASIC       // Sem IA ou IA limitada
+  CONTINUOUS  // IA com cotas mensais
+  ADVANCED    // IA ilimitada
+}
+
+enum SLATier {
+  STANDARD    // 48h resposta
+  EXTENDED    // 24h resposta
+  DEDICATED   // 4h resposta + suporte dedicado
+}
+
+model ContractPlan {
+  id                    String   @id @default(uuid())
+  name                  String   @unique // "Start", "Pro", "Enterprise"
+  description           String?
+  
+  // Limites de Uso
+  maxActiveProjects     Int      @default(10)
+  maxAccessibilityReqs  Int      @default(5)     // por mês
+  maxReportsPerMonth    Int      @default(10)
+  maxAIAnalyses         Int      @default(100)   // por mês
+  maxWorks              Int      @default(50)
+  maxEvents             Int      @default(20)
+  maxChildTenants       Int      @default(0)     // equipamentos filhos
+  maxUsers              Int      @default(5)
+  
+  // Tiers
+  aiTier                AITier   @default(BASIC)
+  slaTier               SLATier  @default(STANDARD)
+  supportResponseHours  Int      @default(48)
+  
+  // Preço (referência interna)
+  monthlyPrice          Decimal? @db.Decimal(10, 2)
+  
+  // Features extras
+  hasExecutiveReports   Boolean  @default(false)
+  hasLegalCompliance    Boolean  @default(false)
+  hasAPIAccess          Boolean  @default(false)
+  hasWhiteLabel         Boolean  @default(false)
+  
+  tenants               Tenant[]
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model AIUsage {
+  id              String   @id @default(uuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  month           Int      // 1-12
+  year            Int
+  
+  analysesCount   Int      @default(0)
+  tokensUsed      Int      @default(0)
+  estimatedCost   Decimal  @default(0) @db.Decimal(8, 2)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([tenantId, month, year])
+  @@index([tenantId])
+}
+
 model Tenant {
   id        String     @id @default(uuid())
   type      TenantType @default(MUSEUM)
@@ -68,9 +136,14 @@ model Tenant {
   parent        Tenant?  @relation("TenantHierarchy", fields: [parentId], references: [id])
   children      Tenant[] @relation("TenantHierarchy")
   
-  // Plan & Limits
-  plan          String   @default("START")
-  maxWorks      Int      @default(50)
+  // Plan & Limits (Governance)
+  planId        String?
+  contractPlan  ContractPlan? @relation(fields: [planId], references: [id])
+  aiUsage       AIUsage[]
+  
+  // Legacy fields (for backward compatibility)
+  plan          String   @default("START")  // "START", "PRO", "ENTERPRISE"
+  maxWorks      Int      @default(50)        // Limite de obras cadastradas
 
   // Settings
   mission       String?

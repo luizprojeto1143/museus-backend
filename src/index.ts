@@ -56,6 +56,13 @@ import projectsRoutes from "./routes/projects.js";
 import accessibilityExecutionRoutes from "./routes/accessibility-execution.js";
 import providersRoutes from "./routes/providers.js";
 
+// Governance Routes
+import plansRoutes from "./routes/plans.js";
+import executiveReportsRoutes from "./routes/executive-reports.js";
+import secretaryRoutes from "./routes/secretary.js";
+import aiCostsRoutes from "./routes/ai-costs.js";
+import institutionalExportRoutes from "./routes/institutional-export.js";
+
 // ...
 
 const app = express();
@@ -157,6 +164,13 @@ app.use("/providers", providersRoutes);
 
 import reportsRoutes from "./routes/reports.js";
 app.use("/reports", reportsRoutes);
+
+// Governance Routes
+app.use("/plans", plansRoutes);
+app.use("/executive-reports", executiveReportsRoutes);
+app.use("/secretary", secretaryRoutes);
+app.use("/ai-costs", aiCostsRoutes);
+app.use("/institutional-export", institutionalExportRoutes);
 
 const PORT = process.env.PORT || 3000;
 
