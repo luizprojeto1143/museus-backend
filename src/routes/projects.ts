@@ -135,48 +135,55 @@ router.post("/", authMiddleware, async (req, res) => {
             return res.status(403).json({ message: "Módulo de projetos não habilitado" });
         }
 
-        // Se vincular a edital, verificar se está aberto
+        // Se vincular a edital, verificar se tem permissão de submissão
         if (data.noticeId) {
-            const notice = await prisma.publicNotice.findUnique({ where: { id: data.noticeId } });
-            if (!notice) {
-                return res.status(404).json({ message: "Edital não encontrado" });
+            if (!tenant?.featureEditaisSubmission && user.role !== Role.MASTER) {
+                return res.status(403).json({ message: "Submissão de editais não habilitada para este produtor/cidade." });
             }
-            if (notice.status !== "INSCRIPTIONS_OPEN") {
-                return res.status(400).json({ message: "Edital não está com inscrições abertas" });
-            }
-        }
 
-        const project = await prisma.culturalProject.create({
-            data: {
-                title: data.title,
-                summary: data.summary,
-                description: data.description,
-                justification: data.justification,
-                culturalCategory: data.culturalCategory,
-                targetRegion: data.targetRegion,
-                targetAudience: data.targetAudience,
-                startDate: data.startDate ? new Date(data.startDate) : null,
-                endDate: data.endDate ? new Date(data.endDate) : null,
-                requestedBudget: data.requestedBudget,
-                expectedAudience: data.expectedAudience,
-                proposalUrl: data.proposalUrl,
-                accessibilityPlan: data.accessibilityPlan,
-                noticeId: data.noticeId,
-                proponentId: user.id,
-                tenantId: data.tenantId,
-                status: "DRAFT"
-            }
-        });
 
-        return res.status(201).json(project);
-    } catch (err) {
-        if (err instanceof z.ZodError) {
-            return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+            // Se vincular a edital, verificar se está aberto
+            if (data.noticeId) {
+                const notice = await prisma.publicNotice.findUnique({ where: { id: data.noticeId } });
+                if (!notice) {
+                    return res.status(404).json({ message: "Edital não encontrado" });
+                }
+                if (notice.status !== "INSCRIPTIONS_OPEN") {
+                    return res.status(400).json({ message: "Edital não está com inscrições abertas" });
+                }
+            }
+
+            const project = await prisma.culturalProject.create({
+                data: {
+                    title: data.title,
+                    summary: data.summary,
+                    description: data.description,
+                    justification: data.justification,
+                    culturalCategory: data.culturalCategory,
+                    targetRegion: data.targetRegion,
+                    targetAudience: data.targetAudience,
+                    startDate: data.startDate ? new Date(data.startDate) : null,
+                    endDate: data.endDate ? new Date(data.endDate) : null,
+                    requestedBudget: data.requestedBudget,
+                    expectedAudience: data.expectedAudience,
+                    proposalUrl: data.proposalUrl,
+                    accessibilityPlan: data.accessibilityPlan,
+                    noticeId: data.noticeId,
+                    proponentId: user.id,
+                    tenantId: data.tenantId,
+                    status: "DRAFT"
+                }
+            });
+
+            return res.status(201).json(project);
+        } catch (err) {
+            if (err instanceof z.ZodError) {
+                return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+            }
+            console.error("Erro ao criar projeto", err);
+            return res.status(500).json({ message: "Erro ao criar projeto" });
         }
-        console.error("Erro ao criar projeto", err);
-        return res.status(500).json({ message: "Erro ao criar projeto" });
-    }
-});
+    });
 
 // Atualizar projeto
 router.put("/:id", authMiddleware, async (req, res) => {
@@ -244,11 +251,16 @@ router.post("/:id/submit", authMiddleware, async (req, res) => {
 
         const project = await prisma.culturalProject.findUnique({
             where: { id },
-            include: { notice: true }
+            include: { notice: true, tenant: true }
         });
 
         if (!project) {
             return res.status(404).json({ message: "Projeto não encontrado" });
+        }
+
+        // Check feature flag
+        if (!project.tenant?.featureEditaisSubmission && user.role !== Role.MASTER) {
+            return res.status(403).json({ message: "Submissão de editais não habilitada." });
         }
 
         if (project.proponentId !== user.id && user.role !== Role.MASTER) {

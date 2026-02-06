@@ -63,7 +63,8 @@ router.get("/:id/settings", async (req, res) => {
         featureAccessibility: true,
 
         featureMinigames: true,
-        isCityMode: true
+        isCityMode: true,
+        featureEditaisSubmission: true
       }
     });
 
@@ -100,7 +101,8 @@ router.get("/:id/features", async (req, res) => {
         featureAccessibility: true,
 
         featureMinigames: true,
-        isCityMode: true
+        isCityMode: true,
+        featureEditaisSubmission: true
       }
     });
 
