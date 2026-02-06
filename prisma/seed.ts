@@ -328,6 +328,114 @@ async function main() {
     console.log(`   - Tenant: ${tenant.name}`);
     console.log(`   - Categorias: ${categoriesData.length}`);
     console.log(`   - Obras de arte: ${worksData.length}`);
+
+    // ============================================================
+    // SEED MUNICIPAL: Cidade de Betim com equipamentos culturais
+    // ============================================================
+    console.log("\n🏙️ Criando estrutura municipal de teste...");
+
+    // Criar Tenant Cidade
+    let cityTenant = await prisma.tenant.findFirst({
+        where: { slug: "betim-cultura" }
+    });
+
+    if (!cityTenant) {
+        cityTenant = await prisma.tenant.create({
+            data: {
+                name: "Secretaria de Cultura de Betim",
+                slug: "betim-cultura",
+                type: "CITY",
+                primaryColor: "#1e40af",
+                secondaryColor: "#3b82f6",
+                mission: "Promover a cultura e as artes em Betim",
+                isCityMode: true,
+                // Habilitar features municipais
+                featureEditais: true,
+                featureProjects: true,
+                featureAccessibilityMgmt: true,
+                featureProviders: true,
+                featureInstitutionalReports: true,
+                // Features padrão
+                featureEvents: true,
+                featureGamification: true
+            }
+        });
+        console.log("   ✓ Criado: Secretaria de Cultura de Betim (CITY)");
+    } else {
+        console.log("   ✓ Já existe: Secretaria de Cultura de Betim");
+    }
+
+    // Criar Museu filho
+    let childMuseum = await prisma.tenant.findFirst({
+        where: { slug: "museu-betim" }
+    });
+
+    if (!childMuseum) {
+        childMuseum = await prisma.tenant.create({
+            data: {
+                name: "Museu Municipal de Betim",
+                slug: "museu-betim",
+                type: "MUSEUM",
+                parentId: cityTenant.id,
+                primaryColor: "#059669",
+                secondaryColor: "#10b981",
+                mission: "Preservar a história e memória de Betim",
+                featureWorks: true,
+                featureTrails: true,
+                featureQRCodes: true,
+                featureGamification: true
+            }
+        });
+        console.log("   ✓ Criado: Museu Municipal de Betim (filho da cidade)");
+    }
+
+    // Criar Centro Cultural filho
+    let childCultural = await prisma.tenant.findFirst({
+        where: { slug: "centro-cultural-betim" }
+    });
+
+    if (!childCultural) {
+        childCultural = await prisma.tenant.create({
+            data: {
+                name: "Centro Cultural de Betim",
+                slug: "centro-cultural-betim",
+                type: "CULTURAL_SPACE",
+                parentId: cityTenant.id,
+                primaryColor: "#7c3aed",
+                secondaryColor: "#8b5cf6",
+                mission: "Espaço de eventos e atividades culturais",
+                featureEvents: true,
+                featureGamification: true,
+                featureCertificates: true
+            }
+        });
+        console.log("   ✓ Criado: Centro Cultural de Betim (filho da cidade)");
+    }
+
+    // Criar admin para a cidade
+    const cityAdminEmail = "admin@betim-cultura.gov.br";
+    const existingCityAdmin = await prisma.user.findUnique({
+        where: { email: cityAdminEmail }
+    });
+
+    if (!existingCityAdmin) {
+        const hashedPassword = await bcrypt.hash("betim123", 10);
+        await prisma.user.create({
+            data: {
+                email: cityAdminEmail,
+                name: "Gestor Cultural Betim",
+                password: hashedPassword,
+                role: Role.ADMIN,
+                tenantId: cityTenant.id
+            }
+        });
+        console.log("   ✓ Criado: admin@betim-cultura.gov.br / Senha: betim123");
+    }
+
+    console.log("\n🏙️ Estrutura municipal criada!");
+    console.log(`   - Cidade: ${cityTenant.name} (parentId: null)`);
+    console.log(`   - Museu filho: ${childMuseum?.name || "existente"} (parentId: ${cityTenant.id})`);
+    console.log(`   - Centro Cultural filho: ${childCultural?.name || "existente"} (parentId: ${cityTenant.id})`);
 }
 
 main()

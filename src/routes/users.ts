@@ -38,7 +38,9 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
         },
         createdAt: true,
         active: true,
-        lastLogin: true
+        lastLogin: true,
+        termsAcceptedAt: true,
+        termsAcceptedIp: true
       },
       orderBy: { createdAt: "desc" }
     });
@@ -70,7 +72,9 @@ router.get("/:id", authMiddleware, async (req, res) => {
           }
         },
         createdAt: true,
-        updatedAt: true
+        updatedAt: true,
+        termsAcceptedAt: true,
+        termsAcceptedIp: true
       }
     });
 
@@ -123,6 +127,29 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), validate(createUser
   } catch (err) {
     console.error("Erro ao criar usuário", err);
     return res.status(500).json({ message: "Erro ao criar usuário" });
+  }
+});
+
+router.put("/me/settings", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user!;
+    const { preferences, bio, phone, website } = req.body;
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        preferences: preferences !== undefined ? preferences : undefined,
+        bio: bio !== undefined ? bio : undefined,
+        phone: phone !== undefined ? phone : undefined,
+        website: website !== undefined ? website : undefined
+      },
+      select: { id: true, name: true, email: true, preferences: true, bio: true, phone: true, website: true }
+    });
+
+    return res.json(updated);
+  } catch (err) {
+    console.error("Erro atualizar settings", err);
+    return res.status(500).json({ message: "Erro ao salvar configurações" });
   }
 });
 

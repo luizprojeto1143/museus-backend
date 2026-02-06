@@ -293,7 +293,7 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
   }
 });
 // Sales & Ticket Analytics (Sympla Killer Dashboard)
-router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const user = req.user!;
     const tenantId = user.tenantId;
@@ -323,8 +323,18 @@ router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTE
       }
     });
 
+    // Raised Amount (Valor Captado) from Cultural Projects
+    const raisedAgg = await prisma.culturalProject.aggregate({
+      where: {
+        tenantId: user.role === Role.MASTER ? undefined : (tenantId || undefined),
+        status: { in: ['APPROVED', 'IN_EXECUTION', 'COMPLETED'] }
+      },
+      _sum: { approvedBudget: true }
+    });
+
     return res.json({
-      totalRevenue: Number(aggregations._sum.pricePaid) || 0,
+      totalRevenue: Number(aggregations._sum.pricePaid || 0),
+      raisedAmount: Number(raisedAgg._sum?.approvedBudget || 0),
       ticketsSold: aggregations._count.id || 0,
       checkInCount: checkIns,
       conversionRate: 0 // Placeholder: requires visit tracking to calc real conversion

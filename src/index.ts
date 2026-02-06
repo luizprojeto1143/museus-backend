@@ -50,6 +50,12 @@ import surveysRoutes from "./routes/surveys.js";
 import notificationsRoutes from "./routes/notifications.js";
 import contactRoutes from "./routes/contact.js";
 
+// Municipal/Public Management Routes
+import noticesRoutes from "./routes/notices.js";
+import projectsRoutes from "./routes/projects.js";
+import accessibilityExecutionRoutes from "./routes/accessibility-execution.js";
+import providersRoutes from "./routes/providers.js";
+
 // ...
 
 const app = express();
@@ -142,6 +148,15 @@ import opsRoutes from "./routes/ops.js";
 app.use("/ops", opsRoutes);
 app.use("/notifications", notificationsRoutes);
 app.use("/contact", contactRoutes);
+
+// Municipal/Public Management Routes
+app.use("/notices", noticesRoutes);
+app.use("/projects", projectsRoutes);
+app.use("/accessibility-execution", accessibilityExecutionRoutes);
+app.use("/providers", providersRoutes);
+
+import reportsRoutes from "./routes/reports.js";
+app.use("/reports", reportsRoutes);
 
 const PORT = process.env.PORT || 3000;
 

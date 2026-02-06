@@ -10,6 +10,7 @@ generator client {
 enum Role {
   MASTER
   ADMIN
+  PRODUCER
   VISITOR
 }
 
@@ -51,6 +52,9 @@ enum TriggerType {
 enum TenantType {
   MUSEUM
   PRODUCER
+  SECRETARIA      // Secretaria de Cultura Municipal
+  CULTURAL_SPACE  // Centro Cultural, Biblioteca, Arquivo, etc.
+  CITY            // Cidade/Prefeitura (tenant pai)
 }
 
 model Tenant {
@@ -58,6 +62,11 @@ model Tenant {
   type      TenantType @default(MUSEUM)
   name      String
   slug      String     @unique
+  
+  // Hierarchy - Permite Cidade ter Museus/Espaços filhos
+  parentId      String?  // ID do tenant pai (ex: Secretaria -> Museus)
+  parent        Tenant?  @relation("TenantHierarchy", fields: [parentId], references: [id])
+  children      Tenant[] @relation("TenantHierarchy")
   
   // Plan & Limits
   plan          String   @default("START")
@@ -107,6 +116,27 @@ model Tenant {
   featureAccessibility Boolean @default(true)  // Libras e acessibilidade
   featureMinigames     Boolean @default(false)  // Minigame (Art Run)
   
+  // Municipal Features - Gestão Pública
+  featureEditais           Boolean @default(false)  // Editais públicos
+  featureProjects          Boolean @default(false)  // Projetos culturais
+  featureAccessibilityMgmt Boolean @default(false)  // Gestão de acessibilidade pública
+  featureProviders         Boolean @default(false)  // Cadastro de prestadores
+  featureInstitutionalReports Boolean @default(false) // Relatórios institucionais
+  
+  // Terms & Privacy (LGPD)
+  termsOfUse    String?  // Texto dos termos de uso (Markdown/HTML)
+  privacyPolicy String?  // Política de privacidade
+
+  // Institutional Data (Cultura Viva Reports)
+  cnpj                String?
+  legalNature         String? // "Publico Municipal", "Privado com fins lucrativos", etc.
+  foundationYear      Int?
+  typology            String? // "Museu", "Centro Cultural", "Arquivo", etc.
+  legalRepresentative String?
+  
+  // Accessibility Data (LBI Compliance)
+  accessibilityResources Json? // { physical: [], sensory: [], content: [] }
+
   // Mode: Museum or City
   isCityMode Boolean @default(false) // false = Museu, true = Cidade/Roteiro Turístico
 
@@ -138,6 +168,14 @@ model Tenant {
   files           File[]
   floorPlans      FloorPlan[]
   accessibilityRequests AccessibilityRequest[]
+  
+  // Municipal Features Relations
+  publicNotices            PublicNotice[]
+  culturalProjects         CulturalProject[]
+  accessibilityExecutions  AccessibilityExecution[]
+  accessibilityProviders   AccessibilityProvider[]
+  
+  @@index([parentId])
 }
 
 model User {
@@ -154,9 +192,38 @@ model User {
   
   active    Boolean  @default(true)
   lastLogin DateTime?
+  
+  
+  termsAcceptedAt DateTime? // Data de aceite dos termos
+  termsAcceptedIp String?   // IP do aceite
 
   bookings  Booking[]
   deviceTokens DeviceToken[]
+  
+  // Producer Data
+  cpf       String?
+  phone     String?
+  bio       String?
+  website   String?
+  preferences Json?   // { emailNotifications: boolean, publicProfile: boolean, twoFactor: boolean, language: string }
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  // Audit
+  ipAddress String?
+  userAgent String?
+  
+  @@index([userId])
 }
 
 // File - Gerencia uploads no sistema
@@ -314,7 +381,11 @@ model Event {
   
   // Date & Time
   startDate   DateTime
-  endDate     DateTime?
+  // Link to generated event
+  eventId     String?   @unique
+  originEvent Event?    @relation("EventDerivation", fields: [eventId], references: [id])
+  derivedEvent Event?   @relation("EventDerivation")
+
   
   // Location (Presential)
   location    String?  // Name of the place e.g. "Sítio Terra Prometida"
@@ -344,6 +415,8 @@ model Event {
   // Media
   audioUrl    String?  // Áudio-guia de introdução do evento
   videoUrl    String?  // Vídeo promocional do evento
+
+  views       Int      @default(0)
 
   // Sympla Killer Features 🚀
   customFormSchema Json?   // Array of { id, label, type, required, options }
@@ -590,10 +663,17 @@ model QRCode {
   createdAt DateTime @default(now())
 }
 
+
 model ChatPersona {
   id        String   @id @default(uuid())
   tenantId  String   @unique
   systemPrompt String
+  tone      String?  @default("formal-educativo")
+  style     String?  @default("historico-cultural")
+  historicalContext String?
+  references String[]
+  temperature Float? @default(0.7)
+  maxTokens Int?     @default(500)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1055,4 +1135,209 @@ model DeviceToken {
   @@index([userId])
   @@index([visitorId])
   @@index([active])
+}
+
+// ========== GESTÃO PÚBLICA CULTURAL ==========
+
+enum ProjectStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  IN_EXECUTION
+  COMPLETED
+  CANCELED
+}
+
+enum NoticeStatus {
+  DRAFT
+  PUBLISHED
+  INSCRIPTIONS_OPEN
+  INSCRIPTIONS_CLOSED
+  EVALUATION
+  RESULTS_PUBLISHED
+  FINISHED
+}
+
+enum AccessibilityServiceType {
+  LIBRAS_INTERPRETATION
+  AUDIO_DESCRIPTION
+  CAPTIONING
+  BRAILLE
+  TACTILE_MODEL
+  EASY_READING
+}
+
+// Edital Público
+model PublicNotice {
+  id               String       @id @default(uuid())
+  title            String
+  description      String?
+  objectives       String?
+  requirements     String?
+  
+  // Datas
+  publishDate      DateTime?
+  inscriptionStart DateTime
+  inscriptionEnd   DateTime
+  evaluationEnd    DateTime?
+  resultsDate      DateTime?
+  executionEnd     DateTime?
+  
+  // Valores
+  totalBudget      Decimal?     @db.Decimal(12, 2)
+  maxPerProject    Decimal?     @db.Decimal(10, 2)
+  minPerProject    Decimal?     @db.Decimal(10, 2)
+  
+  // Categorização
+  culturalCategories String[]
+  targetRegions    String[]
+  
+  status           NoticeStatus @default(DRAFT)
+  documentUrl      String?
+  attachments      Json?
+  
+  requiresAccessibilityPlan Boolean @default(true)
+  
+  tenantId         String
+  tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  projects         CulturalProject[]
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  
+  @@index([tenantId, status])
+  @@index([inscriptionEnd])
+}
+
+// Projeto Cultural
+model CulturalProject {
+  id               String        @id @default(uuid())
+  title            String
+  summary          String?
+  description      String?
+  justification    String?
+  
+  // Categorização
+  culturalCategory String?
+  targetRegion     String?
+  targetAudience   String?
+  
+  // Cronograma
+  startDate        DateTime?
+  endDate          DateTime?
+  
+  // Financeiro
+  requestedBudget  Decimal?      @db.Decimal(10, 2)
+  approvedBudget   Decimal?      @db.Decimal(10, 2)
+  
+  // Metas
+  expectedAudience Int?
+  actualAudience   Int?
+  
+  status           ProjectStatus @default(DRAFT)
+  
+  // Documentos
+  proposalUrl      String?
+  attachments      Json?
+  
+  // Plano de Acessibilidade
+  accessibilityPlan Json?
+  
+  // Vínculos
+  noticeId         String?
+  notice           PublicNotice? @relation(fields: [noticeId], references: [id])
+  
+  proponentId      String
+  
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  accessibilityExecutions AccessibilityExecution[]
+  
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  @@index([tenantId, status])
+  @@index([noticeId])
+  @@index([proponentId])
+}
+
+// Execução de Acessibilidade
+model AccessibilityExecution {
+  id               String                   @id @default(uuid())
+  
+  serviceType      AccessibilityServiceType
+  
+  // Solicitação
+  requestedAt      DateTime                 @default(now())
+  requestedBy      String?
+  requestNotes     String?
+  
+  // Aprovação
+  approvedAt       DateTime?
+  approvedBy       String?
+  approvedBudget   Decimal?                 @db.Decimal(8, 2)
+  
+  // Execução
+  providerId       String?
+  provider         AccessibilityProvider?   @relation(fields: [providerId], references: [id])
+  
+  executedAt       DateTime?
+  executionNotes   String?
+  deliverables     Json?
+  
+  // Validação
+  validatedAt      DateTime?
+  validatedBy      String?
+  validationStatus String?
+  validationNotes  String?
+  
+  status           String                   @default("PENDING")
+  
+  // Vínculos
+  projectId        String?
+  project          CulturalProject?         @relation(fields: [projectId], references: [id])
+  
+  eventId          String?
+  
+  tenantId         String
+  tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  
+  @@index([tenantId, status])
+  @@index([projectId])
+  @@index([providerId])
+}
+
+// Prestador de Acessibilidade
+model AccessibilityProvider {
+  id               String    @id @default(uuid())
+  
+  name             String
+  document         String?
+  email            String?
+  phone            String?
+  
+  services         AccessibilityServiceType[]
+  
+  rating           Float?
+  completedJobs    Int       @default(0)
+  active           Boolean   @default(true)
+  verifiedAt       DateTime?
+  
+  tenantId         String?
+  tenant           Tenant?   @relation(fields: [tenantId], references: [id])
+  
+  executions       AccessibilityExecution[]
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  @@index([active])
+  @@index([tenantId])
 }

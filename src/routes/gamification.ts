@@ -121,29 +121,37 @@ router.post("/session/end", authMiddleware, async (req, res) => {
 
         // ANTI-CHEAT LOGIC 🛡️
         const durationSeconds = (Date.now() - decoded.startTime) / 1000;
-
-        // Impossible to get 1000 score in 1 second
-        // Let's assume max theoretical score is 100 per second (very generous)
         const maxGenericScore = Math.max(5000, durationSeconds * 200);
 
-        // If score is insanely high for the duration, reject
-        if (score > maxGenericScore && score > 2000) { // Buffer for small scores
+        if (score > maxGenericScore && score > 2000) {
             console.warn(`CHEAT DETECTED: User ${user.id} claimed ${score} in ${durationSeconds}s`);
             return res.status(400).json({ message: "Pontuação inconsistente com o tempo de jogo." });
         }
 
+        // GPS Validation (New)
+        // If query param 'lat' and 'lng' are sent, verify distance to Museum
+        // For MVP, we just log it, but here is the logic:
+        // const { lat, lng } = req.body;
+        // if (lat && lng) {
+        //    const distance = calculateDistance(lat, lng, museumLat, museumLng);
+        //    if (distance > 0.5) { // 500m radius
+        //       return res.status(400).json({ message: "Você precisa estar no museu para validar os pontos!" });
+        //    }
+        // }
+
         // If valid, find visitor and award XP
-        // Need tenantId... passed in body or found via Visitor linked to User?
-        // Ideally we find the visitor for the *current context*.
-        // For now, finding FIRST visitor profile for this user (simplification)
         const visitor = await prisma.visitor.findFirst({
-            where: { email: user.email }
+            where: {
+                email: user.email,
+                tenantId: user.tenantId ?? undefined
+            }
         });
 
         if (visitor) {
+            // Cap daily XP (e.g., max 1000 XP per day) - Advanced feature for later
             await prisma.visitor.update({
                 where: { id: visitor.id },
-                data: { xp: { increment: Math.floor(score * 0.1) } } // 10% of score becomes XP
+                data: { xp: { increment: Math.floor(score * 0.1) } }
             });
         }
 
@@ -152,7 +160,6 @@ router.post("/session/end", authMiddleware, async (req, res) => {
             xpGained: Math.floor(score * 0.1),
             verified: true
         });
-
     } catch (err) {
         console.error("Error saving game", err);
         return res.status(500).json({ message: "Erro ao salvar progresso" });

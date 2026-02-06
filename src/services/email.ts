@@ -223,8 +223,7 @@ export class MailService {
     }
 
     async sendAccessibilityAlert(type: "NEW_REQUEST" | "UPDATED", data: any) {
-        // Mock Master Email
-        const MASTER_EMAIL = "master@museus.ent";
+        const MASTER_EMAIL = process.env.MASTER_ALERT_EMAIL || "master@museus.ent";
 
         if (type === "NEW_REQUEST") {
             const subject = `♿ Nova Solicitação: ${data.workTitle}`;

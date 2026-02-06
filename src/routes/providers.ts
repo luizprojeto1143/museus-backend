@@ -1,0 +1,249 @@
+import { Router } from "express";
+import { prisma } from "../prisma.js";
+import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { Role, AccessibilityServiceType } from "@prisma/client";
+import { z } from "zod";
+
+const router = Router();
+
+// Lista prestadores
+router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
+        const { active, serviceType } = req.query;
+
+        const where: any = {};
+
+        // Prestadores do tenant ou globais (tenantId = null)
+        if (tenantId) {
+            where.OR = [
+                { tenantId },
+                { tenantId: null }
+            ];
+        }
+
+        if (active !== undefined) where.active = active === "true";
+        if (serviceType) where.services = { has: serviceType as AccessibilityServiceType };
+
+        const providers = await prisma.accessibilityProvider.findMany({
+            where,
+            orderBy: { name: "asc" },
+            include: {
+                _count: { select: { executions: true } }
+            }
+        });
+
+        return res.json(providers);
+    } catch (err) {
+        console.error("Erro ao listar prestadores", err);
+        return res.status(500).json({ message: "Erro ao listar prestadores" });
+    }
+});
+
+// Detalhes do prestador
+router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const provider = await prisma.accessibilityProvider.findUnique({
+            where: { id },
+            include: {
+                executions: {
+                    orderBy: { createdAt: "desc" },
+                    take: 20,
+                    include: {
+                        project: { select: { id: true, title: true } }
+                    }
+                },
+                _count: { select: { executions: true } }
+            }
+        });
+
+        if (!provider) {
+            return res.status(404).json({ message: "Prestador não encontrado" });
+        }
+
+        return res.json(provider);
+    } catch (err) {
+        console.error("Erro ao buscar prestador", err);
+        return res.status(500).json({ message: "Erro ao buscar prestador" });
+    }
+});
+
+// Criar prestador
+const createProviderSchema = z.object({
+    name: z.string().min(1, "Nome é obrigatório"),
+    document: z.string().optional(),
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+    services: z.array(z.nativeEnum(AccessibilityServiceType)).min(1, "Pelo menos um serviço é obrigatório"),
+    tenantId: z.string().optional() // Se não informado, é prestador global
+});
+
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const data = createProviderSchema.parse(req.body);
+
+        // Se não for MASTER, precisa ter feature habilitada
+        if (user.role !== Role.MASTER) {
+            if (!user.tenantId) {
+                return res.status(400).json({ message: "tenantId é obrigatório" });
+            }
+            const tenant = await prisma.tenant.findUnique({
+                where: { id: user.tenantId },
+                select: { featureProviders: true }
+            });
+
+            if (!tenant?.featureProviders) {
+                return res.status(403).json({ message: "Módulo de prestadores não habilitado" });
+            }
+        }
+
+        const provider = await prisma.accessibilityProvider.create({
+            data: {
+                name: data.name,
+                document: data.document,
+                email: data.email,
+                phone: data.phone,
+                services: data.services,
+                tenantId: user.role === Role.MASTER ? data.tenantId : user.tenantId
+            }
+        });
+
+        return res.status(201).json(provider);
+    } catch (err) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        }
+        console.error("Erro ao criar prestador", err);
+        return res.status(500).json({ message: "Erro ao criar prestador" });
+    }
+});
+
+// Atualizar prestador
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+
+        const existing = await prisma.accessibilityProvider.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ message: "Prestador não encontrado" });
+        }
+
+        // Verificar permissão
+        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
+        const { name, document, email, phone, services, active, rating } = req.body;
+
+        const provider = await prisma.accessibilityProvider.update({
+            where: { id },
+            data: {
+                ...(name && { name }),
+                ...(document !== undefined && { document }),
+                ...(email !== undefined && { email }),
+                ...(phone !== undefined && { phone }),
+                ...(services && { services }),
+                ...(active !== undefined && { active }),
+                ...(rating !== undefined && { rating })
+            }
+        });
+
+        return res.json(provider);
+    } catch (err) {
+        console.error("Erro ao atualizar prestador", err);
+        return res.status(500).json({ message: "Erro ao atualizar prestador" });
+    }
+});
+
+// Verificar prestador
+router.put("/:id/verify", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const provider = await prisma.accessibilityProvider.update({
+            where: { id },
+            data: {
+                verifiedAt: new Date(),
+                active: true
+            }
+        });
+
+        return res.json(provider);
+    } catch (err) {
+        console.error("Erro ao verificar prestador", err);
+        return res.status(500).json({ message: "Erro ao verificar prestador" });
+    }
+});
+
+// Deletar prestador
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+
+        const existing = await prisma.accessibilityProvider.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ message: "Prestador não encontrado" });
+        }
+
+        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
+        // Verificar se tem execuções em andamento
+        const activeExecutions = await prisma.accessibilityExecution.count({
+            where: {
+                providerId: id,
+                status: { in: ["APPROVED", "IN_PROGRESS"] }
+            }
+        });
+
+        if (activeExecutions > 0) {
+            return res.status(400).json({
+                message: "Prestador possui execuções em andamento, não pode ser excluído"
+            });
+        }
+
+        await prisma.accessibilityProvider.delete({ where: { id } });
+        return res.status(204).send();
+    } catch (err) {
+        console.error("Erro ao deletar prestador", err);
+        return res.status(500).json({ message: "Erro ao deletar prestador" });
+    }
+});
+
+// Histórico de serviços do prestador
+router.get("/:id/history", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const executions = await prisma.accessibilityExecution.findMany({
+            where: { providerId: id },
+            orderBy: { createdAt: "desc" },
+            include: {
+                project: { select: { id: true, title: true } },
+                tenant: { select: { id: true, name: true } }
+            }
+        });
+
+        // Estatísticas
+        const stats = {
+            total: executions.length,
+            completed: executions.filter(e => e.status === "VALIDATED").length,
+            inProgress: executions.filter(e => ["APPROVED", "IN_PROGRESS", "DELIVERED"].includes(e.status)).length,
+            rejected: executions.filter(e => e.status === "REJECTED").length
+        };
+
+        return res.json({ executions, stats });
+    } catch (err) {
+        console.error("Erro ao buscar histórico", err);
+        return res.status(500).json({ message: "Erro ao buscar histórico" });
+    }
+});
+
+export default router;

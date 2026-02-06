@@ -26,10 +26,12 @@ router.post("/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
       return res.status(400).json({ message: "systemPrompt é obrigatório" });
     }
 
+    const { tone, style, historicalContext, references, temperature, maxTokens } = req.body;
+
     const persona = await prisma.chatPersona.upsert({
       where: { tenantId },
-      update: { systemPrompt },
-      create: { tenantId, systemPrompt }
+      update: { systemPrompt, tone, style, historicalContext, references, temperature, maxTokens },
+      create: { tenantId, systemPrompt, tone, style, historicalContext, references, temperature, maxTokens }
     });
 
     return res.json(persona);

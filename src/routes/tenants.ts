@@ -254,7 +254,11 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       name: z.string().optional(),
       // Welcome Audio/Video
       welcomeAudioUrl: z.string().optional().nullable(),
-      welcomeVideoUrl: z.string().optional().nullable()
+      welcomeVideoUrl: z.string().optional().nullable(),
+
+      // Legal
+      termsOfUse: z.string().optional(),
+      privacyPolicy: z.string().optional()
     });
 
     const data = settingsSchema.parse(req.body);
@@ -283,7 +287,9 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         historicalFont: data.historicalFont,
         name: data.name,
         welcomeAudioUrl: data.welcomeAudioUrl,
-        welcomeVideoUrl: data.welcomeVideoUrl
+        welcomeVideoUrl: data.welcomeVideoUrl,
+        termsOfUse: data.termsOfUse,
+        privacyPolicy: data.privacyPolicy
       }
     });
 

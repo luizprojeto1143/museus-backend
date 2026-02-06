@@ -17,14 +17,16 @@ const createEntrySchema = z.object({
 // Listar mensagens do guestbook (público)
 router.get("/", async (req, res) => {
     try {
-        const { tenantId } = req.query;
+        const { tenantId, includeHidden } = req.query;
         if (!tenantId) return res.status(400).json({ message: "tenantId obrigatório" });
 
+        const where: any = { tenantId: tenantId as string };
+        if (includeHidden !== 'true') {
+            where.isVisible = true;
+        }
+
         const entries = await prisma.guestbookEntry.findMany({
-            where: {
-                tenantId: tenantId as string,
-                isVisible: true
-            },
+            where,
             include: {
                 visitor: {
                     select: { name: true, photoUrl: true }
@@ -76,6 +78,34 @@ router.post("/", validate(createEntrySchema), async (req, res) => {
     } catch (err) {
         console.error("Erro ao criar mensagem no guestbook", err);
         return res.status(500).json({ message: "Erro ao criar mensagem" });
+    }
+});
+
+// ADMIN: Toggle Visibility
+router.patch("/:id/visibility", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { isVisible } = req.body;
+
+        const updated = await prisma.guestbookEntry.update({
+            where: { id },
+            data: { isVisible }
+        });
+
+        return res.json(updated);
+    } catch (err) {
+        return res.status(500).json({ message: "Erro ao atualizar visibilidade" });
+    }
+});
+
+// ADMIN: Delete Entry
+router.delete("/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.guestbookEntry.delete({ where: { id } });
+        return res.json({ success: true });
+    } catch (err) {
+        return res.status(500).json({ message: "Erro ao excluir mensagem" });
     }
 });
 

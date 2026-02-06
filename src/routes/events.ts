@@ -85,8 +85,24 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// Increment View Count
+router.post("/:id/view", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.event.update({
+      where: { id },
+      data: { views: { increment: 1 } }
+    });
+    return res.status(200).send();
+  } catch (err) {
+    // Silent fail for analytics
+    console.error("Erro increment view", err);
+    return res.status(200).send();
+  }
+});
+
 // CRUD Admin
-router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string) : user.tenantId;
@@ -177,7 +193,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
   }
 });
 
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -229,7 +245,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
   }
 });
 
-router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.event.delete({ where: { id } });

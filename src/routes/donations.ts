@@ -32,30 +32,35 @@ router.post('/', limiter, async (req, res) => {
             }
         });
 
-        // MOCK PAYMENT INTEGRATION (Asaas Style)
-        // In a real scenario, this would call the Payment Gateway API
-        const mockPixCode = `00020126580014BR.GOV.BCB.PIX0136123e4567-e89b-12d3-a456-426614174000520400005303986540${data.amount.toFixed(2).replace('.', '')}5802BR5913Museus System6008Brasilia62070503***6304`;
-        const mockQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(mockPixCode)}`;
+        // MOCK PAYMENT MODE - For development without real payment gateway
+        // To use real payments, integrate with Asaas, MercadoPago, or Stripe
+        // Set PAYMENT_GATEWAY=production in .env to disable mock auto-approval
+        const isMockMode = process.env.PAYMENT_GATEWAY !== 'production';
 
-        // Auto-approve after 30 seconds (Simulation for Demo)
-        setTimeout(async () => {
-            try {
-                await prisma.donation.update({
-                    where: { id: donation.id },
-                    data: { status: 'COMPLETED', paymentId: `PAY-${Math.random().toString(36).substring(7)}` }
-                });
-                console.log(`[Mock Payment] Donation ${donation.id} auto-approved.`);
-            } catch (e) {
-                console.error("[Mock Payment] Auto-approval failed", e);
-            }
-        }, 30000);
+        const pixCode = `00020126580014BR.GOV.BCB.PIX0136${process.env.PIX_KEY || '123e4567-e89b-12d3-a456-426614174000'}520400005303986540${data.amount.toFixed(2).replace('.', '')}5802BR5913${process.env.PIX_RECIPIENT || 'Museus System'}6008Brasilia62070503***6304`;
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixCode)}`;
+
+        // Auto-approve after 30 seconds (Simulation for Demo, only if in mock mode)
+        if (isMockMode) {
+            setTimeout(async () => {
+                try {
+                    await prisma.donation.update({
+                        where: { id: donation.id },
+                        data: { status: 'COMPLETED', paymentId: `PAY-${Math.random().toString(36).substring(7)}` }
+                    });
+                    console.log(`[Mock Payment] Donation ${donation.id} auto-approved.`);
+                } catch (e) {
+                    console.error("[Mock Payment] Auto-approval failed", e);
+                }
+            }, 30000);
+        }
 
         res.status(201).json({
             donation,
             payment: {
                 method: 'PIX',
-                pixCode: mockPixCode,
-                qrCodeUrl: mockQrCodeUrl,
+                pixCode: pixCode,
+                qrCodeUrl: qrCodeUrl,
                 expirationPayload: new Date(Date.now() + 3600000) // 1 hour
             },
             message: 'Doação registrada. Use o código PIX para pagar.'
