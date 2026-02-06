@@ -196,7 +196,7 @@ router.post("/register", limiter, validate(registerSchema), async (req: Request,
 
     // Validate role (only allow VISITOR or PRODUCER for public registration)
     // Admin/Master creation is handled separately
-    let userRole = Role.VISITOR;
+    let userRole: Role = Role.VISITOR;
     let newTenantId = tenantId || null;
 
     if (role === Role.PRODUCER) {
@@ -208,7 +208,6 @@ router.post("/register", limiter, validate(registerSchema), async (req: Request,
           name: name, // Producer Name acts as Tenant Name
           type: "PRODUCER", // Using string if enum is not imported, or TenantType.PRODUCER
           slug: name.toLowerCase().replace(/ /g, "-").replace(/[^\w-]+/g, "") + "-" + Date.now().toString().slice(-4),
-          cityId: null,
           featureProjects: true,
           featureServices: true,
           featureTickets: false,

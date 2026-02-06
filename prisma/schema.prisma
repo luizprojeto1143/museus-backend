@@ -115,6 +115,8 @@ model Tenant {
   featureGuestbook    Boolean @default(true)   // Livro de visitas
   featureAccessibility Boolean @default(true)  // Libras e acessibilidade
   featureMinigames     Boolean @default(false)  // Minigame (Art Run)
+  featureServices      Boolean @default(false)  // Produtor: oferece serviços
+  featureTickets       Boolean @default(false)  // Venda de ingressos
   
   // Municipal Features - Gestão Pública
   featureEditais           Boolean @default(false)  // Editais públicos
@@ -122,6 +124,7 @@ model Tenant {
   featureAccessibilityMgmt Boolean @default(false)  // Gestão de acessibilidade pública
   featureProviders         Boolean @default(false)  // Cadastro de prestadores
   featureInstitutionalReports Boolean @default(false) // Relatórios institucionais
+  featureEditaisSubmission    Boolean @default(false) // Produtores podem submeter a editais
   
   // Terms & Privacy (LGPD)
   termsOfUse    String?  // Texto dos termos de uso (Markdown/HTML)
@@ -381,6 +384,7 @@ model Event {
   
   // Date & Time
   startDate   DateTime
+  endDate     DateTime?
   // Link to generated event
   eventId     String?   @unique
   originEvent Event?    @relation("EventDerivation", fields: [eventId], references: [id])
@@ -406,6 +410,7 @@ model Event {
   producerDescription String?
   producerLogoUrl     String?
   coverImageUrl       String?
+  coverUrl            String?  // Alias for cover image (used in projects-\u003eevents)
   
   // Certificate Settings
   certificateBackgroundUrl String?
@@ -417,6 +422,7 @@ model Event {
   videoUrl    String?  // Vídeo promocional do evento
 
   views       Int      @default(0)
+  status      String   @default("DRAFT") // DRAFT, PUBLISHED, CANCELED, FINISHED
 
   // Sympla Killer Features 🚀
   customFormSchema Json?   // Array of { id, label, type, required, options }
@@ -1252,6 +1258,9 @@ model CulturalProject {
   
   proponentId      String
   
+  // Evento gerado a partir deste projeto (quando publicado na Agenda)
+  eventId          String?
+
   tenantId         String
   tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
