@@ -196,12 +196,16 @@ router.post("/register", limiter, validate(registerSchema), async (req: Request,
     if (role === Role.PRODUCER) {
       userRole = Role.PRODUCER;
 
+      // Get optional parentTenantId for city linking
+      const parentTenantId = req.body.parentTenantId || null;
+
       // Create a Tenant for the Producer
       const newTenant = await prisma.tenant.create({
         data: {
           name: name, // Producer Name acts as Tenant Name
-          type: "PRODUCER", // Using string if enum is not imported, or TenantType.PRODUCER
+          type: "PRODUCER",
           slug: name.toLowerCase().replace(/ /g, "-").replace(/[^\w-]+/g, "") + "-" + Date.now().toString().slice(-4),
+          parentId: parentTenantId, // Link to city if provided
           featureProjects: true,
           featureServices: true,
           featureTickets: false,
