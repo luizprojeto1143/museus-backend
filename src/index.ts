@@ -62,8 +62,10 @@ import executiveReportsRoutes from "./routes/executive-reports.js";
 import secretaryRoutes from "./routes/secretary.js";
 import aiCostsRoutes from "./routes/ai-costs.js";
 import institutionalExportRoutes from "./routes/institutional-export.js";
+import { validateEnv } from "./config/validateEnv.js";
 
-// ...
+// Validate critical environment variables on boot
+validateEnv();
 
 const app = express();
 app.set('trust proxy', 1);
