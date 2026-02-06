@@ -130,10 +130,17 @@ router.get("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => 
   }
 });
 
-// Detalhes do Tenant (MASTER)
-router.get("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+// Detalhes do Tenant (MASTER ou ADMIN do próprio tenant)
+router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
+
+    // Se for admin, só pode ver seu próprio tenant
+    if (user.role === Role.ADMIN && user.tenantId !== id) {
+      return res.status(403).json({ message: "Sem permissão" });
+    }
+
     const tenant = await prisma.tenant.findUnique({
       where: { id }
     });
