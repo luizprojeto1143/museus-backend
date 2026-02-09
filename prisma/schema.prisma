@@ -1404,6 +1404,7 @@ model AccessibilityProvider {
   document         String?
   email            String?
   phone            String?
+  description      String?
   
   services         AccessibilityServiceType[]
   

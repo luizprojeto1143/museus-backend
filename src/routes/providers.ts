@@ -77,6 +77,7 @@ const createProviderSchema = z.object({
     document: z.string().optional(),
     email: z.string().email().optional(),
     phone: z.string().optional(),
+    description: z.string().optional(),
     services: z.array(z.nativeEnum(AccessibilityServiceType)).min(1, "Pelo menos um serviço é obrigatório"),
     tenantId: z.string().optional() // Se não informado, é prestador global
 });
@@ -107,6 +108,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
                 document: data.document,
                 email: data.email,
                 phone: data.phone,
+                description: data.description,
                 services: data.services,
                 tenantId: user.role === Role.MASTER ? data.tenantId : user.tenantId
             }
@@ -138,7 +140,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
             return res.status(403).json({ message: "Sem permissão" });
         }
 
-        const { name, document, email, phone, services, active, rating } = req.body;
+        const { name, document, email, phone, description, services, active, rating } = req.body;
 
         const provider = await prisma.accessibilityProvider.update({
             where: { id },
@@ -147,6 +149,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
                 ...(document !== undefined && { document }),
                 ...(email !== undefined && { email }),
                 ...(phone !== undefined && { phone }),
+                ...(description !== undefined && { description }),
                 ...(services && { services }),
                 ...(active !== undefined && { active }),
                 ...(rating !== undefined && { rating })

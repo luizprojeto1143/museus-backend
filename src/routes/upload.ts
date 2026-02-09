@@ -51,6 +51,7 @@ function createFileFilter(category: string) {
 const uploadImage = multer({ storage, fileFilter: createFileFilter('images'), limits: { fileSize: MAX_FILE_SIZE } });
 const uploadAudio = multer({ storage, fileFilter: createFileFilter('audio'), limits: { fileSize: MAX_FILE_SIZE } });
 const uploadVideo = multer({ storage, fileFilter: createFileFilter('video'), limits: { fileSize: MAX_FILE_SIZE } });
+const uploadDocument = multer({ storage, fileFilter: createFileFilter('documents'), limits: { fileSize: MAX_FILE_SIZE } });
 
 // R2 HELPERS
 function hasR2Config() {
@@ -128,6 +129,7 @@ async function handleUpload(req: Request, res: Response, type: string) {
 router.post("/image", authMiddleware, uploadImage.single("file"), (req, res) => handleUpload(req, res, "image"));
 router.post("/audio", authMiddleware, uploadAudio.single("file"), (req, res) => handleUpload(req, res, "audio"));
 router.post("/video", authMiddleware, uploadVideo.single("file"), (req, res) => handleUpload(req, res, "video"));
+router.post("/document", authMiddleware, uploadDocument.single("file"), (req, res) => handleUpload(req, res, "document"));
 
 // LIST FILES (SECURE)
 router.get("/", authMiddleware, async (req, res) => {

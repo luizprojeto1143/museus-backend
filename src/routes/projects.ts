@@ -231,7 +231,8 @@ router.put("/:id", authMiddleware, async (req, res) => {
                 ...(requestedBudget !== undefined && { requestedBudget }),
                 ...(expectedAudience !== undefined && { expectedAudience }),
                 ...(proposalUrl !== undefined && { proposalUrl }),
-                ...(accessibilityPlan !== undefined && { accessibilityPlan })
+                ...(accessibilityPlan !== undefined && { accessibilityPlan }),
+                ...(req.body.attachments !== undefined && { attachments: req.body.attachments })
             }
         });
 
