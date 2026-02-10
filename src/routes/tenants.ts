@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import bcrypt from "bcrypt";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
-import { Role } from "@prisma/client";
+import { Role, TenantType } from "@prisma/client";
 import { z } from "zod";
 import { limiter } from "../middleware/rateLimiter.js";
 
@@ -162,6 +162,8 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     const createTenantSchema = z.object({
       name: z.string().min(1, "Nome é obrigatório"),
       slug: z.string().min(1, "Slug é obrigatório"),
+      type: z.nativeEnum(TenantType).optional(),
+      isCityMode: z.boolean().optional(),
       adminEmail: z.string().email("Email do admin inválido"),
       adminName: z.string().optional(),
       adminPassword: z.string().min(6, "Senha do admin deve ter no mínimo 6 caracteres"),
@@ -169,7 +171,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     });
 
     const data = createTenantSchema.parse(req.body);
-    const { name, slug, adminEmail, adminName, adminPassword, plan } = data;
+    const { name, slug, type, isCityMode, adminEmail, adminName, adminPassword, plan } = data;
 
     let maxWorks = 50;
     if (plan === "PRO") maxWorks = 200;
@@ -193,6 +195,8 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
       data: {
         name,
         slug,
+        type: type || TenantType.MUSEUM,
+        isCityMode: isCityMode || false,
         plan: plan || "START",
         maxWorks,
         users: {
