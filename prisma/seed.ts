@@ -48,6 +48,28 @@ async function main() {
         console.log("✓ Usuário Master já existe.");
     }
 
+    // 2.1 Criar Usuário Admin para Museu Demo
+    const adminEmail = "demo@museu.com";
+    const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+
+    if (!existingAdmin) {
+        console.log("👤 Criando Usuário Admin Demo (demo@museu.com)...");
+        const hashedAdminPassword = await bcrypt.hash("123456", 10);
+
+        await prisma.user.create({
+            data: {
+                email: adminEmail,
+                name: "Admin Demo",
+                password: hashedAdminPassword,
+                role: Role.ADMIN,
+                tenantId: tenant.id
+            }
+        });
+        console.log("🔑 Usuário Admin Demo criado! Email: demo@museu.com / Senha: 123456");
+    } else {
+        console.log("✓ Usuário Admin Demo já existe.");
+    }
+
     // 3. Criar Categorias se não existirem
     const categoriesData = [
         { name: "Pintura", description: "Obras de pintura em diversos estilos e épocas" },
