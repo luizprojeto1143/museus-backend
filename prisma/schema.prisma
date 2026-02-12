@@ -814,6 +814,7 @@ model Space {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
   bookings    Booking[]
+  events      Event[]
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
