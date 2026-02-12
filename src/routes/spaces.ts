@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
-import { Role } from "@prisma/client";
+import { Role, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
 
@@ -25,7 +25,7 @@ router.get("/", authMiddleware, async (req, res) => {
     try {
         const user = req.user!;
         const spaces = await prisma.space.findMany({
-            where: { tenantId: user.tenantId },
+            where: { tenantId: user.tenantId as string },
             orderBy: { name: "asc" }
         });
         return res.json(spaces);
@@ -42,7 +42,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         const user = req.user!;
 
         const space = await prisma.space.findFirst({
-            where: { id, tenantId: user.tenantId }
+            where: { id, tenantId: user.tenantId as string }
         });
 
         if (!space) return res.status(404).json({ message: "Espaço não encontrado" });
@@ -66,10 +66,10 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
                 description,
                 capacity: capacity || 10,
                 type: type || "ROOM",
-                resources: resources ? JSON.stringify(resources) : null, // Store as JSON string if DB is strict, or Json if supported
+                resources: resources ?? Prisma.DbNull,
                 isBookable: isBookable ?? true,
-                imageUrl,
-                tenantId: user.tenantId
+                imageUrl: imageUrl ?? undefined,
+                tenantId: user.tenantId as string
             }
         });
 
@@ -88,7 +88,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         const { name, description, capacity, type, resources, isBookable, imageUrl } = req.body;
 
         // Verify ownership
-        const existing = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId } });
+        const existing = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId as string } });
         if (!existing) return res.status(404).json({ message: "Espaço não encontrado" });
 
         const space = await prisma.space.update({
@@ -98,9 +98,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
                 description,
                 capacity,
                 type,
-                resources: resources ? JSON.stringify(resources) : undefined,
+                resources: resources ?? undefined,
                 isBookable,
-                imageUrl
+                imageUrl: imageUrl ?? undefined
             }
         });
 
@@ -118,7 +118,7 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
         const user = req.user!;
 
         // Verify ownership
-        const existing = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId } });
+        const existing = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId as string } });
         if (!existing) return res.status(404).json({ message: "Espaço não encontrado" });
 
         await prisma.space.delete({ where: { id } });
@@ -139,7 +139,7 @@ router.get("/:id/availability", authMiddleware, async (req, res) => {
         if (!date) return res.status(400).json({ message: "Data é obrigatória" });
 
         // Ensure space exists
-        const space = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId } });
+        const space = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId as string } });
         if (!space) return res.status(404).json({ message: "Espaço não encontrado" });
 
         const searchDateStart = new Date(`${date}T00:00:00.000Z`);

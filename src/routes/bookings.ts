@@ -3,7 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
-import { Prisma } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 
 const router = Router();
 
@@ -58,6 +58,17 @@ router.get("/my", authMiddleware, async (req, res) => {
         console.error("Erro ao listar agendamentos", err);
         return res.status(500).json({ message: "Erro ao listar agendamentos" });
     }
+});
+
+const createBookingSchema = z.object({
+    body: z.object({
+        date: z.string().datetime(),
+        tenantId: z.string().uuid(),
+        spaceId: z.string().uuid().optional(),
+        startTime: z.string().datetime().optional(),
+        endTime: z.string().datetime().optional(),
+        purpose: z.string().optional()
+    })
 });
 
 // Criar agendamento (Transaction Protected)
@@ -211,7 +222,7 @@ router.put("/:id", authMiddleware, validate(updateBookingSchema), async (req, re
         if (!booking) return res.status(404).json({ message: "Reserva não encontrada" });
 
         // Permitir apenas dono ou admin
-        if (booking.userId !== userId && userRole !== "admin") {
+        if (booking.userId !== userId && userRole !== Role.ADMIN) {
             return res.status(403).json({ message: "Sem permissão" });
         }
 
@@ -271,11 +282,11 @@ router.delete("/:id", authMiddleware, async (req, res) => {
             return res.status(404).json({ message: "Agendamento não encontrado" });
         }
 
-        if (booking.userId !== userId && userRole !== "admin") {
+        if (booking.userId !== userId && userRole !== Role.ADMIN) {
             return res.status(403).json({ message: "Sem permissão" });
         }
 
-        if (hard === "true" && userRole === "admin") {
+        if (hard === "true" && userRole === Role.ADMIN) {
             await prisma.booking.delete({ where: { id } });
             return res.json({ message: "Agendamento excluído permanentemente" });
         }
