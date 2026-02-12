@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
-import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { authMiddleware, softAuthMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { sendCertificateEmail, generateCertificateBuffer } from "../services/email.js";
 import { z } from "zod";
@@ -325,6 +325,19 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
     const user = req.user!;
     const isPrivileged = user.role === Role.ADMIN || user.role === Role.MASTER || user.role === Role.PRODUCER;
 
+    // Initialize variables
+    let visitorId: string | undefined = req.body.visitorId;
+    let email: string | undefined = req.body.email;
+
+    const event = await prisma.event.findUnique({
+      where: { id },
+      include: { tenant: true }
+    });
+
+    if (!event) {
+      return res.status(404).json({ message: "Evento não encontrado" });
+    }
+
     if (!isPrivileged) {
       // SECURITY: Visitors can ONLY check-in themselves
       // We ignore the body 'visitorId'/'email' and force the current user
@@ -336,9 +349,9 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
         return res.status(403).json({ message: "Você não tem um perfil de visitante neste local." });
       }
 
-      // Force ID
+      // Force ID from authenticated user
       visitorId = meVisitor.id;
-      email = undefined; // safety
+      email = undefined; // clear email provided in body for safety
     }
 
     if (!visitorId && !email) {
@@ -358,7 +371,7 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
       targetVisitorId = visitor.id;
     } else if (visitorId) {
       // Verify existence if passed ID directly
-      // (If unprivileged, we already fetched meVisitor, so we know it exists. 
+      // (If unprivileged, we already fetched meVisitor, so we know it exists.
       // If privileged, we need to check if the ID passed is real)
       if (isPrivileged) {
         const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
