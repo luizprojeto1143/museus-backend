@@ -380,6 +380,10 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
       }
     }
 
+    if (!targetVisitorId) {
+      return res.status(400).json({ message: "Visitante não identificado." });
+    }
+
     // Verificar se já fez check-in
     // Race-condition free check-in using try/catch create
     try {
