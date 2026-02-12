@@ -22,12 +22,21 @@ router.get("/", async (req, res) => {
             return res.status(400).json({ message: "Tenant ID não identificado" });
         }
 
+        const isPrivileged = user.role === Role.ADMIN || user.role === Role.MASTER;
+
         const clues = await prisma.clue.findMany({
             where: { tenantId },
             orderBy: { order: "asc" },
-            include: {
+            select: {
+                id: true,
+                riddle: true,
+                order: true,
+                active: true,
+                workId: true,
+                // Somente retorna a resposta se for Admin/Master
+                answer: isPrivileged,
                 work: {
-                    select: { id: true, title: true }
+                    select: { id: true, title: true, room: true }
                 }
             }
         });

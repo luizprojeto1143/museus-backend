@@ -13,7 +13,7 @@ router.get("/leaderboard", async (req, res) => {
             return res.status(400).json({ message: "tenantId is required" });
         }
 
-        const leaderboard = await GamificationService.getLeaderboard(tenantId);
+        const leaderboard = await GamificationService.getLeaderboard(tenantId, req.user?.email);
         return res.json(leaderboard);
     } catch (err) {
         console.error("Error fetching leaderboard", err);

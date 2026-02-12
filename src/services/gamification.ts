@@ -6,7 +6,7 @@ export class GamificationService {
     /**
      * Retrieves the top 10 leaderboard for a tenant
      */
-    static async getLeaderboard(tenantId: string) {
+    static async getLeaderboard(tenantId: string, currentUserEmail?: string) {
         const topVisitors = await prisma.visitor.findMany({
             where: { tenantId },
             orderBy: { xp: 'desc' },
@@ -22,7 +22,7 @@ export class GamificationService {
             rank: i + 1,
             name: v.name || `Visitante ${v.id.substring(0, 4)}`,
             xp: v.xp,
-            isCurrentUser: false
+            isCurrentUser: v.email === currentUserEmail
         }));
     }
 
