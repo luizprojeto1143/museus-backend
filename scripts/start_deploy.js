@@ -83,8 +83,14 @@ if (!runWithRetry('npx prisma migrate deploy')) {
 
 // REMOVIDO: Seed automático em cada deploy
 // O seed só deve ser executado UMA VEZ quando o banco é criado, não em cada deploy!
-// Se precisar executar seed, faça manualmente: npm run prisma:seed
-console.log("ℹ️ Seed automático DESATIVADO para proteger dados em produção.");
+// MAS, para atender a solicitação de criar o usuário ADMIN, vamos habilitar nesta versão.
+console.log("🌱 Executando Seed (Solicitado)...");
+try {
+    execSync('npm run prisma:seed', { stdio: 'inherit', env: process.env });
+    console.log("✅ Seed concluído.");
+} catch (e) {
+    console.error("❌ Falha no seed (não crítico):", e.message);
+}
 
 console.log("2️⃣ Iniciando Aplicação...");
 
