@@ -10,22 +10,53 @@ import { createEventSchema, updateEventSchema } from "../schemas/event.schema.js
 const router = Router();
 
 // Lista eventos (Suporta Discovery Mode / Agenda Unificada)
-router.get("/", async (req, res) => {
+router.get("/", softAuthMiddleware, async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
-    const { visibility, discovery } = req.query; // discovery=true ignores tenantId
+    const { visibility, discovery, status } = req.query; // discovery=true ignores tenantId
 
-    let whereClause: import("@prisma/client").Prisma.EventWhereInput = { visibility: 'PUBLIC' };
+    // Check authentication for role-based filtering
+    const user = req.user;
+    const isMaster = user?.role === Role.MASTER;
+    const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER) && user.tenantId === tenantId;
+    const hasPrivilege = isMaster || isTenantAdmin;
 
-    if (!discovery) {
+    let whereClause: import("@prisma/client").Prisma.EventWhereInput = {};
+
+    // 1. Discovery Mode (Global Public Events) - ALWAYS STRICT
+    if (discovery === 'true') {
+      whereClause.visibility = 'PUBLIC';
+      whereClause.status = 'PUBLISHED';
+      whereClause.startDate = { gte: new Date() }; // Upcoming only by default
+    }
+    // 2. Tenant Scoped
+    else {
       if (!tenantId) {
         return res.status(400).json({ message: "tenantId é obrigatório (ou use ?discovery=true)" });
       }
       whereClause.tenantId = tenantId;
-    } else {
-      // Discovery mode: Shows events from ALL tenants
-      // Optional: Filter by date (upcoming only) for better UX
-      whereClause.startDate = { gte: new Date() };
+
+      // PRIVILEGED ACCESS (Admin/Producer seeing their own tenant)
+      if (hasPrivilege) {
+        // If filters provided, respect them. 
+        if (status) whereClause.status = status as string;
+        if (visibility) whereClause.visibility = visibility as string;
+
+        // If NO filters provided, we show EVERYTHING (Drafts, Private, etc.) 
+        // This matches Admin Dashboard expectation.
+      }
+      // PUBLIC/VISITOR ACCESS
+      else {
+        // Strict safety defaults
+        whereClause.status = 'PUBLISHED';
+        whereClause.visibility = 'PUBLIC';
+
+        // Visitors cannot override these via params
+        if (status && status !== 'PUBLISHED') {
+          // Return empty if they try to fish for DRAFTs
+          return res.json({ data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } });
+        }
+      }
     }
 
     const page = Number(req.query.page) || 1;
@@ -291,24 +322,32 @@ router.get("/:id/my-attendance", authMiddleware, async (req, res) => {
 router.post("/:id/checkin", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { visitorId, email } = req.body;
+    const user = req.user!;
+    const isPrivileged = user.role === Role.ADMIN || user.role === Role.MASTER || user.role === Role.PRODUCER;
+
+    if (!isPrivileged) {
+      // SECURITY: Visitors can ONLY check-in themselves
+      // We ignore the body 'visitorId'/'email' and force the current user
+      const meVisitor = await prisma.visitor.findFirst({
+        where: { email: user.email, tenantId: event.tenantId }
+      });
+
+      if (!meVisitor) {
+        return res.status(403).json({ message: "Você não tem um perfil de visitante neste local." });
+      }
+
+      // Force ID
+      visitorId = meVisitor.id;
+      email = undefined; // safety
+    }
 
     if (!visitorId && !email) {
       return res.status(400).json({ message: "É necessário informar visitorId ou email" });
     }
 
-    const event = await prisma.event.findUnique({
-      where: { id },
-      include: { tenant: true }
-    });
-
-    if (!event) {
-      return res.status(404).json({ message: "Evento não encontrado" });
-    }
-
     let targetVisitorId = visitorId;
 
-    // Se forneceu email, buscar visitante
+    // Se forneceu email (Privileged only effectively, or self)
     if (email) {
       const visitor = await prisma.visitor.findFirst({
         where: { email, tenantId: event.tenantId }
@@ -317,6 +356,15 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
         return res.status(404).json({ message: "Visitante não encontrado neste museu" });
       }
       targetVisitorId = visitor.id;
+    } else if (visitorId) {
+      // Verify existence if passed ID directly
+      // (If unprivileged, we already fetched meVisitor, so we know it exists. 
+      // If privileged, we need to check if the ID passed is real)
+      if (isPrivileged) {
+        const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
+        if (!visitor) return res.status(404).json({ message: "Visitante não encontrado" });
+        targetVisitorId = visitor.id;
+      }
     }
 
     // Verificar se já fez check-in

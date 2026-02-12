@@ -126,9 +126,16 @@ router.post("/request", authMiddleware, async (req, res) => {
         const user = req.user!;
         const data = requestSchema.parse(req.body);
 
+        // Security: Enforce tenantId from user token if not Master
+        const targetTenantId = user.role === Role.MASTER ? data.tenantId : user.tenantId;
+
+        if (!targetTenantId) {
+            return res.status(400).json({ message: "Tenant ID não encontrado" });
+        }
+
         // Verificar feature habilitada
         const tenant = await prisma.tenant.findUnique({
-            where: { id: data.tenantId },
+            where: { id: targetTenantId },
             select: { featureAccessibilityMgmt: true }
         });
 
@@ -143,7 +150,7 @@ router.post("/request", authMiddleware, async (req, res) => {
                 eventId: data.eventId,
                 requestNotes: data.requestNotes,
                 requestedBy: user.id,
-                tenantId: data.tenantId,
+                tenantId: targetTenantId,
                 status: "PENDING"
             }
         });

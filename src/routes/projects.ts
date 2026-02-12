@@ -440,14 +440,14 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
                 startDate: project.startDate || new Date(),
                 endDate: project.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
                 location: project.targetRegion || "Local a definir",
-                status: "PUBLISHED",
-                coverUrl: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=1470&auto=format&fit=crop", // Stock event image
+                status: "DRAFT", // Start as Draft so they can edit details
+                coverUrl: "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000&auto=format&fit=crop", // Generic 'Event' Placeholder
                 format: "PRESENTIAL", // Default
                 visibility: "PUBLIC"
             }
         });
 
-        // Link back and update status
+        // Link back and update status to IN_EXECUTION (Project is being executed)
         await prisma.culturalProject.update({
             where: { id },
             data: {

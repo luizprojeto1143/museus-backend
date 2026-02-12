@@ -29,21 +29,36 @@ export class GamificationService {
     /**
      * Generates dynamic clues based on published works
      */
+    /**
+     * Retrieves valid clues for a tenant
+     * Uses the real 'Clue' table managed by Admins
+     */
     static async getClues(tenantId: string) {
-        const works = await prisma.work.findMany({
-            where: { tenantId, published: true },
-            take: 3, // Generate 3 clues
-            select: { id: true, title: true, artist: true, room: true }
+        const clues = await prisma.clue.findMany({
+            where: {
+                tenantId,
+                active: true
+            },
+            orderBy: { order: 'asc' },
+            include: {
+                work: {
+                    select: { id: true, title: true, room: true, imageUrl: true }
+                }
+            }
         });
 
-        if (works.length === 0) return [];
+        if (clues.length === 0) return [];
 
-        return works.map((work, index) => ({
-            id: `clue-${work.id}`,
-            riddle: `Procure pela obra "${work.title}" de ${work.artist || "artista desconhecido"}.${work.room ? ` Ela está na ${work.room}.` : ""}`,
-            targetWorkId: work.id,
-            xpReward: 50 + (index * 25), // 50, 75, 100
-            isActive: true
+        return clues.map((clue) => ({
+            id: clue.id,
+            riddle: clue.riddle,
+            // SECURITY: Do NOT send 'answer' to the frontend to prevent simple inspection cheats
+            targetWorkId: clue.workId,
+            xpReward: 100, // Standardize XP reward or make it dynamic if schema supported it
+            date: clue.createdAt,
+            // Hint: If work has a room, maybe use it as a hint?
+            hint: clue.work?.room ? `Local: ${clue.work.room}` : undefined,
+            isActive: true // Backward compatibility
         }));
     }
 }

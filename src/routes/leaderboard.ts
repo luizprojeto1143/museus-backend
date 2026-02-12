@@ -23,15 +23,21 @@ router.get("/", authMiddleware, async (req, res) => {
         const user = (req as unknown as AuthenticatedRequest).user;
         const userEmail = user?.email;
 
-        // ...
+        // 1. Determine Context (Tenant)
+        // If ?tenantId is provided (switching context), use it. Otherwise use user's home tenant.
+        const tenantId = (req.query.tenantId as string) || user?.tenantId;
 
         if (!user) {
             return res.status(401).json({ message: "Não autenticado" });
         }
 
-        // Fetch top visitors
+        if (!tenantId) {
+            return res.status(400).json({ message: "Tenant não identificado." });
+        }
+
+        // Fetch top visitors for the TARGET tenant
         const topVisitors = await prisma.visitor.findMany({
-            where: { tenantId: user.tenantId },
+            where: { tenantId: tenantId },
             orderBy: { xp: 'desc' },
             take: 10,
             select: {
@@ -42,9 +48,13 @@ router.get("/", authMiddleware, async (req, res) => {
             }
         });
 
-        // Calculate my rank
-        const myVisitor = await prisma.visitor.findUnique({
-            where: { id: user.id }
+        // Calculate my rank in the TARGET tenant
+        // We need to find the visitor profile for this specific tenant based on email
+        const myVisitor = await prisma.visitor.findFirst({
+            where: {
+                email: user.email,
+                tenantId: tenantId
+            }
         });
 
         let myTotalXp = 0;
@@ -54,7 +64,7 @@ router.get("/", authMiddleware, async (req, res) => {
             myTotalXp = Number(myVisitor.xp);
             const countBetter = await prisma.visitor.count({
                 where: {
-                    tenantId: user.tenantId,
+                    tenantId: tenantId,
                     xp: { gt: myTotalXp }
                 }
             });

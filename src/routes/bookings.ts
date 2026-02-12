@@ -51,25 +51,44 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
             return res.status(400).json({ message: "Não é possível agendar datas no passado." });
         }
 
-        // 2. Validate Opening Hours (09h - 17h)
+        // 2. Validate Opening Hours (Dynamic from Tenant)
+        const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { openingHours: true }
+        });
+
+        let startHour = 9;
+        let endHour = 17;
+
+        // Try to parse "09:00 - 18:00" format
+        if (tenant?.openingHours) {
+            const matches = tenant.openingHours.match(/(\d{2}):\d{2}\s*-\s*(\d{2}):\d{2}/);
+            if (matches) {
+                startHour = parseInt(matches[1]);
+                endHour = parseInt(matches[2]);
+            }
+        }
+
         const hour = bookingDate.getHours();
-        if (hour < 9 || hour >= 17) {
-            return res.status(400).json({ message: "Horário fora de funcionamento (09h às 17h)." });
+        if (hour < startHour || hour >= endHour) {
+            return res.status(400).json({ message: `Horário fora de funcionamento (${startHour}h às ${endHour}h).` });
         }
 
         // 3. Transaction for Consistency (Race Condition Fix)
         // We use Serializable isolation to ensure that concurrent reads of 'count' are safe.
         const result = await prisma.$transaction(async (tx) => {
-            // Check Capacity
+            // Check Capacity (Increased default to 50)
+            const MAX_CAPACITY = 50;
+
             const bookingsCount = await tx.booking.count({
                 where: {
                     tenantId,
-                    date: bookingDate, // Exact match on timestamp (assuming frontend sends specific slots)
+                    date: bookingDate, // Exact match on timestamp
                     status: "CONFIRMED"
                 }
             });
 
-            if (bookingsCount >= HOURLY_CAPACITY) {
+            if (bookingsCount >= MAX_CAPACITY) {
                 throw new Error("CAPACITY_REACHED");
             }
 

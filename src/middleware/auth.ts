@@ -52,3 +52,27 @@ export function requireRole(roles: Role[]) {
     return next();
   };
 }
+return next();
+  };
+}
+
+export function softAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return next();
+  }
+
+  const token = auth.substring(7);
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    req.user = {
+      id: payload.sub,
+      role: payload.role,
+      tenantId: payload.tenantId,
+      email: payload.email
+    };
+  } catch (err) {
+    // Ignore invalid tokens in soft auth
+  }
+  return next();
+}

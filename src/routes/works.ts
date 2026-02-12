@@ -9,8 +9,10 @@ import { WorkService } from "../services/work.js";
 
 const router = Router();
 
+import { softAuthMiddleware } from "../middleware/auth.js";
+
 // Lista obras públicas por tenant (com paginação)
-router.get("/", async (req, res) => {
+router.get("/", softAuthMiddleware, async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
@@ -21,14 +23,27 @@ router.get("/", async (req, res) => {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
 
+    // Default filter: Published only
+    let whereClause: any = { tenantId, published: true };
+
+    // If authenticated and authorized, allow seeing unpublished works
+    if (req.user) {
+      const isMaster = req.user.role === Role.MASTER;
+      const isTenantAdmin = (req.user.role === Role.ADMIN || req.user.role === Role.PRODUCER) && req.user.tenantId === tenantId;
+
+      if (isMaster || isTenantAdmin) {
+        delete whereClause.published; // Remove published filter
+      }
+    }
+
     const [works, total] = await Promise.all([
       prisma.work.findMany({
-        where: { tenantId },
+        where: whereClause,
         orderBy: { createdAt: "desc" },
         skip,
         take: limit
       }),
-      prisma.work.count({ where: { tenantId } })
+      prisma.work.count({ where: whereClause })
     ]);
 
     return res.json({
@@ -47,13 +62,27 @@ router.get("/", async (req, res) => {
 });
 
 // Detalhe da obra
-router.get("/:id", async (req, res) => {
+router.get("/:id", softAuthMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const work = await prisma.work.findUnique({ where: { id } });
+
     if (!work) {
       return res.status(404).json({ message: "Obra não encontrada" });
     }
+
+    // Security Check: Visibility
+    // If NOT published AND NOT (Admin/Master/Producer of this tenant), block access.
+    if (!work.published) {
+      const user = req.user;
+      const isMaster = user?.role === Role.MASTER;
+      const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER) && user.tenantId === work.tenantId;
+
+      if (!isMaster && !isTenantAdmin) {
+        return res.status(404).json({ message: "Obra não encontrada ou indisponível" }); // Return 404 to hide existence
+      }
+    }
+
     return res.json(work);
   } catch (err: any) {
     console.error(`Erro detalhar obra ID: ${req.params.id}`, {

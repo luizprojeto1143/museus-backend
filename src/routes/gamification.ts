@@ -84,9 +84,18 @@ router.post("/session/end", authMiddleware, async (req, res) => {
 
         // ANTI-CHEAT LOGIC 🛡️
         const durationSeconds = (Date.now() - decoded.startTime) / 1000;
-        const maxGenericScore = Math.max(5000, durationSeconds * 200);
 
-        if (score > maxGenericScore && score > 2000) {
+        // Max realistic speed: 10 points per second (assuming fast quiz answers)
+        // Minimum session: 10 seconds to claim significant points
+        const minDuration = 5;
+        const maxScorePerSecond = 10;
+        const maxGenericScore = Math.max(500, durationSeconds * maxScorePerSecond);
+
+        if (durationSeconds < minDuration && score > 50) {
+            return res.status(400).json({ message: "Muito rápido! Tente novamente com mais calma." });
+        }
+
+        if (score > maxGenericScore && score > 1000) { // Tolerance for small scores
             console.warn(`CHEAT DETECTED: User ${user.id} claimed ${score} in ${durationSeconds}s`);
             return res.status(400).json({ message: "Pontuação inconsistente com o tempo de jogo." });
         }

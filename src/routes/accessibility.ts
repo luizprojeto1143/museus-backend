@@ -57,13 +57,37 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN]), async (req, res) => 
     }
 });
 
+// List Tenant Requests (ADMIN/PRODUCER)
+router.get("/", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const { tenantId } = user;
+
+        if (!tenantId) {
+            return res.status(400).json({ message: "Tenant ID required" });
+        }
+
+        const requests = await prisma.accessibilityRequest.findMany({
+            where: { tenantId },
+            orderBy: { createdAt: "desc" },
+            include: {
+                work: { select: { title: true, id: true, description: true, audioUrl: true, imageUrl: true } }
+            }
+        });
+        return res.json(requests);
+    } catch (err) {
+        console.error("Error listing tenant requests", err);
+        return res.status(500).json({ message: "Error listing requests" });
+    }
+});
+
 // List Requests (MASTER)
 router.get("/master", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
     try {
         const requests = await prisma.accessibilityRequest.findMany({
             orderBy: { createdAt: "desc" },
             include: {
-                work: { select: { title: true, id: true } },
+                work: { select: { title: true, id: true, description: true, audioUrl: true, imageUrl: true } },
                 tenant: { select: { name: true, slug: true } }
             }
         });

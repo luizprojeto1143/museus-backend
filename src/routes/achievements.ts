@@ -107,13 +107,47 @@ router.delete("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (r
 // SECURITY: Achievement unlock requires authentication
 router.post("/unlock", authMiddleware, async (req, res) => {
   try {
-    const { visitorId, achievementId } = req.body as {
+    const user = req.user!;
+    let { visitorId, achievementId } = req.body as {
       visitorId?: string;
       achievementId?: string;
     };
 
-    if (!visitorId || !achievementId) {
-      return res.status(400).json({ message: "visitorId e achievementId são obrigatórios" });
+    if (!achievementId) {
+      return res.status(400).json({ message: "achievementId é obrigatório" });
+    }
+
+    // SECURITY: IDOR Protection 🛡️
+    // If user is NOT Admin/Master, they can only unlock for themselves
+    const isPrivileged = user.role === "ADMIN" || user.role === "MASTER";
+
+    if (!isPrivileged) {
+      // Force visitorId to be the current user's visitor profile
+      // We need to find which visitor profile corresponds to this achievement's tenant
+      // But first we need the achievement to know the tenantId
+      const achievementCheck = await prisma.achievement.findUnique({
+        where: { id: achievementId },
+        select: { tenantId: true }
+      });
+
+      if (!achievementCheck) return res.status(404).json({ message: "Conquista não encontrada" });
+
+      const myVisitor = await prisma.visitor.findFirst({
+        where: {
+          email: user.email,
+          tenantId: achievementCheck.tenantId
+        }
+      });
+
+      if (!myVisitor) {
+        return res.status(403).json({ message: "Perfil de visitante não encontrado para este museu." });
+      }
+
+      visitorId = myVisitor.id;
+    }
+
+    if (!visitorId) {
+      return res.status(400).json({ message: "visitorId é obrigatório (ou perfil não encontrado)" });
     }
 
     // 1. Buscamos a conquista para saber quanto XP ela vale
