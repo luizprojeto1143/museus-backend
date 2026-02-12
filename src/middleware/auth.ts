@@ -52,9 +52,7 @@ export function requireRole(roles: Role[]) {
     return next();
   };
 }
-return next();
-  };
-}
+
 
 export function softAuthMiddleware(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
