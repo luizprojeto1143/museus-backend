@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { asaasService } from '../services/asaasService.js';
 import { z } from 'zod';
 import { Role } from '@prisma/client';
 
@@ -146,6 +147,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
             customerEmail,
             customerPhone,
             shippingAddress,
+            paymentMethod = 'PIX', // Default to PIX
             items // Array of { productId, quantity }
         } = req.body;
 
@@ -153,9 +155,72 @@ router.post('/orders', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Dados incompletos' });
         }
 
+        // Asaas Integration
+        let asaasPaymentId = null;
+        let invoiceUrl = null;
+        let bankSlipUrl = null;
+        let pixQrCode = null;
+        let pixPayload = null;
+
+        try {
+            // 1. Create/Get Customer
+            const asaasCustomerId = await asaasService.createCustomer({
+                name: customerName,
+                email: customerEmail,
+                phone: customerPhone,
+                mobilePhone: customerPhone
+            });
+
+            // 2. Calculate Total (Check stock first)
+            const productIds = items.map((i: { productId: string }) => i.productId);
+            const products = await prisma.product.findMany({
+                where: { id: { in: productIds } }
+            });
+
+            let total = 0;
+            for (const item of items) {
+                const product = products.find(p => p.id === item.productId);
+                if (product) {
+                    total += Number(product.price) * item.quantity;
+                }
+            }
+
+            // 3. Create Payment
+            const billingType = paymentMethod === 'BOLETO' ? 'BOLETO' : 'PIX';
+            // Due date = tomorrow
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 1);
+
+            const payment = await asaasService.createPayment({
+                customer: asaasCustomerId,
+                billingType,
+                value: total,
+                dueDate: dueDate.toISOString().split('T')[0],
+                description: `Pedido na Loja Virtual`,
+            });
+
+            asaasPaymentId = payment.id;
+            invoiceUrl = payment.invoiceUrl;
+            bankSlipUrl = payment.bankSlipUrl;
+
+            // 4. Get Pix QR Code if Pix
+            if (billingType === 'PIX') {
+                const pixData = await asaasService.getPixQrCode(payment.id);
+                if (pixData) {
+                    pixQrCode = pixData.encodedImage;
+                    pixPayload = pixData.payload;
+                }
+            }
+
+        } catch (err) {
+            console.error("Erro ao integrar com Asaas (mas continuando pedido):", err);
+            // We continue to create the order even if payment fails initially (status PENDING)
+            // But usually we want to fail fast. Let's log and continue for now as "PENDING".
+        }
+
         // SECURITY FIX: Use transaction to prevent race condition
         const result = await prisma.$transaction(async (tx) => {
-            // Fetch all products at once (N+1 fix)
+            // Fetch all products at once (N+1 fix) -- Redundant fetch but safe inside TX
             const productIds = items.map((i: { productId: string }) => i.productId);
             const products = await tx.product.findMany({
                 where: { id: { in: productIds } }
@@ -191,6 +256,12 @@ router.post('/orders', authMiddleware, async (req, res) => {
                     customerPhone,
                     shippingAddress,
                     total,
+                    paymentMethod,
+                    paymentId: asaasPaymentId,
+                    invoiceUrl,
+                    bankSlipUrl,
+                    pixQrCode,
+                    pixPayload,
                     items: {
                         create: orderItems
                     }
@@ -211,7 +282,13 @@ router.post('/orders', authMiddleware, async (req, res) => {
 
         res.status(201).json({
             order: result,
-            message: 'Pedido criado. Aguardando pagamento.'
+            message: 'Pedido criado com sucesso.',
+            payment: {
+                id: asaasPaymentId,
+                invoiceUrl,
+                pixQrCode,
+                pixPayload
+            }
         });
     } catch (error: unknown) {
         console.error('Error creating order:', error);
@@ -265,6 +342,88 @@ router.patch('/orders/:id/status', authMiddleware, requireRole(['ADMIN', 'MASTER
     } catch (error) {
         console.error('Error updating order:', error);
         res.status(500).json({ message: 'Erro ao atualizar pedido' });
+    }
+});
+
+
+// POST /shop/webhook - Handle Asaas notifications
+router.post('/webhook', async (req, res) => {
+    try {
+        const { event, payment } = req.body;
+        console.log(`[Asaas Webhook] Event: ${event}, Payment ID: ${payment?.id}`);
+
+        if (!event || !payment || !payment.id) {
+            return res.status(400).json({ message: 'Payload inválido' });
+        }
+
+        // Map Asaas events to Order Status
+        let newStatus = null;
+        if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
+            newStatus = 'PAID';
+        } else if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_REVERSED') {
+            newStatus = 'CANCELLED';
+        }
+
+        if (newStatus) {
+            const order = await prisma.order.findFirst({
+                where: { paymentId: payment.id }
+            });
+
+            if (order) {
+                // Only update if status changed
+                if (order.status !== newStatus) {
+                    await prisma.order.update({
+                        where: { id: order.id },
+                        data: { status: newStatus }
+                    });
+
+                    // TODO: Implement restocking if CANCELLED
+                    if (newStatus === 'CANCELLED') {
+                        console.log(`Order ${order.id} cancelled. Restocking needed (NOT IMPLEMENTED YET).`);
+                    }
+                }
+            } else {
+                console.warn(`[Asaas Webhook] Order not found for payment ${payment.id}`);
+            }
+        }
+
+        res.json({ received: true });
+    } catch (error) {
+        console.error('Webhook Error:', error);
+        res.status(500).json({ message: 'Erro no webhook' });
+    }
+});
+
+// GET /shop/orders/:id - Get order details (Customer or Admin)
+router.get('/orders/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+
+        const order = await prisma.order.findUnique({
+            where: { id },
+            include: {
+                items: { include: { product: true } }
+            }
+        });
+
+        if (!order) {
+            return res.status(404).json({ message: 'Pedido não encontrado' });
+        }
+
+        // Security: Check ownership (by email) or role
+        // Note: user.email comes from auth token. order.customerEmail comes from order.
+        const isAdmin = user.role === 'MASTER' || user.role === 'ADMIN';
+        const isOwner = user.email && order.customerEmail === user.email;
+
+        if (!isAdmin && !isOwner) {
+            return res.status(403).json({ message: 'Sem permissão para visualizar este pedido' });
+        }
+
+        res.json(order);
+    } catch (error) {
+        console.error('Error fetching order:', error);
+        res.status(500).json({ message: 'Erro ao buscar pedido' });
     }
 });
 

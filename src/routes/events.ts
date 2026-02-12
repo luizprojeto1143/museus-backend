@@ -156,6 +156,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       title, description, location, startDate, endDate, categoryId,
       certificateBackgroundUrl, certificateText, minMinutesForCertificate,
       // New fields
+      type, instructor, materials,
+
       format, visibility, isOnline,
       zipCode, address, number, complement, neighborhood, city, state,
       meetingLink, platform,
@@ -164,7 +166,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       customFormSchema, galleryUrls,
       certificateRequiresSurvey,
       // Media - Audio Guide
-      audioUrl, videoUrl
+      audioUrl, videoUrl,
+      // Space Link
+      spaceId
     } = req.body;
 
     // Validate categoryId if provided
@@ -172,6 +176,30 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       const categoryExists = await prisma.category.findUnique({ where: { id: categoryId } });
       if (!categoryExists) {
         return res.status(400).json({ message: "Categoria não encontrada. Selecione uma categoria válida." });
+      }
+    }
+
+    // Validate Space and Conflicts
+    if (spaceId) {
+      const space = await prisma.space.findUnique({ where: { id: spaceId } });
+      if (!space || (space.tenantId !== tenantId)) {
+        return res.status(404).json({ message: "Espaço não encontrado" });
+      }
+
+      // Check conflicts in Bookings
+      const conflicts = await prisma.booking.count({
+        where: {
+          spaceId,
+          status: { not: "CANCELLED" },
+          AND: [
+            { startTime: { lt: new Date(endDate || startDate) } },
+            { endTime: { gt: new Date(startDate) } }
+          ]
+        }
+      });
+
+      if (conflicts > 0) {
+        return res.status(409).json({ message: "Este espaço já está reservado por outro compromisso neste horário." });
       }
     }
 
@@ -188,6 +216,10 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
 
         // New fields
+        type: type || "OTHER",
+        instructor,
+        materials,
+
         format,
         visibility,
         isOnline: Boolean(isOnline),
@@ -215,6 +247,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         audioUrl,
         videoUrl,
 
+        spaceId: spaceId || null,
+
         tenant: { connect: { id: tenantId } }
       }
     });
@@ -232,6 +266,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     const {
       title, description, location, startDate, endDate, categoryId,
       certificateBackgroundUrl, certificateText, minMinutesForCertificate,
+      // New fields - Workshop
+      type, instructor, materials,
+
       format, visibility, isOnline,
       zipCode, address, number, complement, neighborhood, city, state,
       meetingLink, platform,
@@ -241,8 +278,32 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       // New
       certificateRequiresSurvey,
       // Media - Audio Guide
-      audioUrl, videoUrl
+      audioUrl, videoUrl,
+      // Space Link
+      spaceId
     } = req.body;
+
+    // Validate Space and Conflicts if changed
+    if (spaceId) {
+      const existingEvent = await prisma.event.findUnique({ where: { id } });
+      const space = await prisma.space.findUnique({ where: { id: spaceId } });
+      if (!space) return res.status(404).json({ message: "Espaço não encontrado" });
+
+      const conflicts = await prisma.booking.count({
+        where: {
+          spaceId,
+          status: { not: "CANCELLED" },
+          AND: [
+            { startTime: { lt: new Date(endDate || startDate) } },
+            { endTime: { gt: new Date(startDate) } }
+          ]
+        }
+      });
+
+      if (conflicts > 0) {
+        return res.status(409).json({ message: "Este espaço já está reservado neste horário." });
+      }
+    }
 
     const event = await prisma.event.update({
       where: { id },
@@ -253,6 +314,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         categoryId: categoryId || null,
         certificateBackgroundUrl, certificateText,
         minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
+
+        // Workshop
+        type, instructor, materials,
 
         format, visibility, isOnline,
         zipCode, address, number, complement, neighborhood, city, state,
@@ -267,7 +331,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 
         // Media - Audio Guide
         audioUrl,
-        videoUrl
+        videoUrl,
+
+        spaceId: spaceId || undefined
       }
     });
 

@@ -84,7 +84,7 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
     try {
         const user = req.user!;
         const tenantId = user.tenantId;
-        const { eventId } = req.query;
+        const { eventId, q } = req.query;
 
         const where: any = {
             status: { not: 'CANCELED' }
@@ -95,6 +95,17 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
         }
         if (eventId) {
             where.eventId = String(eventId);
+        }
+
+        if (q) {
+            const search = String(q).trim();
+            where.OR = [
+                { guestName: { contains: search, mode: 'insensitive' } },
+                { guestEmail: { contains: search, mode: 'insensitive' } },
+                { code: { contains: search, mode: 'insensitive' } },
+                { visitor: { name: { contains: search, mode: 'insensitive' } } },
+                { visitor: { email: { contains: search, mode: 'insensitive' } } }
+            ];
         }
 
         const page = Number(req.query.page) || 1;

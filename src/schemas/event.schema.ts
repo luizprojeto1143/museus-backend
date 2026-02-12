@@ -13,7 +13,45 @@ export const createEventSchema = z.object({
         capacity: z.number().int().positive().optional().nullable(),
         price: z.number().nonnegative().optional().nullable(),
         requiresRegistration: z.boolean().optional(),
-        categoryId: z.string().uuid().optional().nullable()
+        categoryId: z.string().uuid().optional().nullable(),
+        spaceId: z.string().uuid().optional().nullable(),
+
+        // Workshop / Cultural Center
+        type: z.enum(["WORKSHOP", "EXHIBITION", "SHOW", "LECTURE", "OTHER"]).optional(),
+        instructor: z.string().optional(),
+        materials: z.string().optional(),
+
+        // Format & Visibility (Added to match controller)
+        format: z.string().optional(),
+        visibility: z.string().optional(),
+        isOnline: z.boolean().optional(),
+        meetingLink: z.string().optional(),
+        platform: z.string().optional(),
+
+        // Media
+        audioUrl: z.string().optional(),
+        videoUrl: z.string().optional(),
+
+        // Location Details
+        zipCode: z.string().optional(),
+        number: z.string().optional(),
+        complement: z.string().optional(),
+        neighborhood: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+
+        // Producer
+        producerName: z.string().optional(),
+        producerDescription: z.string().optional(),
+        producerLogoUrl: z.string().optional(),
+
+        // Certificate & Features
+        certificateBackgroundUrl: z.string().optional(),
+        certificateText: z.string().optional(),
+        minMinutesForCertificate: z.number().optional().nullable(),
+        certificateRequiresSurvey: z.boolean().optional(),
+        customFormSchema: z.any().optional(),
+        galleryUrls: z.any().optional()
     })
 });
 

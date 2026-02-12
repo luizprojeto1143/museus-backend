@@ -144,6 +144,7 @@ model Tenant {
   // Legacy fields (for backward compatibility)
   plan          String   @default("START")  // "START", "PRO", "ENTERPRISE"
   maxWorks      Int      @default(50)        // Limite de obras cadastradas
+  capacityPerHour Int    @default(50)        // Capacidade máxima de visitantes por hora
 
   // Settings
   mission       String?
@@ -229,6 +230,7 @@ model Tenant {
   categories Category[]
   chatPersona ChatPersona?
   bookings    Booking[]
+  spaces      Space[]
   guestbookEntries GuestbookEntry[]
   clues       Clue[]
   certificates Certificate[]
@@ -445,10 +447,23 @@ model EventAttendance {
 }
 
 // Update Event model to support Online Events
+enum EventType {
+  WORKSHOP
+  EXHIBITION
+  SHOW
+  LECTURE
+  OTHER
+}
+
 model Event {
   id          String   @id @default(uuid())
   title       String
   description String?
+  
+  // Type & Workshop Logic
+  type        EventType @default(OTHER)
+  instructor  String?   // Name of the instructor/facilitator
+  materials   String?   // List of materials needed/provided
   
   // Format & Visibility
   format      String   @default("PRESENTIAL") // PRESENTIAL, ONLINE, HYBRID
@@ -504,6 +519,9 @@ model Event {
   
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
+
+  spaceId     String?
+  space       Space?    @relation(fields: [spaceId], references: [id])
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -766,9 +784,41 @@ model Booking {
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   date      DateTime
-  status    String   @default("CONFIRMED") // CONFIRMED, CANCELLED
+  
+  // Space Management
+  spaceId     String?
+  space       Space?   @relation(fields: [spaceId], references: [id])
+  startTime   DateTime?
+  endTime     DateTime?
+  purpose     String?
+  
+  status    String   @default("CONFIRMED") // CONFIRMED, CANCELLED, PENDING
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  @@index([tenantId, date])
+  @@index([spaceId, date])
+}
+
+model Space {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  capacity    Int      @default(10)
+  type        String   @default("ROOM") // ROOM, AUDITORIUM, LAB, STUDIO
+  resources   Json?    // Array of strings e.g. ["Projector", "WiFi", "AC"]
+  isBookable  Boolean  @default(true)
+  imageUrl    String?
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  bookings    Booking[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([tenantId])
 }
 
 model GuestbookEntry {
@@ -1020,6 +1070,10 @@ model Order {
   // Payment
   paymentMethod String?
   paymentId     String?
+  invoiceUrl    String?
+  bankSlipUrl   String?
+  pixQrCode     String? // Base64 image
+  pixPayload    String? // Copy and paste code
   
   visitorId   String?
   visitor     Visitor? @relation(fields: [visitorId], references: [id])

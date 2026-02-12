@@ -37,6 +37,7 @@ router.get("/:id/settings", async (req, res) => {
       where: { id },
       select: {
         name: true,
+        type: true,
         logoUrl: true,
         primaryColor: true,
         secondaryColor: true,

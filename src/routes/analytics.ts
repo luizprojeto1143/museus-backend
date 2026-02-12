@@ -154,7 +154,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     startOfMonth.setHours(0, 0, 0, 0);
 
     // Run parallel queries
-    const [visitorsThisMonth, topWorksRaw, totalQRScans, totalXP, rawIntervals] = await Promise.all([
+    const [visitorsThisMonth, topWorksRaw, totalQRScans, totalXP, rawIntervals, upcomingBookings] = await Promise.all([
       prisma.visitorVisit.count({
         where: { visitor: { tenantId }, createdAt: { gte: startOfMonth } }
       }),
@@ -180,7 +180,22 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
           AND "createdAt" >= NOW() - INTERVAL '7 days'
         GROUP BY DATE("createdAt")
         ORDER BY DATE("createdAt") ASC
-      ` as Promise<{ date: Date | string, count: bigint }[]>
+      ` as Promise<{ date: Date | string, count: bigint }[]>,
+      // Upcoming Space Bookings
+      prisma.booking.findMany({
+        where: {
+          tenantId,
+          spaceId: { not: null },
+          startTime: { gte: new Date() },
+          status: { not: "CANCELLED" }
+        },
+        include: {
+          space: { select: { name: true, type: true } },
+          user: { select: { name: true } }
+        },
+        orderBy: { startTime: "asc" },
+        take: 5
+      })
     ]);
 
     // Enrich Top Works
@@ -224,6 +239,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       visitsByWork: topWorks.map(w => ({ workTitle: w.title, count: w.visits })),
       xpByCategory: [],
       accessBySource: { qr: totalQRScans, app: 0, map: 0, trails: 0 },
+      upcomingBookings,
       alerts: []
     });
 
@@ -244,9 +260,21 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
     startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
 
-    const [totalVisitors, recurringVisitors, rawDaily] = await Promise.all([
+    const [
+      totalVisitors,
+      recurringVisitors,
+      rawDaily,
+      avgAgeResult,
+      sourceStats,
+      peakHoursRaw,
+      hotWorksRaw,
+      hotTrailsRaw,
+      hotEventsRaw,
+      ageDistributionRaw
+    ] = await Promise.all([
       prisma.visitor.count({ where: { tenantId, createdAt: { gte: startDate } } }),
       prisma.visitor.count({ where: { tenantId, visits: { some: { createdAt: { gte: startDate } } } } }),
+      // Daily Visits
       prisma.$queryRaw`
         SELECT DATE("createdAt") as date, COUNT(*) as count 
         FROM "VisitorVisit" 
@@ -254,9 +282,61 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
           AND "createdAt" >= ${startDate}
         GROUP BY DATE("createdAt")
         ORDER BY DATE("createdAt") ASC
-      ` as Promise<{ date: Date | string, count: bigint }[]>
+      ` as Promise<{ date: Date | string, count: bigint }[]>,
+      // Average Age
+      prisma.visitor.aggregate({
+        where: { tenantId, age: { not: null } },
+        _avg: { age: true }
+      }),
+      // Access Source
+      prisma.visitorVisit.groupBy({
+        by: ['source'],
+        where: { visitor: { tenantId }, createdAt: { gte: startDate } },
+        _count: { id: true }
+      }),
+      // Peak Hours (Postgres)
+      prisma.$queryRaw`
+         SELECT EXTRACT(HOUR FROM "createdAt") as hour, COUNT(*) as count
+         FROM "VisitorVisit"
+         WHERE "visitorId" IN (SELECT id FROM "Visitor" WHERE "tenantId" = ${tenantId})
+           AND "createdAt" >= ${startDate}
+         GROUP BY EXTRACT(HOUR FROM "createdAt")
+         ORDER BY hour ASC
+      ` as Promise<{ hour: number, count: bigint }[]>,
+      // Hot Works
+      prisma.visitorVisit.groupBy({
+        by: ['workId'],
+        where: { visitor: { tenantId }, workId: { not: null }, createdAt: { gte: startDate } },
+        _count: { workId: true },
+        orderBy: { _count: { workId: 'desc' } },
+        take: 5
+      }),
+      // Hot Trails
+      prisma.visitorVisit.groupBy({
+        by: ['trailId'],
+        where: { visitor: { tenantId }, trailId: { not: null }, createdAt: { gte: startDate } },
+        _count: { trailId: true },
+        orderBy: { _count: { trailId: 'desc' } },
+        take: 3
+      }),
+      // Hot Events
+      prisma.visitorVisit.groupBy({
+        by: ['eventId'],
+        where: { visitor: { tenantId }, eventId: { not: null }, createdAt: { gte: startDate } },
+        _count: { eventId: true },
+        orderBy: { _count: { eventId: 'desc' } },
+        take: 3
+      }),
+      // Age Distribution
+      prisma.visitor.groupBy({
+        by: ['age'],
+        where: { tenantId, age: { not: null } },
+        _count: { id: true },
+        orderBy: { age: 'asc' }
+      })
     ]);
 
+    // Process Date Map
     const dateMap = new Map<string, number>();
     (await rawDaily).forEach(r => {
       const d = r.date instanceof Date ? r.date.toISOString().split('T')[0] : String(r.date);
@@ -274,16 +354,56 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
       });
     }
 
+    // Process Source
+    const accessBySource = { qr: 0, app: 0, web: 0 };
+    sourceStats.forEach(s => {
+      if (s.source === 'QR') accessBySource.qr = s._count.id;
+      else if (s.source === 'APP') accessBySource.app = s._count.id;
+      else accessBySource.web += s._count.id; // Others/Null assumed web/direct
+    });
+
+    // Process Peak Hours
+    const peakHours = peakHoursRaw.map(p => ({
+      hour: `${p.hour}:00`,
+      count: Number(p.count)
+    }));
+
+    // Enrich Hot Items
+    const workIds = hotWorksRaw.map(i => i.workId!).filter(Boolean);
+    const works = await prisma.work.findMany({ where: { id: { in: workIds } }, select: { id: true, title: true } });
+    const hotWorks = hotWorksRaw.map(i => ({
+      id: i.workId,
+      name: works.find(w => w.id === i.workId)?.title || "Desconhecido",
+      count: i._count.workId
+    }));
+
+    // Process Age Distribution (Bucketize)
+    const ageGroups = { '0-18': 0, '19-24': 0, '25-34': 0, '35-44': 0, '45-60': 0, '60+': 0 };
+    ageDistributionRaw.forEach(group => {
+      const age = group.age;
+      const count = group._count.id;
+      if (!age) return;
+
+      if (age <= 18) ageGroups['0-18'] += count;
+      else if (age <= 24) ageGroups['19-24'] += count;
+      else if (age <= 34) ageGroups['25-34'] += count;
+      else if (age <= 44) ageGroups['35-44'] += count;
+      else if (age <= 60) ageGroups['45-60'] += count;
+      else ageGroups['60+'] += count;
+    });
+
+    const visitorsByAge = Object.entries(ageGroups).map(([range, count]) => ({ range, count }));
+
     return res.json({
       totalVisitors,
       recurringVisitors,
-      averageAge: 0,
-      accessBySource: { qr: 0, app: 0, web: 0 },
-      peakHours: [],
-      hotWorks: [],
-      hotTrails: [],
-      hotEvents: [],
-      visitorsByAge: [],
+      averageAge: Math.round(avgAgeResult._avg.age || 0),
+      accessBySource,
+      peakHours,
+      hotWorks,
+      hotTrails: hotTrailsRaw.length, // Placeholder count
+      hotEvents: hotEventsRaw.length, // Placeholder count
+      visitorsByAge,
       visitorsByDay,
       dateRange: { start: startDate.toISOString(), end: new Date().toISOString() }
     });

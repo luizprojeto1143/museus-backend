@@ -164,6 +164,11 @@ app.use("/projects", projectsRoutes);
 app.use("/accessibility-execution", accessibilityExecutionRoutes);
 app.use("/providers", providersRoutes);
 
+app.use("/providers", providersRoutes);
+
+import spacesRoutes from "./routes/spaces.js";
+app.use("/spaces", spacesRoutes);
+
 import reportsRoutes from "./routes/reports.js";
 app.use("/reports", reportsRoutes);
 
