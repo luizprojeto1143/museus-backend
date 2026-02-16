@@ -14,7 +14,8 @@ export class GamificationService {
             select: {
                 id: true,
                 name: true,
-                xp: true
+                xp: true,
+                email: true
             }
         });
 
