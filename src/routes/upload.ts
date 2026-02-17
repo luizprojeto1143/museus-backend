@@ -157,6 +157,36 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+// UPDATE FILE METADATA (e.g. useInAi)
+router.patch("/:id", authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { useInAi } = req.body;
+    const user = req.user!;
+
+    const file = await prisma.file.findUnique({ where: { id } });
+
+    if (!file) return res.status(404).json({ message: "Arquivo não encontrado" });
+
+    // SECURITY: Ensure ownership
+    if (user.role !== Role.MASTER && file.tenantId !== user.tenantId) {
+      return res.status(403).json({ message: "Sem permissão para editar este arquivo" });
+    }
+
+    const updated = await prisma.file.update({
+      where: { id },
+      data: {
+        useInAi: useInAi !== undefined ? Boolean(useInAi) : undefined
+      }
+    });
+
+    return res.json(updated);
+  } catch (err) {
+    console.error("Erro atualizar arquivo", err);
+    return res.status(500).json({ message: "Erro ao atualizar arquivo" });
+  }
+});
+
 // DELETE FILE (SECURE IDOR FIX)
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {

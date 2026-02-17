@@ -65,6 +65,16 @@ router.post("/chat", authMiddleware, limiter, async (req, res) => {
       `- Roteiro: "${t.title}" (${t.duration || "?"} min). Sobre: ${t.description || ""}`
     ).join("\n");
 
+    // 5. Arquivos de Contexto (Uploads marcados para IA)
+    const contextFiles = await prisma.file.findMany({
+      where: { tenantId: tenantId as string, useInAi: true },
+      select: { filename: true, type: true, url: true }
+    });
+
+    const filesText = contextFiles.map(f =>
+      `- Arquivo de Referência: "${f.filename}" (${f.type}). Link: ${f.url}`
+    ).join("\n");
+
     const contextPrompt = `
     IDENTIDADE:
     Você é o guia oficial do ${museumName}, localizado em ${museumAddress}.
@@ -81,6 +91,9 @@ router.post("/chat", authMiddleware, limiter, async (req, res) => {
 
     [ROTEIROS SUGERIDOS]
     ${trailsText || "Nenhum roteiro específico criado."}
+
+    [ARQUIVOS DE REFERÊNCIA (DOCS/IMAGENS)]
+    ${filesText || "Nenhum arquivo adicional disponível."}
 
     DIRETRIZES:
     - Responda como se conhecesse profundamente cada item acima.

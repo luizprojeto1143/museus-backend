@@ -323,6 +323,8 @@ model File {
   
   uploadedBy  String?  // userId
   
+  useInAi     Boolean  @default(false) // Arquivo deve ser usado como contexto na IA?
+
   createdAt   DateTime @default(now())
   
   @@index([tenantId])
@@ -399,6 +401,8 @@ model Trail {
   imageUrl    String?
   audioUrl    String?  // Áudio-guia de introdução da trilha
   videoUrl    String?  // Vídeo de apresentação da trilha
+  
+  active      Boolean  @default(true)
   
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
