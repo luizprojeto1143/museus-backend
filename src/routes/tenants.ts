@@ -286,6 +286,31 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
   }
 });
 
+// GET Settings
+router.get("/:id/settings", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+
+    if (user.role === Role.ADMIN && user.tenantId !== id) {
+      return res.status(403).json({ message: "Sem permissão" });
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id }
+    });
+
+    if (!tenant) {
+      return res.status(404).json({ message: "Tenant não encontrado" });
+    }
+
+    return res.json(tenant);
+  } catch (err) {
+    console.error("Erro ao buscar settings", err);
+    return res.status(500).json({ message: "Erro interno" });
+  }
+});
+
 // Atualiza configurações do tenant (ADMIN ou MASTER)
 router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
