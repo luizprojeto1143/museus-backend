@@ -135,10 +135,29 @@ router.get("/:id/features", async (req, res) => {
   }
 });
 
-// Lista todos os tenants (MASTER)
-router.get("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+// Lista todos os tenants (MASTER) ou Sub-tenants (ADMIN)
+router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
+    const user = req.user!;
+    const { parentId } = req.query;
+
+    const where: any = {};
+
+    // Se for ADMIN, obrigatoriamente tem que filtrar pelo seu tenantId (listar seus filhos)
+    if (user.role === Role.ADMIN) {
+      if (!parentId || parentId !== user.tenantId) {
+        return res.status(403).json({ message: "Admins só podem listar seus próprios equipamentos (sub-tenants)" });
+      }
+      where.parentId = user.tenantId;
+    } else {
+      // MASTER pode filtrar se quiser
+      if (parentId) {
+        where.parentId = String(parentId);
+      }
+    }
+
     const tenants = await prisma.tenant.findMany({
+      where,
       orderBy: { createdAt: "desc" }
     });
     return res.json(tenants);
