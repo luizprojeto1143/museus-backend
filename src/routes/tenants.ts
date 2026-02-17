@@ -324,7 +324,10 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       featureWorks, featureTrails, featureEvents, featureGamification,
       featureQRCodes, featureChatAI, featureShop, featureDonations,
       featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames,
-      isCityMode
+      featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames,
+      isCityMode,
+      // Municipal Features
+      featureEditais, featureProjects, featureProviders, featureAccessibilityMgmt, featureInstitutionalReports
     } = req.body;
 
     // Convert maxWorks to number if present
@@ -354,7 +357,13 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         ...(featureGuestbook !== undefined && { featureGuestbook: Boolean(featureGuestbook) }),
         ...(featureAccessibility !== undefined && { featureAccessibility: Boolean(featureAccessibility) }),
         ...(featureMinigames !== undefined && { featureMinigames: Boolean(featureMinigames) }),
-        ...(isCityMode !== undefined && { isCityMode: Boolean(isCityMode) })
+        ...(isCityMode !== undefined && { isCityMode: Boolean(isCityMode) }),
+        // Municipal Features
+        ...(featureEditais !== undefined && { featureEditais: Boolean(featureEditais) }),
+        ...(featureProjects !== undefined && { featureProjects: Boolean(featureProjects) }),
+        ...(featureProviders !== undefined && { featureProviders: Boolean(featureProviders) }),
+        ...(featureAccessibilityMgmt !== undefined && { featureAccessibilityMgmt: Boolean(featureAccessibilityMgmt) }),
+        ...(featureInstitutionalReports !== undefined && { featureInstitutionalReports: Boolean(featureInstitutionalReports) })
       }
     });
 
