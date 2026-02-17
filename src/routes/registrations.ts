@@ -234,4 +234,46 @@ router.post('/checkin', authMiddleware, requireRole(['ADMIN', 'MASTER']), async 
     }
 });
 
+// GET /stats/today (Producer Dashboard)
+router.get('/stats/today', authMiddleware, requireRole(['ADMIN', 'MASTER', 'PRODUCER']), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+
+        if (!tenantId && user.role !== 'MASTER') {
+            return res.status(400).json({ error: 'Tenant ID required' });
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const where: any = {
+            createdAt: { gte: today },
+            status: { not: 'CANCELED' }
+        };
+
+        if (tenantId) {
+            where.event = { tenantId };
+        }
+
+        const count = await prisma.registration.count({ where });
+
+        // Calculate revenue today
+        const registrations = await prisma.registration.findMany({
+            where,
+            select: { pricePaid: true }
+        });
+
+        const revenue = registrations.reduce((sum, r) => sum + Number(r.pricePaid || 0), 0);
+
+        res.json({
+            count,
+            revenue
+        });
+    } catch (e) {
+        console.error("Error fetching today stats", e);
+        res.status(500).json({ error: 'Erro ao buscar estatísticas de hoje' });
+    }
+});
+
 export const registrationsRouter = router;
