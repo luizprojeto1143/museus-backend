@@ -180,7 +180,27 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
       adminEmail: z.string().email("Email do admin inválido"),
       adminName: z.string().optional(),
       adminPassword: z.string().min(6, "Senha do admin deve ter no mínimo 6 caracteres"),
-      plan: z.string().optional()
+      plan: z.string().optional(),
+      // Feature Flags
+      featureWorks: z.boolean().optional(),
+      featureTrails: z.boolean().optional(),
+      featureEvents: z.boolean().optional(),
+      featureGamification: z.boolean().optional(),
+      featureQRCodes: z.boolean().optional(),
+      featureChatAI: z.boolean().optional(),
+      featureShop: z.boolean().optional(),
+      featureDonations: z.boolean().optional(),
+      featureCertificates: z.boolean().optional(),
+      featureReviews: z.boolean().optional(),
+      featureGuestbook: z.boolean().optional(),
+      featureAccessibility: z.boolean().optional(),
+      featureEditais: z.boolean().optional(),
+      featureMinigames: z.boolean().optional(),
+      featureProjects: z.boolean().optional(),
+      featureProviders: z.boolean().optional(),
+      featureAccessibilityMgmt: z.boolean().optional(),
+      featureInstitutionalReports: z.boolean().optional(),
+      featureEditaisSubmission: z.boolean().optional()
     });
 
     const data = createTenantSchema.parse(req.body);
@@ -212,6 +232,26 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
         isCityMode: isCityMode || false,
         plan: plan || "START",
         maxWorks,
+        // Feature Flags
+        featureWorks: data.featureWorks,
+        featureTrails: data.featureTrails,
+        featureEvents: data.featureEvents,
+        featureGamification: data.featureGamification,
+        featureQRCodes: data.featureQRCodes,
+        featureChatAI: data.featureChatAI,
+        featureShop: data.featureShop,
+        featureDonations: data.featureDonations,
+        featureCertificates: data.featureCertificates,
+        featureReviews: data.featureReviews,
+        featureGuestbook: data.featureGuestbook,
+        featureAccessibility: data.featureAccessibility,
+        featureEditais: data.featureEditais,
+        featureMinigames: data.featureMinigames,
+        featureProjects: data.featureProjects,
+        featureProviders: data.featureProviders,
+        featureAccessibilityMgmt: data.featureAccessibilityMgmt,
+        featureInstitutionalReports: data.featureInstitutionalReports,
+        featureEditaisSubmission: data.featureEditaisSubmission,
         users: {
           create: [
             {
