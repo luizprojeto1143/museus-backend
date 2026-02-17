@@ -161,17 +161,85 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
   }
 });
 
+// Password Recovery (Request Link)
 router.post("/recover-password", limiter, async (req: Request, res: Response): Promise<any> => {
   try {
     const { email } = req.body;
-    // In a real app, generate token and send email
-    console.log(`[MOCKED] Password recovery requested for: ${email}`);
 
-    // Always return success to prevent email enumeration
+    // 1. Find user
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      // Return success to avoid enumeration, but log it
+      console.log(`[AUTH] Password recovery requested for non-existent email: ${email}`);
+      return res.status(200).json({ message: "Se o e-mail existir, as instruções foram enviadas." });
+    }
+
+    // 2. Generate Reset Token (JWT with specific purpose)
+    const resetToken = jwt.sign(
+      { userId: user.id, type: 'password-reset' },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // 3. Send Email
+    // Note: In production, FRONTEND_URL should be env var. Fallback to localhost for now.
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    const { mailService } = await import("../services/email.js");
+
+    await mailService.sendGenericEmail(
+      email,
+      "Recuperação de Senha - Museus Enterprise",
+      `
+          <div style="font-family: Arial, sans-serif; color: #333;">
+              <h2>Recuperação de Senha</h2>
+              <p>Olá, <strong>${user.name}</strong>.</p>
+              <p>Recebemos uma solicitação para redefinir sua senha.</p>
+              <p>Clique no botão abaixo para criar uma nova senha:</p>
+              <a href="${resetLink}" style="display: inline-block; padding: 10px 20px; background-color: #d4af37; color: #000; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 20px 0;">Redefinir Senha</a>
+              <p>Link: <a href="${resetLink}">${resetLink}</a></p>
+              <p style="font-size: 12px; color: #666;">Este link expira em 1 hora.</p>
+              <p style="font-size: 12px; color: #666;">Se você não solicitou isso, ignore este e-mail.</p>
+          </div>
+          `
+    );
+
     return res.status(200).json({ message: "Se o e-mail existir, as instruções foram enviadas." });
   } catch (err) {
     console.error("Erro recover-password", err);
     return res.status(500).json({ message: "Erro ao processar solicitação" });
+  }
+});
+
+router.post("/reset-password", limiter, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: "Token e nova senha são obrigatórios" });
+    }
+
+    // Verify Token
+    const payload = jwt.verify(token, JWT_SECRET) as any;
+    if (payload.type !== 'password-reset') {
+      return res.status(400).json({ message: "Token inválido para esta operação" });
+    }
+
+    // Hash new password
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    // Update User
+    await prisma.user.update({
+      where: { id: payload.userId },
+      data: { password: hash }
+    });
+
+    return res.json({ message: "Senha alterada com sucesso!" });
+
+  } catch (err) {
+    console.error("Erro reset-password", err);
+    return res.status(400).json({ message: "Token inválido ou expirado" });
   }
 });
 

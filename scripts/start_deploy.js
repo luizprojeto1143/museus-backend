@@ -1,4 +1,6 @@
 import { execSync, spawn } from 'child_process';
+import 'dotenv/config';
+
 
 // 1. Configurar preferência por IPv4
 // Isso corrige problemas de resolução DNS comuns em ambientes Node > 17 (especialmente com Render + Postgres)

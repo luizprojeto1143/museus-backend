@@ -18,7 +18,12 @@ router.get("/public", limiter, async (req, res) => {
         id: true,
         name: true,
         slug: true,
-        type: true
+        type: true,
+        coverImageUrl: true,
+        latitude: true,
+        longitude: true,
+        openingHours: true,
+        address: true // Often contains city
       },
       orderBy: { name: "asc" }
     });
