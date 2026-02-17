@@ -170,12 +170,14 @@ router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async
 });
 
 // Cria tenant + admin
-router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
+    const user = req.user!;
     const createTenantSchema = z.object({
       name: z.string().min(1, "Nome é obrigatório"),
       slug: z.string().min(1, "Slug é obrigatório"),
       type: z.nativeEnum(TenantType).optional(),
+      parentId: z.string().optional().nullable(), // Allow sending parentId
       isCityMode: z.boolean().optional(),
       adminEmail: z.string().email("Email do admin inválido"),
       adminName: z.string().optional(),
@@ -206,6 +208,18 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     const data = createTenantSchema.parse(req.body);
     const { name, slug, type, isCityMode, adminEmail, adminName, adminPassword, plan } = data;
 
+    // Enforce logic for ADMIN
+    let finalParentId = data.parentId;
+    if (user.role === Role.ADMIN) {
+      // Admin can only create child tenants of their own tenant
+      finalParentId = user.tenantId;
+
+      // Admin cannot create CITY (only MASTER can)
+      if (type === TenantType.CITY) {
+        return res.status(403).json({ message: "Admin não pode criar tenants do tipo Cidade" });
+      }
+    }
+
     let maxWorks = 50;
     if (plan === "PRO") maxWorks = 200;
     if (plan === "ENTERPRISE") maxWorks = 500;
@@ -229,6 +243,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
         name,
         slug,
         type: type || TenantType.MUSEUM,
+        parentId: finalParentId, // Use enforced parentId
         isCityMode: isCityMode || false,
         plan: plan || "START",
         maxWorks,
