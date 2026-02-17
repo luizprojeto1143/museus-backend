@@ -324,7 +324,6 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       featureWorks, featureTrails, featureEvents, featureGamification,
       featureQRCodes, featureChatAI, featureShop, featureDonations,
       featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames,
-      featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames,
       isCityMode,
       // Municipal Features
       featureEditais, featureProjects, featureProviders, featureAccessibilityMgmt, featureInstitutionalReports
