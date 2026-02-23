@@ -15,7 +15,17 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Log storage mode on startup
-console.log(`[Upload] Storage mode: ${process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID ? "Cloudflare R2 ✓" : "Local (ephemeral!)"}`);
+const r2Required = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME", "R2_PUBLIC_BASE_URL"];
+const r2Missing = r2Required.filter(v => !process.env[v]);
+
+if (r2Missing.length === 0) {
+  console.log("✅ [Upload] Storage mode: Cloudflare R2");
+} else if (r2Missing.length === r2Required.length) {
+  console.log("⚠️ [Upload] Storage mode: Local (ephemeral storage! Files will disappear after restart)");
+} else {
+  console.error(`❌ [Upload] R2 Configuration Incomplete! Missing: ${r2Missing.join(", ")}`);
+  console.error("   Falling back to Local storage (ephemeral!)");
+}
 
 const storage = multer.diskStorage({
   destination: (_req: Request, _file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => cb(null, uploadDir),
