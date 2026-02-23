@@ -182,7 +182,17 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
 router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(updateWorkSchema), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
     const data = req.body;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.work.findFirst({ where: whereClause });
+    if (!existing) {
+      return res.status(404).json({ message: "Obra não encontrada" });
+    }
 
     // Build safe update object with known Prisma types
     // Using explicit fields instead of `any` cast
@@ -230,9 +240,13 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
 
-    // Fetch work to get file URLs
-    const work = await prisma.work.findUnique({ where: { id } });
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const work = await prisma.work.findFirst({ where: whereClause });
 
     if (work) {
       await prisma.work.delete({ where: { id } });

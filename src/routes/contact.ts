@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { z } from "zod";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
-import { limiter } from "../middleware/rateLimiter.js";
+import { formLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -17,7 +17,7 @@ const contactSchema = z.object({
 
 // PUBLIC: Send Contact Request
 // SECURITY: Rate Limit added to prevent spam (CRIT-004)
-router.post("/", limiter, async (req, res) => {
+router.post("/", formLimiter, async (req, res) => {
     try {
         const data = contactSchema.parse(req.body);
 

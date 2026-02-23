@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
+import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { Role } from "@prisma/client";
 
 const router = Router();
 
@@ -65,9 +67,24 @@ router.get("/visitor/:visitorId", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+// ADMIN: Delete stamp
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
+
+    // IDOR Protection: Look up the stamp with its work to get tenantId
+    const stamp = await prisma.passportStamp.findUnique({
+      where: { id },
+      include: { work: { select: { tenantId: true } } }
+    });
+    if (!stamp) return res.status(404).json({ message: "Carimbo não encontrado" });
+
+    // Verify stamp's work belongs to user's tenant (unless MASTER)
+    if (user.role !== Role.MASTER && stamp.work?.tenantId !== user.tenantId) {
+      return res.status(403).json({ message: "Sem permissão" });
+    }
+
     await prisma.passportStamp.delete({ where: { id } });
     return res.json({ message: "Carimbo excluído com sucesso" });
   } catch (err) {

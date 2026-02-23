@@ -1,9 +1,9 @@
 import { Router, Request, Response } from "express";
-import { PrismaClient, SurveyQuestionType } from "@prisma/client";
+import { SurveyQuestionType } from "@prisma/client";
 import { z } from "zod";
+import { prisma } from "../prisma.js";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // ========== SCHEMAS ==========
 

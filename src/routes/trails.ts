@@ -180,6 +180,17 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.trail.findFirst({ where: whereClause });
+    if (!existing) {
+      return res.status(404).json({ message: "Trilha não encontrada" });
+    }
+
     const { title, description, duration, workIds, imageUrl, audioUrl, videoUrl, active } = req.body as {
       title: string;
       description?: string;
@@ -213,6 +224,17 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.trail.findFirst({ where: whereClause });
+    if (!existing) {
+      return res.status(404).json({ message: "Trilha não encontrada" });
+    }
+
     await prisma.trail.delete({ where: { id } });
     return res.status(204).send();
   } catch (err) {

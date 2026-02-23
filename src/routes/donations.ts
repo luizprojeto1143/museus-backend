@@ -35,13 +35,15 @@ router.post('/', limiter, async (req, res) => {
         // MOCK PAYMENT MODE - For development without real payment gateway
         // To use real payments, integrate with Asaas, MercadoPago, or Stripe
         // Set PAYMENT_GATEWAY=production in .env to disable mock auto-approval
-        const isMockMode = process.env.PAYMENT_GATEWAY !== 'production';
+        const isProduction = process.env.NODE_ENV === 'production';
+        const isMockMode = !isProduction && process.env.PAYMENT_GATEWAY !== 'production';
 
         const pixCode = `00020126580014BR.GOV.BCB.PIX0136${process.env.PIX_KEY || '123e4567-e89b-12d3-a456-426614174000'}520400005303986540${data.amount.toFixed(2).replace('.', '')}5802BR5913${process.env.PIX_RECIPIENT || 'Museus System'}6008Brasilia62070503***6304`;
         const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixCode)}`;
 
-        // Auto-approve after 30 seconds (Simulation for Demo, only if in mock mode)
+        // Auto-approve after 30 seconds (Simulation for Demo ONLY - never runs in production)
         if (isMockMode) {
+            console.warn(`[Mock Payment] ⚠️ Auto-approving donation ${donation.id} in 30s (dev mode).`);
             setTimeout(async () => {
                 try {
                     await prisma.donation.update({

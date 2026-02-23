@@ -1,11 +1,45 @@
 import rateLimit from "express-rate-limit";
 
+// Global limiter: generous for general browsing
 export const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
-    standardHeaders: "draft-7", // draft-6: `RateLimit-*` headers; draft-7: combined `RateLimit` header
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+    limit: 200, // allows high-throughput for event check-ins, etc.
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
     message: {
         message: "Muitas requisições deste IP, tente novamente mais tarde.",
+    },
+});
+
+// Strict limiter for authentication (brute-force protection)
+export const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 15, // 15 login attempts per 15 minutes
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: {
+        message: "Muitas tentativas de login. Aguarde 15 minutos.",
+    },
+});
+
+// Strict limiter for public form submissions (anti-spam)
+export const formLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    limit: 20,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: {
+        message: "Limite de envios atingido. Tente novamente mais tarde.",
+    },
+});
+
+// AI endpoints (expensive - prevent abuse)
+export const aiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    limit: 10, // 10 AI requests per minute
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: {
+        message: "Limite de requisições de IA atingido. Aguarde um momento.",
     },
 });

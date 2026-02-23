@@ -221,8 +221,13 @@ router.put("/:id", authMiddleware, validate(updateBookingSchema), async (req, re
         const booking = await prisma.booking.findUnique({ where: { id } });
         if (!booking) return res.status(404).json({ message: "Reserva não encontrada" });
 
+        // IDOR Protection: Verify resource belongs to user's tenant
+        if (userRole !== Role.MASTER && booking.tenantId !== req.user?.tenantId) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
         // Permitir apenas dono ou admin
-        if (booking.userId !== userId && userRole !== Role.ADMIN) {
+        if (booking.userId !== userId && userRole !== Role.ADMIN && userRole !== Role.MASTER) {
             return res.status(403).json({ message: "Sem permissão" });
         }
 
@@ -282,7 +287,12 @@ router.delete("/:id", authMiddleware, async (req, res) => {
             return res.status(404).json({ message: "Agendamento não encontrado" });
         }
 
-        if (booking.userId !== userId && userRole !== Role.ADMIN) {
+        // IDOR Protection: Verify resource belongs to user's tenant
+        if (userRole !== Role.MASTER && booking.tenantId !== req.user?.tenantId) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
+        if (booking.userId !== userId && userRole !== Role.ADMIN && userRole !== Role.MASTER) {
             return res.status(403).json({ message: "Sem permissão" });
         }
 

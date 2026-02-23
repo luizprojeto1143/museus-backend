@@ -21,13 +21,22 @@ router.get("/full", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), asyn
             metadata: {
                 exportedBy: user.email,
                 date: new Date().toISOString(),
-                scope: tenantId || "GLOBAL"
+                scope: tenantId || "GLOBAL",
+                lgpdNotice: "Dados pessoais de visitantes foram anonimizados conforme LGPD"
             },
             tenants: await prisma.tenant.findMany({ where: tenantId ? { id: tenantId } : {} }),
             events: await prisma.event.findMany({ where: eventWhere }),
             tickets: await prisma.ticket.findMany({ where: { event: eventWhere } }),
             registrations: await prisma.registration.findMany({ where: { event: eventWhere } }),
-            visitors: await prisma.visitor.findMany({ where: visitorWhere }),
+            // LGPD: Strip PII from visitor data (emails, CPF, phones, IPs)
+            visitors: (await prisma.visitor.findMany({ where: visitorWhere })).map(v => ({
+                id: v.id,
+                name: v.name,
+                tenantId: v.tenantId,
+                xp: v.xp,
+                createdAt: v.createdAt,
+                // Exclude: email, cpf, phone, termsAcceptedIp
+            })),
             works: await prisma.work.findMany({ where: whereClause })
         };
 

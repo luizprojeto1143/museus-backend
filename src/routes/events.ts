@@ -263,6 +263,16 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
 router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(updateEventSchema), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const ownerCheck = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existingEvent = await prisma.event.findFirst({ where: ownerCheck });
+    if (!existingEvent) {
+      return res.status(404).json({ message: "Evento não encontrado" });
+    }
     const {
       title, description, location, startDate, endDate, categoryId,
       certificateBackgroundUrl, certificateText, minMinutesForCertificate,
@@ -285,7 +295,6 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 
     // Validate Space and Conflicts if changed
     if (spaceId) {
-      const existingEvent = await prisma.event.findUnique({ where: { id } });
       const space = await prisma.space.findUnique({ where: { id: spaceId } });
       if (!space) return res.status(404).json({ message: "Espaço não encontrado" });
 
@@ -347,6 +356,17 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.event.findFirst({ where: whereClause });
+    if (!existing) {
+      return res.status(404).json({ message: "Evento não encontrado" });
+    }
+
     await prisma.event.delete({ where: { id } });
     return res.status(204).send();
   } catch (err) {

@@ -79,10 +79,18 @@ router.get("/:id", async (req, res) => {
 });
 
 // Atualizar categoria
-router.put("/:id", async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
     const { name, type, description } = req.body;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.category.findFirst({ where: whereClause });
+    if (!existing) return res.status(404).json({ error: "Category not found" });
 
     const category = await prisma.category.update({
       where: { id },
@@ -97,10 +105,18 @@ router.put("/:id", async (req, res) => {
 });
 
 // Atualizar status (patch)
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
     const { active } = req.body;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.category.findFirst({ where: whereClause });
+    if (!existing) return res.status(404).json({ error: "Category not found" });
 
     const category = await prisma.category.update({
       where: { id },
@@ -115,13 +131,17 @@ router.patch("/:id", async (req, res) => {
 });
 
 // Deletar categoria
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
 
-    // Verificar uso antes de deletar
-    const category = await prisma.category.findUnique({
-      where: { id },
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === Role.MASTER
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const category = await prisma.category.findFirst({
+      where: whereClause,
       include: {
         _count: {
           select: { works: true, trails: true, events: true }

@@ -1,9 +1,7 @@
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../prisma.js';
 import axios from 'axios';
-
-const prisma = new PrismaClient();
 
 export class CertificateService {
     /**

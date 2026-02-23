@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
+import { mailService } from "../services/email.js";
 import { z } from "zod";
 
 const router = Router();
@@ -246,6 +247,103 @@ router.get("/:id/history", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]
     } catch (err) {
         console.error("Erro ao buscar histórico", err);
         return res.status(500).json({ message: "Erro ao buscar histórico" });
+    }
+});
+
+// Get current provider info (for the logged in user)
+router.get("/me", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const provider = await prisma.accessibilityProvider.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!provider) {
+            return res.status(404).json({ message: "Perfil de prestador não encontrado para este usuário" });
+        }
+
+        return res.json(provider);
+    } catch (err) {
+        console.error("Erro ao buscar meu perfil de prestador", err);
+        return res.status(500).json({ message: "Erro ao buscar perfil" });
+    }
+});
+
+// Get current provider stats
+router.get("/me/stats", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const provider = await prisma.accessibilityProvider.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!provider) {
+            return res.status(404).json({ message: "Perfil de prestador não encontrado" });
+        }
+
+        const stats = {
+            totalExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id } }),
+            completedExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id, status: "VALIDATED" } }),
+            activeConversations: await prisma.conversation.count({
+                where: {
+                    providerId: provider.id,
+                    status: "OPEN"
+                }
+            }),
+            pendingQuotes: await prisma.conversation.count({
+                where: {
+                    providerId: provider.id,
+                    messages: {
+                        none: {
+                            senderType: "PROVIDER"
+                        }
+                    }
+                }
+            })
+        };
+
+        return res.json(stats);
+    } catch (err) {
+        console.error("Erro ao buscar estatísticas", err);
+        return res.status(500).json({ message: "Erro ao buscar estatísticas" });
+    }
+});
+
+// Request Quote (Send Email)
+router.post("/:id/quote", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.PRODUCER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { message } = req.body;
+        const user = req.user!;
+
+        // 1. Get Provider
+        const provider = await prisma.accessibilityProvider.findUnique({ where: { id } });
+        if (!provider) return res.status(404).json({ message: "Prestador não encontrado" });
+
+        if (!provider.email) return res.status(400).json({ message: "Prestador sem e-mail cadastrado." });
+
+        // 2. Get Producer Info
+        const producer = await prisma.user.findUnique({ where: { id: user.id } });
+        const producerName = producer?.name || "Produtor Cultural";
+
+        // 3. Send Email
+        const sent = await mailService.sendQuoteRequest(
+            provider.email,
+            producerName,
+            user.email,
+            provider.name,
+            message
+        );
+
+        if (sent) {
+            return res.json({ message: "Solicitação enviada com sucesso!" });
+        } else {
+            return res.status(500).json({ message: "Erro ao enviar e-mail." });
+        }
+
+    } catch (err) {
+        console.error("Error sending quote", err);
+        return res.status(500).json({ message: "Erro ao solicitar orçamento" });
     }
 });
 

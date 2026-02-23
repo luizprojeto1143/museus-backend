@@ -1,10 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { Role } from '@prisma/client';
+import { prisma } from '../prisma.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // List Rules
 router.get('/', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {

@@ -6,7 +6,7 @@ import { Role } from "@prisma/client";
 import { validate } from "../middleware/validate.js";
 import { loginSchema, registerSchema, switchTenantSchema } from "../schemas/auth.schema.js";
 import { authMiddleware } from "../middleware/auth.js";
-import { limiter } from "../middleware/rateLimiter.js";
+import { authLimiter } from "../middleware/rateLimiter.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -46,13 +46,16 @@ const generateTokens = async (userId: string, email: string, role: Role, tenantI
 };
 
 // Login
-router.post("/login", limiter, validate(loginSchema), async (req: Request, res: Response): Promise<any> => {
+router.post("/login", authLimiter, validate(loginSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password } = req.body;
 
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { tenant: { select: { type: true } } }
+      include: {
+        tenant: { select: { type: true } },
+        providerProfile: { select: { id: true } }
+      }
     });
 
     if (!user) {
@@ -79,13 +82,15 @@ router.post("/login", limiter, validate(loginSchema), async (req: Request, res: 
       role: user.role,
       tenantId: user.tenantId,
       tenantType: user.tenant?.type,
+      hasProviderProfile: !!user.providerProfile,
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
         tenantId: user.tenantId,
-        tenantType: user.tenant?.type
+        tenantType: user.tenant?.type,
+        hasProviderProfile: !!user.providerProfile
       }
     });
   } catch (err) {
@@ -162,7 +167,7 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
 });
 
 // Password Recovery (Request Link)
-router.post("/recover-password", limiter, async (req: Request, res: Response): Promise<any> => {
+router.post("/recover-password", authLimiter, async (req: Request, res: Response): Promise<any> => {
   try {
     const { email } = req.body;
 
@@ -212,7 +217,7 @@ router.post("/recover-password", limiter, async (req: Request, res: Response): P
   }
 });
 
-router.post("/reset-password", limiter, async (req: Request, res: Response): Promise<any> => {
+router.post("/reset-password", authLimiter, async (req: Request, res: Response): Promise<any> => {
   try {
     const { token, newPassword } = req.body;
 
@@ -243,7 +248,7 @@ router.post("/reset-password", limiter, async (req: Request, res: Response): Pro
   }
 });
 
-router.post("/register", limiter, validate(registerSchema), async (req: Request, res: Response): Promise<any> => {
+router.post("/register", authLimiter, validate(registerSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password, name, tenantId, role, cpf, phone, bio, website } = req.body;
 

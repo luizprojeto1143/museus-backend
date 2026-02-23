@@ -62,6 +62,7 @@ import executiveReportsRoutes from "./routes/executive-reports.js";
 import secretaryRoutes from "./routes/secretary.js";
 import aiCostsRoutes from "./routes/ai-costs.js";
 import institutionalExportRoutes from "./routes/institutional-export.js";
+import inboxRoutes from "./routes/inbox.js";
 import { validateEnv } from "./config/validateEnv.js";
 
 // Validate critical environment variables on boot
@@ -70,10 +71,19 @@ validateEnv();
 const app = express();
 app.set('trust proxy', 1);
 
+const corsOrigin = (() => {
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.FRONTEND_URL) {
+      console.error("❌ CRITICAL: FRONTEND_URL is not set in production. CORS will reject all requests.");
+      return false; // Reject all origins
+    }
+    return process.env.FRONTEND_URL;
+  }
+  return "*";
+})();
+
 app.use(cors({
-  origin: process.env.NODE_ENV === "production"
-    ? (process.env.FRONTEND_URL || "*")
-    : "*",
+  origin: corsOrigin,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -85,7 +95,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-app.use(express.json({ limit: "200mb" }));
+app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Log middleware (disabled for production)
@@ -164,8 +174,6 @@ app.use("/projects", projectsRoutes);
 app.use("/accessibility-execution", accessibilityExecutionRoutes);
 app.use("/providers", providersRoutes);
 
-app.use("/providers", providersRoutes);
-
 import spacesRoutes from "./routes/spaces.js";
 app.use("/spaces", spacesRoutes);
 
@@ -178,6 +186,7 @@ app.use("/executive-reports", executiveReportsRoutes);
 app.use("/secretary", secretaryRoutes);
 app.use("/ai-costs", aiCostsRoutes);
 app.use("/institutional-export", institutionalExportRoutes);
+app.use("/inbox", inboxRoutes);
 
 const PORT = process.env.PORT || 3000;
 

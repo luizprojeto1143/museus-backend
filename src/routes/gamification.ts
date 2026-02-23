@@ -41,7 +41,10 @@ router.get("/clues", async (req, res) => {
 import jwt from "jsonwebtoken";
 import { authMiddleware } from "../middleware/auth.js";
 
-const GAME_SECRET = process.env.GAME_SECRET || "super-secret-game-key";
+const GAME_SECRET = process.env.GAME_SECRET || (() => {
+    console.warn("⚠️  WARNING: GAME_SECRET not set. Using insecure default. Set GAME_SECRET in production!");
+    return "dev-only-insecure-game-key";
+})();
 
 // 3. Start Game Session (Anti-Cheat handshake)
 router.post("/session/start", authMiddleware, async (req, res) => {

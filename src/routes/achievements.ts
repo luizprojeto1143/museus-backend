@@ -70,7 +70,17 @@ router.post("/", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, r
 router.put("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
     const { code, title, description, xpReward, iconUrl, condition, autoTrigger, active } = req.body;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === "MASTER"
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.achievement.findFirst({ where: whereClause });
+    if (!existing) {
+      return res.status(404).json({ message: "Conquista não encontrada" });
+    }
 
     const achievement = await prisma.achievement.update({
       where: { id },
@@ -96,6 +106,17 @@ router.put("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req,
 router.delete("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user!;
+
+    // IDOR Protection: Verify resource belongs to user's tenant
+    const whereClause = user.role === "MASTER"
+      ? { id }
+      : { id, tenantId: user.tenantId as string };
+    const existing = await prisma.achievement.findFirst({ where: whereClause });
+    if (!existing) {
+      return res.status(404).json({ message: "Conquista não encontrada" });
+    }
+
     await prisma.achievement.delete({ where: { id } });
     return res.json({ message: "Conquista excluída com sucesso" });
   } catch (err) {

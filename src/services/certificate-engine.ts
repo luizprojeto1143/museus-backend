@@ -1,7 +1,6 @@
-import { PrismaClient, TriggerType, CertificateType } from '@prisma/client';
+import { TriggerType, CertificateType } from '@prisma/client';
 import { CertificateService } from './certificate.js';
-
-const prisma = new PrismaClient();
+import { prisma } from '../prisma.js';
 
 export class CertificateEngine {
 

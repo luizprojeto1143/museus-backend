@@ -20,12 +20,28 @@ const OPTIONAL_ENV_VARS = [
     "S3_SECRET_KEY"
 ];
 
+// Variables that are REQUIRED in production but optional in development
+const PRODUCTION_REQUIRED_ENV_VARS = [
+    "FRONTEND_URL",
+    "GAME_SECRET"
+];
+
 export function validateEnv(): void {
     const missing: string[] = [];
+    const isProduction = process.env.NODE_ENV === "production";
 
     for (const varName of REQUIRED_ENV_VARS) {
         if (!process.env[varName]) {
             missing.push(varName);
+        }
+    }
+
+    // In production, enforce additional required variables
+    if (isProduction) {
+        for (const varName of PRODUCTION_REQUIRED_ENV_VARS) {
+            if (!process.env[varName]) {
+                missing.push(varName);
+            }
         }
     }
 
@@ -43,8 +59,14 @@ export function validateEnv(): void {
         console.warn("⚠️  WARNING: JWT_SECRET is shorter than 32 characters. Consider using a stronger secret.");
     }
 
+    // Check GAME_SECRET strength (if set)
+    const gameSecret = process.env.GAME_SECRET;
+    if (gameSecret && gameSecret.length < 32) {
+        console.warn("⚠️  WARNING: GAME_SECRET is shorter than 32 characters. Consider using a stronger secret.");
+    }
+
     // Log optional vars status (for debugging)
-    if (process.env.NODE_ENV !== "production") {
+    if (!isProduction) {
         const configured = OPTIONAL_ENV_VARS.filter(v => process.env[v]);
         console.log(`✅ Environment validated. ${configured.length}/${OPTIONAL_ENV_VARS.length} optional vars configured.`);
     }

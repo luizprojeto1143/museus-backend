@@ -2,6 +2,9 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
+import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { Role } from "@prisma/client";
+import { formLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -44,7 +47,7 @@ router.get("/", async (req, res) => {
 });
 
 // Criar mensagem
-router.post("/", validate(createEntrySchema), async (req, res) => {
+router.post("/", formLimiter, validate(createEntrySchema), async (req, res) => {
     try {
         const { message, visitorId, tenantId, email } = req.body;
 
@@ -82,10 +85,18 @@ router.post("/", validate(createEntrySchema), async (req, res) => {
 });
 
 // ADMIN: Toggle Visibility
-router.patch("/:id/visibility", async (req, res) => {
+router.patch("/:id/visibility", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { id } = req.params;
+        const user = req.user!;
         const { isVisible } = req.body;
+
+        // IDOR Protection: Verify resource belongs to user's tenant
+        const whereClause = user.role === Role.MASTER
+            ? { id }
+            : { id, tenantId: user.tenantId as string };
+        const existing = await prisma.guestbookEntry.findFirst({ where: whereClause });
+        if (!existing) return res.status(404).json({ message: "Mensagem não encontrada" });
 
         const updated = await prisma.guestbookEntry.update({
             where: { id },
@@ -99,9 +110,18 @@ router.patch("/:id/visibility", async (req, res) => {
 });
 
 // ADMIN: Delete Entry
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { id } = req.params;
+        const user = req.user!;
+
+        // IDOR Protection: Verify resource belongs to user's tenant
+        const whereClause = user.role === Role.MASTER
+            ? { id }
+            : { id, tenantId: user.tenantId as string };
+        const existing = await prisma.guestbookEntry.findFirst({ where: whereClause });
+        if (!existing) return res.status(404).json({ message: "Mensagem não encontrada" });
+
         await prisma.guestbookEntry.delete({ where: { id } });
         return res.json({ success: true });
     } catch (err) {

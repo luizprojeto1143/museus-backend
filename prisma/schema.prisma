@@ -285,6 +285,10 @@ model User {
   website   String?
   preferences Json?   // { emailNotifications: boolean, publicProfile: boolean, twoFactor: boolean, language: string }
   refreshTokens RefreshToken[]
+  
+  // Enterprise Features
+  producerConversations Conversation[] @relation("ProducerConversations")
+  providerProfile       AccessibilityProvider? 
 }
 
 model RefreshToken {
@@ -1476,6 +1480,11 @@ model AccessibilityProvider {
   tenant           Tenant?   @relation(fields: [tenantId], references: [id])
   
   executions       AccessibilityExecution[]
+  conversations    Conversation[]
+  
+  // Link to Platform User (Login)
+  userId           String?   @unique
+  user             User?     @relation(fields: [userId], references: [id])
   
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -1483,3 +1492,98 @@ model AccessibilityProvider {
   @@index([active])
   @@index([tenantId])
 }
+
+// ========== INBOX & NEGOTIATION SYSTEM ==========
+
+model Conversation {
+  id          String   @id @default(uuid())
+  
+  producerId  String
+  producer    User     @relation("ProducerConversations", fields: [producerId], references: [id], onDelete: Cascade)
+  
+  providerId  String
+  provider    AccessibilityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  
+  status      String   @default("OPEN") // OPEN, CLOSED, ARCHIVED
+  
+  lastMessageAt DateTime @default(now())
+  
+  messages    Message[]
+  transactions Transaction[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([producerId, providerId])
+  @@index([producerId])
+  @@index([providerId])
+}
+
+enum MessageType {
+  TEXT
+  PROPOSAL
+  PAYMENT_REQUEST
+  SYSTEM_ALERT
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  senderId       String       // User ID (could be Producer or Provider's User)
+  senderType     String       // "PRODUCER" or "PROVIDER" or "SYSTEM"
+  
+  content        String
+  type           MessageType  @default(TEXT)
+  attachments    Json?        // Array of file URLs
+  
+  readAt         DateTime?
+  
+  createdAt      DateTime     @default(now())
+  
+  @@index([conversationId])
+}
+
+// ========== ASAAS PAYMENT SYSTEM ==========
+
+enum TransactionStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  RELEASED // Funds released to provider
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  
+  amount      Decimal  @db.Decimal(10, 2)
+  status      TransactionStatus @default(PENDING)
+  description String?
+  
+  // Relations
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  
+  payerId     String   // User (Producer)
+  payeeId     String   // Provider ID
+  
+  // Asaas Data
+  asaasId         String?   @unique // External Transaction ID
+  paymentMethod   String?   // PIX, CREDIT_CARD, BOLETO
+  asaasInvoiceUrl String?
+  pixQrCode       String?   // Base64
+  pixCopyPaste    String?
+  
+  paidAt          DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([conversationId])
+  @@index([payerId])
+  @@index([status])
+}
+

@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { z } from 'zod';
+import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { Role } from '@prisma/client';
+import { formLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -10,8 +13,13 @@ const subscribeSchema = z.object({
     tenantId: z.string()
 });
 
+const unsubscribeSchema = z.object({
+    email: z.string().email("Email inválido"),
+    tenantId: z.string().min(1, "tenantId é obrigatório")
+});
+
 // POST /newsletter/subscribe - Subscribe to newsletter
-router.post('/subscribe', async (req, res) => {
+router.post('/subscribe', formLimiter, async (req, res) => {
     try {
         const data = subscribeSchema.parse(req.body);
 
@@ -44,6 +52,9 @@ router.post('/subscribe', async (req, res) => {
 
         res.status(201).json({ message: 'Inscrito com sucesso!' });
     } catch (error) {
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({ message: error.errors[0].message });
+        }
         console.error('Error subscribing:', error);
         // Generic error
         res.status(500).json({ message: 'Erro ao processar inscrição' });
@@ -52,17 +63,13 @@ router.post('/subscribe', async (req, res) => {
 
 // POST /newsletter/unsubscribe - Unsubscribe from newsletter
 // Rate Limit needed here to prevent mass unsubscription attacks
-router.post('/unsubscribe', async (req, res) => {
+router.post('/unsubscribe', formLimiter, async (req, res) => {
     try {
-        const { email, tenantId } = req.body;
-
-        if (!email || !tenantId) {
-            return res.status(400).json({ message: 'Dados inválidos' });
-        }
+        const data = unsubscribeSchema.parse(req.body);
 
         const subscription = await prisma.newsletterSubscription.findUnique({
             where: {
-                email_tenantId: { email, tenantId }
+                email_tenantId: { email: data.email, tenantId: data.tenantId }
             }
         });
 
@@ -76,13 +83,16 @@ router.post('/unsubscribe', async (req, res) => {
         // Anti-enumeration/Privacy: Always return success
         res.json({ message: 'Solicitação processada' });
     } catch (error) {
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({ message: error.errors[0].message });
+        }
         console.error('Error unsubscribing:', error);
         res.status(500).json({ message: 'Erro ao processar' });
     }
 });
 
 // GET /newsletter/list - List subscribers (Admin only)
-router.get('/list', async (req, res) => {
+router.get('/list', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { tenantId } = req.query;
 

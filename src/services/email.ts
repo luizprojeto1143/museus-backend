@@ -249,6 +249,38 @@ export class MailService {
             await this.sendGenericEmail(data.requestedBy, subject, html);
         }
     }
+
+    async sendQuoteRequest(to: string, producerName: string, producerEmail: string, serviceName: string, message: string) {
+        try {
+            await this.transporter.sendMail({
+                from: '"Museus Ent" <noreply@museus.ent>',
+                to,
+                replyTo: producerEmail, // The Magic: Provider hits reply -> goes to Producer
+                subject: `💰 Solicitação de Orçamento: ${serviceName}`,
+                html: `
+                    <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+                        <div style="background: #f8fafc; padding: 20px; border-bottom: 1px solid #e2e8f0;">
+                            <h2 style="margin: 0; color: #0f172a;">Nova Solicitação de Orçamento</h2>
+                        </div>
+                        <div style="padding: 20px;">
+                            <p>Olá,</p>
+                            <p>Você recebeu uma solicitação de orçamento de <strong>${producerName}</strong> para o serviço: <strong>${serviceName}</strong>.</p>
+                            
+                            <div style="background: #f1f5f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                                <p style="margin: 0; white-space: pre-wrap; color: #334155;">${message}</p>
+                            </div>
+
+                            <p style="color: #64748b; font-size: 14px;">Para responder, basta responder a este e-mail. A conversa será direta com o produtor (${producerEmail}).</p>
+                        </div>
+                    </div>
+                `
+            });
+            return true;
+        } catch (error) {
+            console.error("Error sending quote email:", error);
+            return false;
+        }
+    }
 }
 
 export const mailService = new MailService();

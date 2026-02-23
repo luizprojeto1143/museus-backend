@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import OpenAI from "openai";
 import { authMiddleware } from "../middleware/auth.js";
-import { limiter } from "../middleware/rateLimiter.js";
+import { aiLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -14,7 +14,7 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 // Chat simples usando persona do tenant
 // SECURITY: Rate Limiting applied (CRIT-008)
-router.post("/chat", authMiddleware, limiter, async (req, res) => {
+router.post("/chat", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
