@@ -74,8 +74,8 @@ app.set('trust proxy', 1);
 const corsOrigin = (() => {
   if (process.env.NODE_ENV === "production") {
     if (!process.env.FRONTEND_URL) {
-      console.error("❌ CRITICAL: FRONTEND_URL is not set in production. CORS will reject all requests.");
-      return false; // Reject all origins
+      console.warn("⚠️  WARNING: FRONTEND_URL is not set in production. Defaulting to '*' for demo purposes.");
+      return "*";
     }
     return process.env.FRONTEND_URL;
   }

@@ -36,11 +36,12 @@ export function validateEnv(): void {
         }
     }
 
-    // In production, enforce additional required variables
+    // In production, log warnings for these instead of exiting, to allow demo/deployments
     if (isProduction) {
         for (const varName of PRODUCTION_REQUIRED_ENV_VARS) {
             if (!process.env[varName]) {
-                missing.push(varName);
+                console.warn(`⚠️  WARNING: Missing recommended environment variable: ${varName}`);
+                console.warn(`   The application will continue, but some features may be limited.`);
             }
         }
     }
