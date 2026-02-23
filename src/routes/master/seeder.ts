@@ -14,6 +14,13 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
 
         const createdVisitors = [];
 
+        // Get some works to create baseline visits
+        const works = await prisma.work.findMany({
+            where: { tenantId },
+            select: { id: true },
+            take: 10
+        });
+
         for (let i = 0; i < amount; i++) {
             const sex = faker.person.sexType();
             const firstName = faker.person.firstName(sex);
@@ -32,10 +39,40 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
                     photoUrl: faker.image.avatar()
                 }
             });
+
+            // Auto-generate 1-2 initial visits so they don't look empty
+            if (works.length > 0) {
+                const initialVisits = faker.number.int({ min: 1, max: 2 });
+                const shuffled = [...works].sort(() => 0.5 - Math.random()).slice(0, initialVisits);
+                let totalXp = 0;
+
+                for (const w of shuffled) {
+                    const xp = faker.number.int({ min: 10, max: 30 });
+                    await prisma.visitorVisit.create({
+                        data: {
+                            visitorId: visitor.id,
+                            workId: w.id,
+                            xpGained: xp,
+                            source: 'AUTO',
+                            createdAt: faker.date.recent({ days: 1 })
+                        }
+                    });
+                    await prisma.passportStamp.create({
+                        data: { visitorId: visitor.id, workId: w.id }
+                    }).catch(() => { });
+                    totalXp += xp;
+                }
+
+                await prisma.visitor.update({
+                    where: { id: visitor.id },
+                    data: { xp: totalXp }
+                });
+            }
+
             createdVisitors.push(visitor);
         }
 
-        return res.json({ message: `Gerados ${createdVisitors.length} visitantes`, visitors: createdVisitors });
+        return res.json({ message: `Gerados ${createdVisitors.length} visitantes com histórico inicial`, visitors: createdVisitors });
     } catch (err) {
         console.error("Erro ao gerar visitantes", err);
         return res.status(500).json({ message: "Erro ao gerar visitantes" });
@@ -179,7 +216,7 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
         // 1. Get Fake Visitors
         const visitors = await prisma.visitor.findMany({
             where: { tenantId, isFake: true },
-            take: Number(visitorCount),
+            take: Math.max(Number(visitorCount), 100), // Default to more if not specified
             orderBy: { updatedAt: 'asc' }
         });
 
