@@ -27,6 +27,7 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
             const lastName = faker.person.lastName();
             const name = `${firstName} ${lastName}`;
             const email = faker.internet.email({ firstName, lastName, provider: 'gmail.com' }).toLowerCase();
+            const createdAt = faker.date.recent({ days: 30 });
 
             const visitor = await prisma.visitor.create({
                 data: {
@@ -36,36 +37,45 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
                     isFake: true,
                     age: faker.number.int({ min: 12, max: 75 }),
                     xp: 0,
-                    photoUrl: faker.image.avatar()
+                    photoUrl: faker.image.avatar(),
+                    createdAt: createdAt,
+                    updatedAt: createdAt
                 }
             });
 
-            // Auto-generate 1-2 initial visits so they don't look empty
+            // Auto-generate 1-3 initial visits so they don't look empty
             if (works.length > 0) {
-                const initialVisits = faker.number.int({ min: 1, max: 2 });
+                const initialVisits = faker.number.int({ min: 1, max: 3 });
                 const shuffled = [...works].sort(() => 0.5 - Math.random()).slice(0, initialVisits);
                 let totalXp = 0;
+                let lastDate = createdAt;
 
                 for (const w of shuffled) {
                     const xp = faker.number.int({ min: 10, max: 30 });
+                    const visitDate = faker.date.between({ from: createdAt, to: new Date() });
+                    if (visitDate > lastDate) lastDate = visitDate;
+
                     await prisma.visitorVisit.create({
                         data: {
                             visitorId: visitor.id,
                             workId: w.id,
                             xpGained: xp,
                             source: 'AUTO',
-                            createdAt: faker.date.recent({ days: 1 })
+                            createdAt: visitDate
                         }
                     });
                     await prisma.passportStamp.create({
-                        data: { visitorId: visitor.id, workId: w.id }
+                        data: { visitorId: visitor.id, workId: w.id, stampedAt: visitDate }
                     }).catch(() => { });
                     totalXp += xp;
                 }
 
                 await prisma.visitor.update({
                     where: { id: visitor.id },
-                    data: { xp: totalXp }
+                    data: {
+                        xp: totalXp,
+                        updatedAt: lastDate
+                    }
                 });
             }
 
@@ -214,15 +224,24 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
         const { tenantId, visitorCount = 5, minVisits = 1, maxVisits = 5 } = req.body;
 
         // 1. Get Fake Visitors
-        const visitors = await prisma.visitor.findMany({
+        // 1. Get Fake Visitors (Randomize selection to avoid only hitting oldest)
+        const allVisitors = await prisma.visitor.findMany({
             where: { tenantId, isFake: true },
-            take: Math.max(Number(visitorCount), 100), // Default to more if not specified
-            orderBy: { updatedAt: 'asc' }
+            select: { id: true }
         });
 
-        if (visitors.length === 0) {
+        if (allVisitors.length === 0) {
             return res.status(400).json({ message: "Nenhum visitante falso encontrado. Gere visitantes primeiro." });
         }
+
+        const selectedIds = [...allVisitors]
+            .sort(() => 0.5 - Math.random())
+            .slice(0, Number(visitorCount) || 20)
+            .map(v => v.id);
+
+        const visitors = await prisma.visitor.findMany({
+            where: { id: { in: selectedIds } }
+        });
 
         // 2. Get Works
         const works = await prisma.work.findMany({
@@ -238,6 +257,11 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
         const achievements = await prisma.achievement.findMany({
             where: { tenantId, active: true },
             select: { id: true, xpReward: true }
+        });
+
+        const trails = await prisma.trail.findMany({
+            where: { tenantId, active: true },
+            select: { id: true }
         });
 
         let totalVisits = 0;
@@ -341,6 +365,21 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
                 totalGuestbook++;
             }
 
+            // --- TRAILS (~20% chance) ---
+            if (trails.length > 0 && Math.random() < 0.2) {
+                const trail = trails[Math.floor(Math.random() * trails.length)];
+                await prisma.visitorVisit.create({
+                    data: {
+                        visitorId: visitor.id,
+                        trailId: trail.id,
+                        xpGained: 50,
+                        source: 'AUTO',
+                        createdAt: faker.date.recent({ days: 14 })
+                    }
+                });
+                visitorXpGained += 50;
+            }
+
             // --- UPDATE VISITOR XP ---
             await prisma.visitor.update({
                 where: { id: visitor.id },
@@ -349,17 +388,15 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
                     updatedAt: new Date()
                 }
             });
-
-            totalVisits += 0; // already counted above
         }
 
         const details = [
             `👥 ${visitors.length} visitantes processados`,
             `🎨 ${totalVisits} visitas a obras`,
             `🔖 ${totalStamps} selos no passaporte`,
-            `🏆 ${totalAchievements} conquistas desbloqueadas`,
-            `📝 ${totalGuestbook} mensagens no livro`,
-            `⭐ ${totalReviews} avaliações de obras`
+            `🏆 ${totalAchievements} conquistas`,
+            `📝 ${totalGuestbook} guestbook`,
+            `⭐ ${totalReviews} reviews`
         ].join(' | ');
 
         return res.json({

@@ -27,13 +27,9 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
         skip,
         take: limit,
         include: {
-          _count: {
-            select: {
-              visits: true
-            }
-          },
           visits: {
             select: {
+              workId: true,
               trailId: true,
               eventId: true
             }
@@ -45,8 +41,13 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
 
     // Mapear para o formato esperado pelo front
     const formatted = visitors.map(v => {
-      // Count unique trails and events visited
+      // Obras visitadas = visitas que possuem workId
+      const worksVisited = v.visits.filter(visit => visit.workId).length;
+
+      // Trilhas únicas
       const uniqueTrails = new Set(v.visits.filter(visit => visit.trailId).map(visit => visit.trailId));
+
+      // Eventos únicos
       const uniqueEvents = new Set(v.visits.filter(visit => visit.eventId).map(visit => visit.eventId));
 
       return {
@@ -55,7 +56,7 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
         email: v.email,
         xp: v.xp,
         trailsCompleted: uniqueTrails.size,
-        worksVisited: v._count.visits,
+        worksVisited: worksVisited,
         eventsAccessed: uniqueEvents.size,
         firstAccessAt: v.createdAt,
         lastAccessAt: v.updatedAt
