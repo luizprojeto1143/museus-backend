@@ -187,6 +187,7 @@ app.use("/secretary", secretaryRoutes);
 app.use("/ai-costs", aiCostsRoutes);
 app.use("/institutional-export", institutionalExportRoutes);
 app.use("/inbox", inboxRoutes);
+app.use("/seeder", seederRoutes);
 
 const PORT = process.env.PORT || 3000;
 
