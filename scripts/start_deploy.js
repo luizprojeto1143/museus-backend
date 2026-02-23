@@ -72,14 +72,20 @@ function runWithRetry(command, retries = 5, delayMs = 5000) {
 // CORREÇÃO CRÍTICA: Usar migrate deploy em vez de db push --accept-data-loss
 // migrate deploy NÃO deleta dados, apenas aplica novas migrations
 if (!runWithRetry('npx prisma migrate deploy')) {
-    // Se migrate deploy falhar (ex: banco novo sem migrations), tenta db push SEM --accept-data-loss
-    console.log("⚠️ Migrate deploy falhou. Tentando db push sem perda de dados...");
+    // Se migrate deploy falhar (ex: banco novo sem migrations ou erro P3005), tenta db push
+    console.log("⚠️ Migrate deploy falhou. Tentando db push...");
     try {
         execSync('npx prisma db push', { stdio: 'inherit', env: process.env });
         console.log("✅ DB Push concluído.");
     } catch (e) {
-        console.error("❌ Falha no db push:", e.message);
-        process.exit(1);
+        console.warn("⚠️ DB Push simples falhou (provável perda de dados detectada). Tentando com --accept-data-loss...");
+        try {
+            execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit', env: process.env });
+            console.log("✅ DB Push com --accept-data-loss concluído.");
+        } catch (e2) {
+            console.error("❌ Falha crítica no banco de dados:", e2.message);
+            process.exit(1);
+        }
     }
 }
 
