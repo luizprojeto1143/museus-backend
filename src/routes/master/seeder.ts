@@ -56,11 +56,27 @@ router.delete("/bulk", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), a
         const fakeIds = fakeVisitors.map(v => v.id);
 
         if (fakeIds.length > 0) {
+            // Clean ALL tables that reference Visitor via FK
             await prisma.visitorVisit.deleteMany({ where: { visitorId: { in: fakeIds } } });
             await prisma.passportStamp.deleteMany({ where: { visitorId: { in: fakeIds } } });
             await prisma.visitorAchievement.deleteMany({ where: { visitorId: { in: fakeIds } } });
             await prisma.guestbookEntry.deleteMany({ where: { visitorId: { in: fakeIds } } });
             await prisma.review.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.eventAttendance.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.favorite.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.certificate.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.notificationPreference.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.dailyChallengeCompletion.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.scavengerHuntParticipation.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.deviceToken.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            // Orders have OrderItems, delete items first
+            const fakeOrders = await prisma.order.findMany({ where: { visitorId: { in: fakeIds } }, select: { id: true } });
+            if (fakeOrders.length > 0) {
+                await prisma.orderItem.deleteMany({ where: { orderId: { in: fakeOrders.map(o => o.id) } } });
+                await prisma.order.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            }
+            // Registrations
+            await prisma.registration.deleteMany({ where: { visitorId: { in: fakeIds } } });
         }
 
         const deleted = await prisma.visitor.deleteMany({
