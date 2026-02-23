@@ -19,16 +19,16 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
             const firstName = faker.person.firstName(sex);
             const lastName = faker.person.lastName();
             const name = `${firstName} ${lastName}`;
-            const email = faker.internet.email({ firstName, lastName, provider: 'gmail.com' }).toLowerCase(); // Ensure realistic provider
+            const email = faker.internet.email({ firstName, lastName, provider: 'gmail.com' }).toLowerCase();
 
-            // Create Visitor
             const visitor = await prisma.visitor.create({
                 data: {
                     name,
                     email,
                     tenantId,
                     isFake: true,
-                    xp: faker.number.int({ min: 0, max: 5000 }),
+                    age: faker.number.int({ min: 12, max: 75 }),
+                    xp: 0,
                     photoUrl: faker.image.avatar()
                 }
             });
@@ -48,24 +48,36 @@ router.delete("/bulk", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), a
         const { tenantId } = req.body;
         if (!tenantId) return res.status(400).json({ message: "Tenant ID required" });
 
+        // Delete related data first (for visitors that are isFake)
+        const fakeVisitors = await prisma.visitor.findMany({
+            where: { tenantId, isFake: true },
+            select: { id: true }
+        });
+        const fakeIds = fakeVisitors.map(v => v.id);
+
+        if (fakeIds.length > 0) {
+            await prisma.visitorVisit.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.passportStamp.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.visitorAchievement.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.guestbookEntry.deleteMany({ where: { visitorId: { in: fakeIds } } });
+            await prisma.review.deleteMany({ where: { visitorId: { in: fakeIds } } });
+        }
+
         const deleted = await prisma.visitor.deleteMany({
-            where: {
-                tenantId,
-                isFake: true
-            }
+            where: { tenantId, isFake: true }
         });
 
-        return res.json({ message: `Removidos ${deleted.count} visitantes falsos` });
+        return res.json({ message: `Removidos ${deleted.count} visitantes falsos e todos seus dados relacionados` });
     } catch (err) {
         console.error("Erro apagar visitantes", err);
         return res.status(500).json({ message: "Erro ao apagar visitantes" });
     }
 });
 
-// Simulate Interaction (Visit / Comment)
+// Simulate Interaction (Visit / Comment) — kept for single interactions
 router.post("/interact", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
     try {
-        const { visitorId, type, content } = req.body; // type: 'visit', 'comment', 'review'
+        const { visitorId, type, content } = req.body;
 
         const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
         if (!visitor || !visitor.isFake) {
@@ -73,11 +85,10 @@ router.post("/interact", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
         }
 
         if (type === 'visit') {
-            // Find a random work
             const work = await prisma.work.findFirst({
                 where: { tenantId: visitor.tenantId },
-                orderBy: { id: 'asc' }, // weak random, assumes sequential or skip
-                skip: Math.floor(Math.random() * 5) // Skip first few
+                orderBy: { id: 'asc' },
+                skip: Math.floor(Math.random() * 5)
             }) || await prisma.work.findFirst({ where: { tenantId: visitor.tenantId } });
 
             if (work) {
@@ -89,7 +100,6 @@ router.post("/interact", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
                         source: 'DEMO'
                     }
                 });
-                // Award XP
                 await prisma.visitor.update({
                     where: { id: visitor.id },
                     data: { xp: { increment: 10 } }
@@ -113,7 +123,39 @@ router.post("/interact", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
     }
 });
 
-// Bulk Traffic Simulation (Visits)
+// ===== GUESTBOOK MESSAGES =====
+const guestbookMessages = [
+    "Experiência incrível! O acervo é maravilhoso, voltarei com certeza.",
+    "Trouxe meus filhos e eles adoraram. Parabéns pela iniciativa!",
+    "A exposição temporária está fantástica. Muito emocionante.",
+    "Que lugar especial! A curadoria é impecável.",
+    "Primeira vez aqui e já virei fã. Patrimônio cultural riquíssimo.",
+    "As obras são impressionantes. Valeu muito a pena a visita!",
+    "Achei o museu muito bem conservado e organizado. Nota 10!",
+    "Amei a trilha interativa, muito diferente de museus tradicionais.",
+    "Vim de outra cidade só para conhecer. Superou as expectativas!",
+    "O guia virtual ajudou muito. Tecnologia e cultura juntas!",
+    "Lugar perfeito para um passeio em família. Recomendo!",
+    "Fiquei encantada com a seção de arte contemporânea.",
+    "O ambiente é muito acolhedor. Senti como se viajasse no tempo.",
+    "Parabéns ao museu por preservar nossa história tão bem.",
+    "Visitei em um dia de chuva e foi a melhor decisão. Adorei!",
+];
+
+const reviewComments = [
+    "Obra magnífica, dá para ficar contemplando por horas.",
+    "Uma das peças mais bonitas que já vi.",
+    "Achei impressionante o nível de detalhe.",
+    "Contexto histórico muito rico. Aprendi muito!",
+    "Simplesmente espetacular. Vale a visita só por esta obra.",
+    "Interessante, mas esperava algo mais impactante.",
+    "A iluminação destaca muito bem os detalhes da obra.",
+    "Peça icônica do acervo. Imperdível!",
+    "Muito bonita, minha favorita da visita.",
+    "Obra que te faz refletir. Muito poderosa.",
+];
+
+// ===== COMPLETE TRAFFIC SIMULATION =====
 router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
     try {
         const { tenantId, visitorCount = 5, minVisits = 1, maxVisits = 5 } = req.body;
@@ -122,7 +164,7 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
         const visitors = await prisma.visitor.findMany({
             where: { tenantId, isFake: true },
             take: Number(visitorCount),
-            orderBy: { updatedAt: 'asc' } // Rotate through oldest updated
+            orderBy: { updatedAt: 'asc' }
         });
 
         if (visitors.length === 0) {
@@ -132,49 +174,145 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
         // 2. Get Works
         const works = await prisma.work.findMany({
             where: { tenantId },
-            select: { id: true }
+            select: { id: true, title: true }
         });
 
         if (works.length === 0) {
             return res.status(400).json({ message: "Nenhuma obra encontrada neste museu." });
         }
 
-        let totalVisits = 0;
+        // 3. Get Achievements (if any)
+        const achievements = await prisma.achievement.findMany({
+            where: { tenantId, active: true },
+            select: { id: true, xpReward: true }
+        });
 
-        // 3. Generate Visits
+        let totalVisits = 0;
+        let totalStamps = 0;
+        let totalAchievements = 0;
+        let totalGuestbook = 0;
+        let totalReviews = 0;
+
+        // 4. Generate Complete Data for Each Visitor
         for (const visitor of visitors) {
             const visitCount = faker.number.int({ min: Number(minVisits), max: Number(maxVisits) });
+            let visitorXpGained = 0;
 
-            // Pick random unique works
-            const shuffledWorks = works.sort(() => 0.5 - Math.random()).slice(0, visitCount);
+            // Shuffle works and pick random ones
+            const shuffledWorks = [...works].sort(() => 0.5 - Math.random()).slice(0, visitCount);
 
+            // --- VISITS + STAMPS ---
             for (const work of shuffledWorks) {
+                const xp = faker.number.int({ min: 5, max: 25 });
+                const visitDate = faker.date.recent({ days: 14 });
+
+                // Create visit
                 await prisma.visitorVisit.create({
                     data: {
                         visitorId: visitor.id,
                         workId: work.id,
-                        xpGained: 10,
-                        source: Math.random() > 0.7 ? 'QR' : 'APP', // 30% QR, 70% App navigation
-                        createdAt: faker.date.recent({ days: 7 }) // Spread over last 7 days
+                        xpGained: xp,
+                        source: Math.random() > 0.7 ? 'QR' : 'APP',
+                        createdAt: visitDate
                     }
                 });
+                totalVisits++;
+                visitorXpGained += xp;
+
+                // Create passport stamp (skip if already exists)
+                try {
+                    await prisma.passportStamp.create({
+                        data: {
+                            visitorId: visitor.id,
+                            workId: work.id,
+                            stampedAt: visitDate
+                        }
+                    });
+                    totalStamps++;
+                } catch {
+                    // Duplicate stamp, skip
+                }
+
+                // Create review (~40% chance per work visited)
+                if (Math.random() < 0.4) {
+                    try {
+                        await prisma.review.create({
+                            data: {
+                                visitorId: visitor.id,
+                                workId: work.id,
+                                rating: faker.number.int({ min: 3, max: 5 }),
+                                comment: reviewComments[Math.floor(Math.random() * reviewComments.length)],
+                                approved: true,
+                                createdAt: visitDate
+                            }
+                        });
+                        totalReviews++;
+                    } catch {
+                        // Duplicate review (unique constraint), skip
+                    }
+                }
             }
 
-            // Update Visitor XP and Last Login
+            // --- ACHIEVEMENTS (~60% chance per achievement) ---
+            if (achievements.length > 0) {
+                const numAchievements = faker.number.int({ min: 0, max: Math.min(achievements.length, 3) });
+                const shuffledAch = [...achievements].sort(() => 0.5 - Math.random()).slice(0, numAchievements);
+
+                for (const ach of shuffledAch) {
+                    try {
+                        await prisma.visitorAchievement.create({
+                            data: {
+                                visitorId: visitor.id,
+                                achievementId: ach.id,
+                                unlockedAt: faker.date.recent({ days: 14 })
+                            }
+                        });
+                        visitorXpGained += ach.xpReward;
+                        totalAchievements++;
+                    } catch {
+                        // Duplicate achievement, skip
+                    }
+                }
+            }
+
+            // --- GUESTBOOK (~30% chance) ---
+            if (Math.random() < 0.3) {
+                await prisma.guestbookEntry.create({
+                    data: {
+                        visitorId: visitor.id,
+                        tenantId,
+                        message: guestbookMessages[Math.floor(Math.random() * guestbookMessages.length)],
+                        createdAt: faker.date.recent({ days: 14 })
+                    }
+                });
+                totalGuestbook++;
+            }
+
+            // --- UPDATE VISITOR XP ---
             await prisma.visitor.update({
                 where: { id: visitor.id },
                 data: {
-                    xp: { increment: visitCount * 10 },
+                    xp: { increment: visitorXpGained },
                     updatedAt: new Date()
                 }
             });
 
-            totalVisits += visitCount;
+            totalVisits += 0; // already counted above
         }
 
+        const details = [
+            `👥 ${visitors.length} visitantes processados`,
+            `🎨 ${totalVisits} visitas a obras`,
+            `🔖 ${totalStamps} selos no passaporte`,
+            `🏆 ${totalAchievements} conquistas desbloqueadas`,
+            `📝 ${totalGuestbook} mensagens no livro`,
+            `⭐ ${totalReviews} avaliações de obras`
+        ].join(' | ');
+
         return res.json({
-            message: `Simulação concluída!`,
-            details: `${visitors.length} visitantes geraram ${totalVisits} novas visitas.`
+            message: `Simulação completa!`,
+            details,
+            stats: { visitors: visitors.length, visits: totalVisits, stamps: totalStamps, achievements: totalAchievements, guestbook: totalGuestbook, reviews: totalReviews }
         });
 
     } catch (err) {
