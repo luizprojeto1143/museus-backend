@@ -165,7 +165,11 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
         radius: radius ? Number(radius) : 5,
-        tenantId
+        tenantId,
+        // If code is provided, we can either create a QRCode entry or just store it if needed.
+        // Current schema for Work doesn't have a 'code' field, but it has relation to visits/stamps.
+        // However, the frontend sends 'code'. Let's check if we should map it to something.
+        // For now, let's at least not crash if it's sent.
       }
     });
     return res.status(201).json(work);

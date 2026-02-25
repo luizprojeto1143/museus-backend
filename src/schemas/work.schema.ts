@@ -13,13 +13,15 @@ export const createWorkSchema = z.object({
         imageUrl: z.string().url().optional().nullable(),
         audioUrl: z.string().url().optional().nullable(),
         videoUrl: z.string().url().optional().nullable(),
-        librasVideoUrl: z.string().url().optional().nullable(),
+        librasUrl: z.string().url().optional().nullable(),
         audioDescriptionUrl: z.string().url().optional().nullable(),
         qrCode: z.string().optional().nullable(),
+        code: z.string().optional().nullable(),
         categoryId: z.string().uuid().optional().nullable(),
         isHighlight: z.boolean().optional(),
         isAccessible: z.boolean().optional(),
-        order: z.number().int().optional()
+        order: z.number().int().optional(),
+        radius: z.number().int().optional()
     })
 });
 
