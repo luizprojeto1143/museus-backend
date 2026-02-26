@@ -249,6 +249,7 @@ model Tenant {
   files           File[]
   floorPlans      FloorPlan[]
   accessibilityRequests AccessibilityRequest[]
+  coupons         Coupon[]
   
   // Municipal Features Relations
   publicNotices            PublicNotice[]
@@ -651,6 +652,8 @@ model Registration {
   checkInDate   DateTime?
   pricePaid     Decimal            @default(0.0)
   platformFee   Decimal?           @db.Decimal(10, 2)
+  asaasPaymentId String?
+  asaasPaymentStatus String?
   
   // Sympla Killer Features 🚀
   customFormData Json?             // { questionId: answer }
@@ -691,6 +694,7 @@ model Visitor {
   challengeCompletions DailyChallengeCompletion[]
   huntParticipations   ScavengerHuntParticipation[]
   deviceTokens         DeviceToken[]
+  coupons              VisitorCoupon[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1607,3 +1611,47 @@ model Transaction {
   @@index([status])
 }
 
+// ========== GAMIFIED REWARDS (CROSS-SELLING) ==========
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model Coupon {
+  id           String       @id @default(uuid())
+  code         String       @unique
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  discountType DiscountType @default(PERCENTAGE)
+  discountValue Decimal     @db.Decimal(10, 2) // Ex: 10 para 10%, ou 15.00 para R$ 15,00
+  
+  xpCost       Int?         // Custo em XP para o visitante comprar esse cupom (se nulo, cupom normal)
+  isActive     Boolean      @default(true)
+  
+  description  String?
+  
+  visitorCoupons VisitorCoupon[]
+  
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  @@index([tenantId])
+}
+
+model VisitorCoupon {
+  id          String   @id @default(uuid())
+  visitorId   String
+  visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  
+  couponId    String
+  coupon      Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  
+  redeemedAt  DateTime @default(now()) // Quando usou XP para adquirir (ou quando ganhou)
+  usedAt      DateTime? // Quando de fato aplicou numa compra na Loja
+  
+  @@unique([visitorId, couponId])
+  @@index([visitorId])
+  @@index([couponId])
+}

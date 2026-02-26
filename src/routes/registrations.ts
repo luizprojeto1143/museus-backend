@@ -4,9 +4,12 @@ import { z } from 'zod';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { mailService } from '../services/email.js';
 
+import { asaasService } from '../services/asaasService.js';
+
 const router = Router();
 
 const registerSchema = z.object({
+    eventId: z.string(),
     ticketId: z.string(),
     guestName: z.string(),
     guestEmail: z.string().email(),
@@ -18,16 +21,80 @@ router.post('/', authMiddleware, async (req, res) => {
     try {
         const { eventId, ticketId, visitorId, guestName, guestEmail } = req.body;
 
-        // 1. Verify Ticket Stock
-        const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+        // 1. Verify Ticket Stock and Get Event/Tenant Info
+        const ticket = await prisma.ticket.findUnique({
+            where: { id: ticketId },
+            include: { event: { select: { tenantId: true } } }
+        });
+
         if (!ticket) return res.status(404).json({ error: 'Ingresso não encontrado' });
         if (ticket.quantity <= ticket.sold) return res.status(400).json({ error: 'Esgotado' });
+
+        const tenantId = ticket.event.tenantId;
 
         // 2. Create Code
         const code = `TKT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
 
-        // 3. Register Transaction
-        // RACE CONDITION FIX: Use atomic update with condition to prevent overselling
+        // 3. ASAAS PAYMENT INTEGRATION (Only if PAID)
+        let asaasPaymentData = null;
+        if (ticket.type === 'PAID' && Number(ticket.price) > 0) {
+            try {
+                // Fetch Tenant Wallet ID
+                const tenant = await prisma.tenant.findUnique({
+                    where: { id: tenantId },
+                    select: { asaasWalletId: true }
+                });
+
+                // Get/Create Customer
+                const asaasCustomerId = await asaasService.createCustomer({
+                    name: guestName,
+                    email: guestEmail
+                });
+
+                // Config Split (5% platform, 95% museum)
+                const split = [];
+                if (process.env.ASAAS_PLATFORM_WALLET_ID) {
+                    split.push({
+                        walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
+                        percentualValue: 5
+                    });
+                }
+                if (tenant?.asaasWalletId) {
+                    split.push({
+                        walletId: tenant.asaasWalletId, // Typo found in previous thoughts? Let's check common name
+                        percentualValue: 95
+                    });
+                }
+
+                const dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + 1);
+
+                const payment = await asaasService.createPayment({
+                    customer: asaasCustomerId,
+                    billingType: 'PIX',
+                    value: Number(ticket.price),
+                    dueDate: dueDate.toISOString().split('T')[0],
+                    description: `Ingresso: ${ticket.name} - ${code}`,
+                    split: split.length > 0 ? split : undefined,
+                    externalReference: code
+                });
+
+                // Get Pix Details
+                const pixData = await asaasService.getPixQrCode(payment.id);
+                asaasPaymentData = {
+                    id: payment.id,
+                    invoiceUrl: payment.invoiceUrl,
+                    pixQrCode: pixData?.encodedImage,
+                    pixPayload: pixData?.payload
+                };
+
+            } catch (err) {
+                console.error("Erro no checkout Asaas (Ticket):", err);
+                return res.status(500).json({ error: 'Erro ao gerar pagamento via Asaas' });
+            }
+        }
+
+        // 4. Register Transaction (Transaction Protected)
         try {
             const [registration] = await prisma.$transaction([
                 prisma.registration.create({
@@ -40,44 +107,112 @@ router.post('/', authMiddleware, async (req, res) => {
                         code,
                         pricePaid: ticket.price || 0,
                         platformFee: ticket.price ? Number(ticket.price) * 0.05 : 0,
-                        status: ticket.type === 'PAID' ? 'PENDING' : 'CONFIRMED'
+                        status: ticket.type === 'PAID' ? 'PENDING' : 'CONFIRMED',
+                        asaasPaymentId: asaasPaymentData?.id
                     }
                 }),
                 prisma.ticket.update({
-                    where: { id: ticketId, sold: { lt: ticket.quantity } }, // Atomic Check
+                    where: { id: ticketId, sold: { lt: ticket.quantity } },
                     data: { sold: { increment: 1 } }
                 })
             ]);
 
-            // ... continue with email ...
+            // Fire and Forget Email (Free only, Paid usually after webhook but keep original logic)
+            if (ticket.type === 'FREE') {
+                const eventData = await prisma.event.findUnique({
+                    where: { id: eventId },
+                    select: { title: true, startDate: true, location: true }
+                });
+                const eventTitle = eventData?.title || "Evento";
+                const eventDate = eventData?.startDate ? new Date(eventData.startDate).toLocaleDateString('pt-BR', {
+                    weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+                }) : undefined;
+                const eventLocation = eventData?.location || undefined;
 
-            // Send Email Async (Fire and Forget)
-            const eventData = await prisma.event.findUnique({
-                where: { id: eventId },
-                select: { title: true, startDate: true, location: true }
+                mailService.sendTicketEmail(guestEmail, eventTitle, guestName, code, eventDate, eventLocation);
+            }
+
+            return res.status(201).json({
+                registration,
+                payment: asaasPaymentData
             });
-            const eventTitle = eventData?.title || "Evento";
-            const eventDate = eventData?.startDate ? new Date(eventData.startDate).toLocaleDateString('pt-BR', {
-                weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
-            }) : undefined;
-            const eventLocation = eventData?.location || undefined;
-
-            mailService.sendTicketEmail(guestEmail, eventTitle, guestName, code, eventDate, eventLocation);
-
-            return res.status(201).json(registration);
 
         } catch (txError: any) {
-            // Prisma error P2025 means "Record to update not found", implying condition failed (Sold Out)
             if (txError.code === 'P2025') {
                 return res.status(400).json({ error: 'Esgotado (Race Condition Protected)' });
             }
             throw txError;
         }
 
-
     } catch (e) {
         console.error("Registration error", e);
         res.status(500).json({ error: 'Erro ao processar inscrição' });
+    }
+});
+
+// POST /:code/check-in (Validate and Check-in Ticket)
+router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+    try {
+        const { code } = req.params;
+        const user = req.user!;
+
+        // 1. Find Registration
+        const registration = await prisma.registration.findUnique({
+            where: { code },
+            include: {
+                event: { select: { title: true, tenantId: true } },
+                ticket: { select: { name: true, type: true } }
+            }
+        });
+
+        // 2. Base Validations
+        if (!registration) {
+            return res.status(404).json({ valid: false, message: 'Ingresso Inválido (Não Encontrado)' });
+        }
+
+        // Security: Ensure tenant match (unless MASTER)
+        if (user.role !== 'MASTER' && registration.event.tenantId !== user.tenantId) {
+            return res.status(403).json({ valid: false, message: 'Ingresso pertence a outro Museu' });
+        }
+
+        // 3. Status Validations
+        if (registration.status !== 'CONFIRMED' && registration.status !== 'CHECKED_IN') {
+            return res.status(400).json({
+                valid: false,
+                message: `Pagamento Pendente ou Cancelado (${registration.status})`
+            });
+        }
+
+        if (registration.checkInDate || registration.status === 'CHECKED_IN') {
+            const checkInTime = registration.checkInDate ? new Date(registration.checkInDate).toLocaleTimeString('pt-BR') : 'Tempo desconhecido';
+            return res.status(400).json({
+                valid: false,
+                message: `Ingresso já utilizado às ${checkInTime}.`
+            });
+        }
+
+        // 4. Perform Check-in
+        const updated = await prisma.registration.update({
+            where: { id: registration.id },
+            data: {
+                status: 'CHECKED_IN',
+                checkInDate: new Date()
+            }
+        });
+
+        return res.json({
+            valid: true,
+            message: 'Entrada Liberada!',
+            details: {
+                guestName: updated.guestName,
+                eventName: registration.event.title,
+                ticketType: registration.ticket.name
+            }
+        });
+
+    } catch (error) {
+        console.error("Check-in error:", error);
+        res.status(500).json({ valid: false, message: 'Erro no servidor ao validar ingresso.' });
     }
 });
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { asaasService } from '../services/asaasService.js';
+import { mailService } from '../services/email.js';
 import { z } from 'zod';
 import { Role } from '@prisma/client';
 
@@ -148,7 +149,8 @@ router.post('/orders', authMiddleware, async (req, res) => {
             customerPhone,
             shippingAddress,
             paymentMethod = 'PIX', // Default to PIX
-            items // Array of { productId, quantity }
+            items, // Array of { productId, quantity }
+            couponCode
         } = req.body;
 
         if (!tenantId || !customerName || !customerEmail || !items?.length) {
@@ -161,6 +163,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
         let bankSlipUrl = null;
         let pixQrCode = null;
         let pixPayload = null;
+        let couponToMarkUsed: { visitorId: string, couponId: string } | null = null;
 
         try {
             // 1. Create/Get Customer
@@ -185,7 +188,34 @@ router.post('/orders', authMiddleware, async (req, res) => {
                 }
             }
 
-            // 3. Create Payment
+            // --- COUPON PROCESSING ---
+            const reqUser = req.user as any;
+            if (couponCode && reqUser?.visitorId) {
+                const visitorId = reqUser.visitorId;
+                const coupon = await prisma.coupon.findUnique({
+                    where: { code: couponCode }
+                });
+
+                if (coupon && coupon.tenantId === tenantId && coupon.isActive) {
+                    // Check if visitor has this coupon
+                    const visitorCoupon = await prisma.visitorCoupon.findUnique({
+                        where: { visitorId_couponId: { visitorId, couponId: coupon.id } }
+                    });
+
+                    if (visitorCoupon && !visitorCoupon.usedAt) {
+                        // Apply Discount
+                        if (coupon.discountType === 'PERCENTAGE') {
+                            const discount = total * (Number(coupon.discountValue) / 100);
+                            total = Math.max(0, total - discount);
+                        } else {
+                            total = Math.max(0, total - Number(coupon.discountValue));
+                        }
+                        couponToMarkUsed = { visitorId, couponId: coupon.id };
+                    }
+                }
+            }
+
+            // 3. Create Payment (Only if total > 0)
             const billingType = paymentMethod === 'BOLETO' ? 'BOLETO' : 'PIX';
             const dueDate = new Date();
             dueDate.setDate(dueDate.getDate() + 1);
@@ -236,7 +266,6 @@ router.post('/orders', authMiddleware, async (req, res) => {
                     pixPayload = pixData.payload;
                 }
             }
-
         } catch (err) {
             console.error("Erro ao integrar com Asaas (mas continuando pedido):", err);
             // We continue to create the order even if payment fails initially (status PENDING)
@@ -245,6 +274,14 @@ router.post('/orders', authMiddleware, async (req, res) => {
 
         // SECURITY FIX: Use transaction to prevent race condition
         const result = await prisma.$transaction(async (tx) => {
+            // If there's a coupon to mark, mark it
+            if (couponToMarkUsed) {
+                await tx.visitorCoupon.update({
+                    where: { visitorId_couponId: couponToMarkUsed },
+                    data: { usedAt: new Date() }
+                });
+            }
+
             // Fetch all products at once (N+1 fix) -- Redundant fetch but safe inside TX
             const productIds = items.map((i: { productId: string }) => i.productId);
             const products = await tx.product.findMany({
@@ -270,6 +307,19 @@ router.post('/orders', authMiddleware, async (req, res) => {
                     quantity: item.quantity,
                     unitPrice: price
                 });
+            }
+
+            // Re-apply coupon to final transaction total just to be safe
+            if (couponToMarkUsed) {
+                const coupon = await tx.coupon.findUnique({ where: { id: couponToMarkUsed.couponId } });
+                if (coupon) {
+                    if (coupon.discountType === 'PERCENTAGE') {
+                        const discount = total * (Number(coupon.discountValue) / 100);
+                        total = Math.max(0, total - discount);
+                    } else {
+                        total = Math.max(0, total - Number(coupon.discountValue));
+                    }
+                }
             }
 
             // Create order with items
@@ -390,35 +440,68 @@ router.post('/webhook', async (req, res) => {
             return res.status(400).json({ message: 'Payload inválido' });
         }
 
-        // Map Asaas events to Order Status
-        let newStatus = null;
+        // Map Asaas events to System Status
+        let paymentStatus = null; // 'CONFIRMED' | 'CANCELLED'
         if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
-            newStatus = 'PAID';
+            paymentStatus = 'CONFIRMED';
         } else if (event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_REVERSED') {
-            newStatus = 'CANCELLED';
+            paymentStatus = 'CANCELLED';
         }
 
-        if (newStatus) {
-            const order = await prisma.order.findFirst({
-                where: { paymentId: payment.id }
-            });
-
+        if (paymentStatus) {
+            // 1. Check Orders
+            const order = await prisma.order.findFirst({ where: { paymentId: payment.id } });
             if (order) {
-                // Only update if status changed
-                if (order.status !== newStatus) {
-                    await prisma.order.update({
-                        where: { id: order.id },
-                        data: { status: newStatus }
+                const orderStatus = paymentStatus === 'CONFIRMED' ? 'PAID' : 'CANCELLED';
+                if (order.status !== orderStatus) {
+                    await prisma.order.update({ where: { id: order.id }, data: { status: orderStatus } });
+                    if (orderStatus === 'CANCELLED') console.log(`Order ${order.id} cancelled. Restocking needed.`);
+                }
+                return res.json({ received: true, mappedTo: 'Order' });
+            }
+
+            // 2. Check Donations
+            const donation = await prisma.donation.findFirst({ where: { paymentId: payment.id } });
+            if (donation) {
+                const donationStatus = paymentStatus === 'CONFIRMED' ? 'COMPLETED' : 'CANCELLED';
+                if (donation.status !== donationStatus) {
+                    await prisma.donation.update({ where: { id: donation.id }, data: { status: donationStatus } });
+                }
+                return res.json({ received: true, mappedTo: 'Donation' });
+            }
+
+            // 3. Check Registrations (Paid Tickets)
+            const registration = await prisma.registration.findFirst({
+                where: { asaasPaymentId: payment.id },
+                include: { event: true, ticket: true }
+            });
+            if (registration) {
+                if (registration.status !== paymentStatus) {
+                    await prisma.registration.update({
+                        where: { id: registration.id },
+                        data: { asaasPaymentStatus: event, status: paymentStatus as any } // Cast to any or RegistrationStatus
                     });
 
-                    // TODO: Implement restocking if CANCELLED
-                    if (newStatus === 'CANCELLED') {
-                        console.log(`Order ${order.id} cancelled. Restocking needed (NOT IMPLEMENTED YET).`);
+                    // If CONFIRMED, send ticket email
+                    if (paymentStatus === 'CONFIRMED') {
+                        const eventDate = registration.event.startDate ? new Date(registration.event.startDate).toLocaleDateString('pt-BR', {
+                            weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+                        }) : undefined;
+
+                        mailService.sendTicketEmail(
+                            registration.guestEmail,
+                            registration.event.title,
+                            registration.guestName,
+                            registration.code,
+                            eventDate,
+                            registration.event.location || undefined
+                        ).catch(e => console.error("Error sending paid ticket email via webhook", e));
                     }
                 }
-            } else {
-                console.warn(`[Asaas Webhook] Order not found for payment ${payment.id}`);
+                return res.json({ received: true, mappedTo: 'Registration' });
             }
+
+            console.warn(`[Asaas Webhook] No matching record found for payment ${payment.id}`);
         }
 
         res.json({ received: true });

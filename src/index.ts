@@ -43,6 +43,8 @@ import shopRoutes from "./routes/shop.js";
 import challengesRoutes from "./routes/challenges.js";
 import backupRoutes from "./routes/backup.js";
 import floorPlansRoutes from "./routes/floorPlans.js";
+import { financeRouter } from "./routes/finance.js";
+import { couponsRouter } from "./routes/coupons.js";
 
 import navigationRoutes from "./routes/navigation.js";
 import accessibilityRoutes from "./routes/accessibility.js";
@@ -136,6 +138,8 @@ app.use("/categories", categoriesRoutes);
 app.use("/bookings", bookingsRoutes);
 app.use("/guestbook", guestbookRoutes);
 app.use("/leaderboard", leaderboardRoutes);
+app.use("/finance", financeRouter);
+app.use("/coupons", couponsRouter);
 import gamificationRoutes from "./routes/gamification.js";
 
 app.use("/gamification", gamificationRoutes);
