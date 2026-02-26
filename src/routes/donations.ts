@@ -35,13 +35,35 @@ router.post('/', limiter, async (req, res) => {
 
         // PLATFORM FEE CALCULATION (5%)
         const platformFeeVal = data.amount * 0.05;
-        const split = process.env.ASAAS_PLATFORM_WALLET_ID ? [{
-            walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
-            percentualValue: 5
-        }] : undefined;
+
+        // Fetch Tenant to get its asaasWalletId
+        const tenant = await prisma.tenant.findUnique({
+            where: { id: data.tenantId },
+            select: { asaasWalletId: true }
+        });
+
+        // Config Split dynamic (95% to Museum, 5% to Platform)
+        // If museum has a wallet id, we use it for split.
+        // Asaas requires percentualValue or fixedValue.
+        const split = [];
+
+        // 1. Platform Fee (5%)
+        if (process.env.ASAAS_PLATFORM_WALLET_ID) {
+            split.push({
+                walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
+                percentualValue: 5
+            });
+        }
+
+        // 2. Museum Share (95%) - Only if they have a configured wallet
+        if (tenant?.asaasWalletId) {
+            split.push({
+                walletId: tenant.asaasWalletId,
+                percentualValue: 95
+            });
+        }
 
         // 1. Create/Get Customer in Asaas (Using anonymous info if needed)
-        // For donations, we might not have a full customer profile, but let's try with email
         let asaasPaymentData: any = null;
         if (data.donorEmail) {
             try {
@@ -59,7 +81,7 @@ router.post('/', limiter, async (req, res) => {
                     value: data.amount,
                     dueDate: dueDate.toISOString().split('T')[0],
                     description: `Doação para o Museu: ${data.message || ''}`,
-                    split,
+                    split: split.length > 0 ? split : undefined,
                     externalReference: donation.id
                 });
 

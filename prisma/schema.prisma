@@ -214,6 +214,9 @@ model Tenant {
   // Accessibility Data (LBI Compliance)
   accessibilityResources Json? // { physical: [], sensory: [], content: [] }
 
+  // Financial Settings
+  asaasWalletId String? // ID da Carteira Asaas para recebimento (Split)
+
   // Mode: Museum or City
   isCityMode Boolean @default(false) // false = Museu, true = Cidade/Roteiro Turístico
 

@@ -187,16 +187,33 @@ router.post('/orders', authMiddleware, async (req, res) => {
 
             // 3. Create Payment
             const billingType = paymentMethod === 'BOLETO' ? 'BOLETO' : 'PIX';
-            // Due date = tomorrow
             const dueDate = new Date();
             dueDate.setDate(dueDate.getDate() + 1);
 
+            // Fetch Tenant Wallet ID
+            const tenant = await prisma.tenant.findUnique({
+                where: { id: tenantId },
+                select: { asaasWalletId: true }
+            });
+
             // PLATFORM FEE CALCULATION (5%)
-            const platformFee = total * 0.05;
-            const split = process.env.ASAAS_PLATFORM_WALLET_ID ? [{
-                walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
-                percentualValue: 5
-            }] : undefined;
+            const split = [];
+
+            // 1. Platform Fee (5%)
+            if (process.env.ASAAS_PLATFORM_WALLET_ID) {
+                split.push({
+                    walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
+                    percentualValue: 5
+                });
+            }
+
+            // 2. Museum Share (95%)
+            if (tenant?.asaasWalletId) {
+                split.push({
+                    walletId: tenant.asaasWalletId,
+                    percentualValue: 95
+                });
+            }
 
             const payment = await asaasService.createPayment({
                 customer: asaasCustomerId,
@@ -204,7 +221,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
                 value: total,
                 dueDate: dueDate.toISOString().split('T')[0],
                 description: `Pedido na Loja Virtual`,
-                split
+                split: split.length > 0 ? split : undefined
             });
 
             asaasPaymentId = payment.id;
