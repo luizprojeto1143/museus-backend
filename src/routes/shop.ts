@@ -346,9 +346,17 @@ router.patch('/orders/:id/status', authMiddleware, requireRole(['ADMIN', 'MASTER
 });
 
 
-// POST /shop/webhook - Handle Asaas notifications
 router.post('/webhook', async (req, res) => {
     try {
+        // SECURITY: Verify Asaas Access Token if configured
+        const asaasToken = req.headers['asaas-access-token'];
+        const configuredToken = process.env.ASAAS_WEBHOOK_SECRET;
+
+        if (configuredToken && asaasToken !== configuredToken) {
+            console.warn(`[Asaas Webhook] Unauthorized request from IP: ${req.ip}`);
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
         const { event, payment } = req.body;
         console.log(`[Asaas Webhook] Event: ${event}, Payment ID: ${payment?.id}`);
 
