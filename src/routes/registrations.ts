@@ -38,7 +38,9 @@ router.post('/', authMiddleware, async (req, res) => {
                         guestName,
                         guestEmail,
                         code,
-                        status: 'CONFIRMED'
+                        pricePaid: ticket.price || 0,
+                        platformFee: ticket.price ? Number(ticket.price) * 0.05 : 0,
+                        status: ticket.type === 'PAID' ? 'PENDING' : 'CONFIRMED'
                     }
                 }),
                 prisma.ticket.update({

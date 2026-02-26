@@ -647,6 +647,7 @@ model Registration {
   status        RegistrationStatus @default(PENDING)
   checkInDate   DateTime?
   pricePaid     Decimal            @default(0.0)
+  platformFee   Decimal?           @db.Decimal(10, 2)
   
   // Sympla Killer Features 🚀
   customFormData Json?             // { questionId: answer }
@@ -988,6 +989,7 @@ model Donation {
   id          String   @id @default(uuid())
   
   amount      Decimal  @db.Decimal(10, 2)
+  platformFee Decimal? @db.Decimal(10, 2)
   currency    String   @default("BRL")
   
   donorName   String?
@@ -1066,6 +1068,7 @@ model Order {
   
   status      String   @default("PENDING") // PENDING, PAID, SHIPPED, DELIVERED, CANCELLED
   total       Decimal  @db.Decimal(10, 2)
+  platformFee Decimal? @db.Decimal(10, 2)
   
   // Customer info
   customerName  String

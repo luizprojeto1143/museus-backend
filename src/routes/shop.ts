@@ -191,12 +191,20 @@ router.post('/orders', authMiddleware, async (req, res) => {
             const dueDate = new Date();
             dueDate.setDate(dueDate.getDate() + 1);
 
+            // PLATFORM FEE CALCULATION (5%)
+            const platformFee = total * 0.05;
+            const split = process.env.ASAAS_PLATFORM_WALLET_ID ? [{
+                walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
+                percentualValue: 5
+            }] : undefined;
+
             const payment = await asaasService.createPayment({
                 customer: asaasCustomerId,
                 billingType,
                 value: total,
                 dueDate: dueDate.toISOString().split('T')[0],
                 description: `Pedido na Loja Virtual`,
+                split
             });
 
             asaasPaymentId = payment.id;
@@ -256,6 +264,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
                     customerPhone,
                     shippingAddress,
                     total,
+                    platformFee: total * 0.05,
                     paymentMethod,
                     paymentId: asaasPaymentId,
                     invoiceUrl,

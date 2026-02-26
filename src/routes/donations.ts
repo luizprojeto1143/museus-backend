@@ -32,45 +32,67 @@ router.post('/', limiter, async (req, res) => {
             }
         });
 
-        // MOCK PAYMENT MODE - For development without real payment gateway
-        // To use real payments, integrate with Asaas, MercadoPago, or Stripe
-        // Set PAYMENT_GATEWAY=production in .env to disable mock auto-approval
-        const isProduction = process.env.NODE_ENV === 'production';
-        // Safety check: Avoid auto-approval in production even if misconfigured
-        const isMockMode = process.env.NODE_ENV === 'development' || process.env.ALLOW_MOCK_PAYMENTS === 'true';
-        const isStrictProduction = process.env.NODE_ENV === 'production' && process.env.ALLOW_MOCK_PAYMENTS !== 'true';
+        // PLATFORM FEE CALCULATION (5%)
+        const platformFeeVal = data.amount * 0.05;
+        const split = process.env.ASAAS_PLATFORM_WALLET_ID ? [{
+            walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
+            percentualValue: 5
+        }] : undefined;
 
-        const pixCode = `00020126580014BR.GOV.BCB.PIX0136${process.env.PIX_KEY || '123e4567-e89b-12d3-a456-426614174000'}520400005303986540${data.amount.toFixed(2).replace('.', '')}5802BR5913${process.env.PIX_RECIPIENT || 'Museus System'}6008Brasilia62070503***6304`;
-        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixCode)}`;
+        // 1. Create/Get Customer in Asaas (Using anonymous info if needed)
+        // For donations, we might not have a full customer profile, but let's try with email
+        let asaasPaymentData: any = null;
+        if (data.donorEmail) {
+            try {
+                const asaasCustomerId = await asaasService.createCustomer({
+                    name: data.donorName || 'Doador Anônimo',
+                    email: data.donorEmail
+                });
 
-        // Auto-approve after 30 seconds (Simulation for Demo ONLY - never runs in production)
-        if (isMockMode && !isStrictProduction) {
-            console.warn(`[Mock Payment] ⚠️ Auto-approving donation ${donation.id} in 30s (dev mode).`);
-            setTimeout(async () => {
-                try {
-                    // Re-verify on execution
-                    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_MOCK_PAYMENTS !== 'true') return;
+                const dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + 1);
 
-                    await prisma.donation.update({
-                        where: { id: donation.id },
-                        data: { status: 'COMPLETED', paymentId: `PAY-${Math.random().toString(36).substring(7)}` }
-                    });
-                    console.log(`[Mock Payment] Donation ${donation.id} auto-approved.`);
-                } catch (e) {
-                    console.error("[Mock Payment] Auto-approval failed", e);
+                asaasPaymentData = await asaasService.createPayment({
+                    customer: asaasCustomerId,
+                    billingType: 'PIX',
+                    value: data.amount,
+                    dueDate: dueDate.toISOString().split('T')[0],
+                    description: `Doação para o Museu: ${data.message || ''}`,
+                    split,
+                    externalReference: donation.id
+                });
+
+                // Get Pix QR Code
+                const pixData = await asaasService.getPixQrCode(asaasPaymentData.id);
+                if (pixData) {
+                    asaasPaymentData.pixQrCode = pixData.encodedImage;
+                    asaasPaymentData.pixPayload = pixData.payload;
                 }
-            }, 30000);
+            } catch (err) {
+                console.error("Erro na integração Asaas para doação:", err);
+            }
         }
 
+        await prisma.donation.update({
+            where: { id: donation.id },
+            data: {
+                platformFee: platformFeeVal,
+                paymentId: asaasPaymentData?.id
+            }
+        });
+
         res.status(201).json({
-            donation,
-            payment: {
+            donation: { ...donation, platformFee: platformFeeVal },
+            payment: asaasPaymentData ? {
                 method: 'PIX',
-                pixCode: pixCode,
-                qrCodeUrl: qrCodeUrl,
-                expirationPayload: new Date(Date.now() + 3600000) // 1 hour
+                pixCode: asaasPaymentData.pixPayload,
+                qrCodeUrl: asaasPaymentData.pixQrCode, // This is base64
+                invoiceUrl: asaasPaymentData.invoiceUrl
+            } : {
+                method: 'PIX',
+                message: 'Erro ao gerar pagamento real via Asaas. Tente novamente mais tarde.'
             },
-            message: 'Doação registrada. Use o código PIX para pagar.'
+            message: 'Doação registrada.'
         });
     } catch (error) {
         console.error('Error creating donation:', error);

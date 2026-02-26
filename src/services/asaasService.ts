@@ -22,6 +22,13 @@ interface CustomerData {
     mobilePhone?: string;
 }
 
+interface SplitData {
+    walletId: string;
+    fixedValue?: number;
+    percentualValue?: number;
+    totalFixedValue?: number;
+}
+
 interface PaymentData {
     customer: string; // Asaas Customer ID
     billingType: 'UNDEFINED' | 'BOLETO' | 'CREDIT_CARD' | 'PIX';
@@ -29,6 +36,7 @@ interface PaymentData {
     dueDate: string; // YYYY-MM-DD
     description?: string;
     externalReference?: string; // Our Order ID
+    split?: SplitData[];
 }
 
 export const asaasService = {
