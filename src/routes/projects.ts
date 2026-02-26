@@ -74,7 +74,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
             include: {
                 notice: true,
                 tenant: { select: { id: true, name: true, slug: true } },
-                proponent: { select: { id: true, name: true, email: true, image: true } },
+                proponent: { select: { id: true, name: true, email: true } },
                 accessibilityExecutions: {
                     include: {
                         provider: { select: { id: true, name: true } }
