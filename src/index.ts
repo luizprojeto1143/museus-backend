@@ -79,7 +79,8 @@ const corsOrigin = (() => {
       console.warn("⚠️  WARNING: FRONTEND_URL is not set in production. Defaulting to '*' for demo purposes.");
       return "*";
     }
-    return process.env.FRONTEND_URL;
+    const urls = process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''));
+    return urls.length === 1 ? urls[0] : urls;
   }
   return "*";
 })();
