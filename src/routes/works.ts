@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
-import { Role } from "@prisma/client";
+import { Role, QRType } from "@prisma/client";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
 import { createWorkSchema, updateWorkSchema } from "../schemas/work.schema.js";
@@ -133,9 +133,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
     const {
       title, artist, year, categoryId,
       room, floor, description,
-      imageUrl, audioUrl, librasUrl, videoUrl, audioDescriptionUrl,
+      imageUrl, audioUrl, librasUrl, videoUrl,
       latitude, longitude, radius,
-      qrCode, isHighlight, isAccessible, order
+      code // Dialer code from frontend
     } = req.body;
 
     // Check Plan Limits
@@ -147,6 +147,14 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       return res.status(403).json({
         message: `Limite de obras atingido para o plano ${tenant.plan}. Atualize seu plano para continuar.`
       });
+    }
+
+    // Check if code is already in use
+    if (code) {
+      const existingCode = await prisma.qRCode.findUnique({ where: { code } });
+      if (existingCode) {
+        return res.status(400).json({ message: "Este código já está em uso em outra obra ou recurso." });
+      }
     }
 
     const work = await prisma.work.create({
@@ -166,15 +174,28 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         longitude: longitude ? Number(longitude) : null,
         radius: radius ? Number(radius) : 5,
         tenantId,
-        // If code is provided, we can either create a QRCode entry or just store it if needed.
-        // Current schema for Work doesn't have a 'code' field, but it has relation to visits/stamps.
-        // However, the frontend sends 'code'. Let's check if we should map it to something.
-        // For now, let's at least not crash if it's sent.
       }
     });
+
+    // Create entry in QRCode table for the dialer code
+    if (code) {
+      await prisma.qRCode.create({
+        data: {
+          code,
+          type: QRType.WORK,
+          referenceId: work.id,
+          title: work.title,
+          tenantId
+        }
+      });
+    }
+
     return res.status(201).json(work);
   } catch (err: any) {
     console.error("Erro criar obra", err);
+    if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
+      return res.status(400).json({ message: "Este código já está em uso." });
+    }
     if (err.code === 'P2003') {
       return res.status(400).json({ message: "Categoria fornecida é inválida ou não existe." });
     }
@@ -193,13 +214,61 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     const whereClause = user.role === Role.MASTER
       ? { id }
       : { id, tenantId: user.tenantId as string };
-    const existing = await prisma.work.findFirst({ where: whereClause });
+    const existing = await prisma.work.findFirst({
+      where: whereClause,
+      include: {
+        tenant: true
+      }
+    });
     if (!existing) {
       return res.status(404).json({ message: "Obra não encontrada" });
     }
 
+    // Handle code update/creation
+    if (data.code !== undefined) {
+      const newCode = data.code;
+      const currentQR = await prisma.qRCode.findFirst({
+        where: { referenceId: id, type: QRType.WORK }
+      });
+
+      if (newCode) {
+        // Check if code is used by SOMEONE ELSE
+        const codeInUse = await prisma.qRCode.findUnique({ where: { code: newCode } });
+        if (codeInUse && codeInUse.referenceId !== id) {
+          return res.status(400).json({ message: "Este código já está em uso em outra obra." });
+        }
+
+        if (currentQR) {
+          if (currentQR.code !== newCode) {
+            await prisma.qRCode.update({
+              where: { id: currentQR.id },
+              data: { code: newCode, title: data.title || existing.title }
+            });
+          } else if (data.title && data.title !== existing.title) {
+            await prisma.qRCode.update({
+              where: { id: currentQR.id },
+              data: { title: data.title }
+            });
+          }
+        } else {
+          // Create new QR record
+          await prisma.qRCode.create({
+            data: {
+              code: newCode,
+              type: QRType.WORK,
+              referenceId: id,
+              title: data.title || existing.title,
+              tenantId: existing.tenantId
+            }
+          });
+        }
+      } else if (currentQR) {
+        // If code was removed (newCode is null/empty)
+        await prisma.qRCode.delete({ where: { id: currentQR.id } });
+      }
+    }
+
     // Build safe update object with known Prisma types
-    // Using explicit fields instead of `any` cast
     const updateData: Record<string, any> = {
       title: data.title,
       artist: data.artist,
@@ -219,8 +288,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     }
 
     // Handle category relation
-    if (data.category !== undefined) {
-      updateData.categoryId = data.category && data.category !== "" ? data.category : null;
+    if (data.category !== undefined || data.categoryId !== undefined) {
+      const catId = data.categoryId || data.category;
+      updateData.categoryId = catId && catId !== "" ? catId : null;
     }
 
     // Handle optional geofencing if provided
@@ -234,6 +304,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     return res.json(work);
   } catch (err: any) {
     console.error(`Erro atualizar obra ID: ${req.params.id}`, err);
+    if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
+      return res.status(400).json({ message: "Este código já está em uso." });
+    }
     return res.status(500).json({
       message: "Erro ao atualizar obra",
       debug: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -253,6 +326,11 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
     const work = await prisma.work.findFirst({ where: whereClause });
 
     if (work) {
+      // Delete associated QR code first
+      await prisma.qRCode.deleteMany({
+        where: { referenceId: id, type: QRType.WORK }
+      });
+
       await prisma.work.delete({ where: { id } });
 
       // Cleanup files in background (don't block response)

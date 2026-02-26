@@ -16,15 +16,29 @@ router.get("/", async (req, res) => {
             return res.json([]); // Retorna vazio se for muito curto
         }
 
-        // Buscas paralelas
+        // 1. Busca QR codes que batem com o termo
+        const qrCodes = await prisma.qRCode.findMany({
+            where: {
+                tenantId,
+                code: { contains: term, mode: "insensitive" },
+                type: "WORK"
+            },
+            select: { referenceId: true }
+        });
+
+        const workIdsFromQR = qrCodes
+            .map(qr => qr.referenceId)
+            .filter((id): id is string => !!id);
+
+        // 2. Buscas paralelas
         const [works, trails, events] = await Promise.all([
             prisma.work.findMany({
                 where: {
                     tenantId,
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
-                        // { description: { contains: term, mode: "insensitive" } }, // Removed for Performance (PERF-004)
-                        { artist: { contains: term, mode: "insensitive" } }
+                        { artist: { contains: term, mode: "insensitive" } },
+                        { id: { in: workIdsFromQR } }
                     ]
                 },
                 take: 5,
@@ -35,7 +49,6 @@ router.get("/", async (req, res) => {
                     tenantId,
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
-                        // { description: { contains: term, mode: "insensitive" } } // Removed for Performance
                     ]
                 },
                 take: 5,
@@ -46,7 +59,6 @@ router.get("/", async (req, res) => {
                     tenantId,
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
-                        // { description: { contains: term, mode: "insensitive" } }, // Removed for Performance
                         { location: { contains: term, mode: "insensitive" } }
                     ]
                 },
@@ -57,21 +69,21 @@ router.get("/", async (req, res) => {
 
         // Formata para o padrão unificado
         const results = [
-            ...works.map(w => ({
+            ...works.map((w: any) => ({
                 id: w.id,
                 title: w.title,
                 type: "work",
                 description: w.description,
                 url: `/obras/${w.id}`
             })),
-            ...trails.map(t => ({
+            ...trails.map((t: any) => ({
                 id: t.id,
                 title: t.title,
                 type: "trail",
                 description: t.description,
                 url: `/trilhas/${t.id}`
             })),
-            ...events.map(e => ({
+            ...events.map((e: any) => ({
                 id: e.id,
                 title: e.title,
                 type: "event",
