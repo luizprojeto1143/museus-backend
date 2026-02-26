@@ -65,6 +65,51 @@ router.get("/public/:id", async (req, res) => {
     }
 });
 
+// Resultados do edital (Ranking público)
+router.get("/public/:id/results", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const notice = await prisma.publicNotice.findUnique({
+            where: { id },
+            select: { status: true, title: true, showScoresInResults: true }
+        });
+
+        if (!notice || notice.status !== "RESULTS_PUBLISHED") {
+            return res.status(404).json({ message: "Resultados ainda não estão disponíveis para este edital" });
+        }
+
+        const projects = await prisma.culturalProject.findMany({
+            where: {
+                noticeId: id,
+                status: "APPROVED" // Apenas aprovados entram no ranking oficial
+            },
+            orderBy: {
+                finalScore: "desc"
+            },
+            include: {
+                proponent: { select: { name: true } }
+            }
+        });
+
+        return res.json({
+            noticeTitle: notice.title,
+            showScores: notice.showScoresInResults,
+            projects: projects.map(p => ({
+                id: p.id,
+                title: p.title,
+                proponentName: p.proponent.name,
+                finalScore: notice.showScoresInResults ? p.finalScore : null,
+                approvedBudget: p.approvedBudget,
+                culturalCategory: p.culturalCategory
+            }))
+        });
+    } catch (err) {
+        console.error("Erro ao buscar resultados do edital", err);
+        return res.status(500).json({ message: "Erro ao buscar resultados" });
+    }
+});
+
 // ========== ADMIN ENDPOINTS ==========
 
 // Lista todos os editais do tenant (admin)
@@ -91,14 +136,61 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
             where: { tenantId },
             orderBy: { createdAt: "desc" },
             include: {
+                projects: {
+                    select: { status: true }
+                },
                 _count: { select: { projects: true } }
             }
         });
 
-        return res.json(notices);
+        // Agrupar status por edital
+        const noticesWithStats = notices.map(notice => {
+            const stats = notice.projects.reduce((acc: any, p) => {
+                acc[p.status] = (acc[p.status] || 0) + 1;
+                return acc;
+            }, {});
+
+            const { projects, ...noticeData } = notice;
+            return {
+                ...noticeData,
+                stats
+            };
+        });
+
+        return res.json(noticesWithStats);
     } catch (err) {
         console.error("Erro ao listar editais", err);
         return res.status(500).json({ message: "Erro ao listar editais" });
+    }
+});
+
+// Publicar RESULTADOS do edital
+router.put("/:id/publish-results", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+
+        const existing = await prisma.publicNotice.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ message: "Edital não encontrado" });
+        }
+
+        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
+        const notice = await prisma.publicNotice.update({
+            where: { id },
+            data: {
+                status: "RESULTS_PUBLISHED",
+                resultsDate: new Date()
+            }
+        });
+
+        return res.json(notice);
+    } catch (err) {
+        console.error("Erro ao publicar resultados", err);
+        return res.status(500).json({ message: "Erro ao publicar resultados" });
     }
 });
 
@@ -153,7 +245,8 @@ const createNoticeSchema = z.object({
     culturalCategories: z.array(z.string()).default([]),
     targetRegions: z.array(z.string()).default([]),
     documentUrl: z.string().optional(),
-    requiresAccessibilityPlan: z.boolean().default(true)
+    requiresAccessibilityPlan: z.boolean().default(true),
+    showScoresInResults: z.boolean().default(true)
 });
 
 router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
@@ -195,6 +288,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
                 targetRegions: data.targetRegions,
                 documentUrl: data.documentUrl,
                 requiresAccessibilityPlan: data.requiresAccessibilityPlan,
+                showScoresInResults: data.showScoresInResults,
                 status: "DRAFT",
                 tenantId
             }
@@ -229,7 +323,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
             title, description, objectives, requirements,
             inscriptionStart, inscriptionEnd, evaluationEnd, resultsDate, executionEnd,
             totalBudget, maxPerProject, minPerProject,
-            culturalCategories, targetRegions, documentUrl, requiresAccessibilityPlan, status
+            culturalCategories, targetRegions, documentUrl, requiresAccessibilityPlan,
+            showScoresInResults, status
         } = req.body;
 
         const notice = await prisma.publicNotice.update({
@@ -251,6 +346,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
                 ...(targetRegions && { targetRegions }),
                 ...(documentUrl !== undefined && { documentUrl }),
                 ...(requiresAccessibilityPlan !== undefined && { requiresAccessibilityPlan }),
+                ...(showScoresInResults !== undefined && { showScoresInResults }),
                 ...(status && { status })
             }
         });

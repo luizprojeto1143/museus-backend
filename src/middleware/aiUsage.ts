@@ -7,7 +7,8 @@ const AI_COSTS = {
     IMAGE_ANALYSIS: { tokensEstimate: 1000, costPer1000Tokens: 0.01 },
     AUDIO_TRANSCRIPTION: { tokensEstimate: 100, costPer1000Tokens: 0.006 },
     PERSONA_GENERATION: { tokensEstimate: 200, costPer1000Tokens: 0.002 },
-    WORK_DESCRIPTION: { tokensEstimate: 300, costPer1000Tokens: 0.002 }
+    WORK_DESCRIPTION: { tokensEstimate: 300, costPer1000Tokens: 0.002 },
+    PROJECT_ANALYSIS: { tokensEstimate: 2000, costPer1000Tokens: 0.002 }
 };
 
 type AIOperationType = keyof typeof AI_COSTS;

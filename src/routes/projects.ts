@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
+import { analyzeProjectWithAI } from "../services/projectAnalysis.js";
 
 const router = Router();
 
@@ -73,6 +74,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
             include: {
                 notice: true,
                 tenant: { select: { id: true, name: true, slug: true } },
+                proponent: { select: { id: true, name: true, email: true, image: true } },
                 accessibilityExecutions: {
                     include: {
                         provider: { select: { id: true, name: true } }
@@ -289,6 +291,11 @@ router.post("/:id/submit", authMiddleware, async (req, res) => {
             data: { status: "SUBMITTED" }
         });
 
+        // Trigger AI analysis asynchronously (fire-and-forget)
+        analyzeProjectWithAI(id, project.tenantId).catch(err => {
+            console.error("Erro na análise IA automática:", err);
+        });
+
         return res.json(updated);
     } catch (err) {
         console.error("Erro ao submeter projeto", err);
@@ -300,7 +307,7 @@ router.post("/:id/submit", authMiddleware, async (req, res) => {
 router.put("/:id/status", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, approvedBudget, notes } = req.body;
+        const { status, approvedBudget, notes, humanScore } = req.body;
         const user = req.user!;
 
         const project = await prisma.culturalProject.findUnique({ where: { id } });
@@ -317,11 +324,36 @@ router.put("/:id/status", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
             return res.status(400).json({ message: "Status inválido" });
         }
 
+        // Calcular Score Final se houver análise IA
+        let finalScore = null;
+        const hScore = humanScore !== undefined ? parseFloat(humanScore) : project.humanScore;
+
+        if (project.aiAnalysis) {
+            const aiData = project.aiAnalysis as any;
+            const scores = aiData.scores || {};
+            const scoreValues = Object.values(scores) as number[];
+            if (scoreValues.length > 0) {
+                const aiAvg = scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length;
+                if (hScore !== null && hScore !== undefined) {
+                    finalScore = (aiAvg + hScore) / 2;
+                } else {
+                    finalScore = aiAvg;
+                }
+            }
+        } else if (hScore !== null && hScore !== undefined) {
+            finalScore = hScore;
+        }
+
         const updated = await prisma.culturalProject.update({
             where: { id },
             data: {
                 status,
-                ...(approvedBudget !== undefined && { approvedBudget })
+                ...(approvedBudget !== undefined && { approvedBudget }),
+                ...(notes !== undefined && { reviewNotes: notes }),
+                ...(humanScore !== undefined && { humanScore: hScore }),
+                finalScore,
+                reviewedAt: new Date(),
+                reviewedBy: user.id
             }
         });
 
@@ -361,6 +393,34 @@ router.delete("/:id", authMiddleware, async (req, res) => {
     } catch (err) {
         console.error("Erro ao deletar projeto", err);
         return res.status(500).json({ message: "Erro ao deletar projeto" });
+    }
+});
+
+// Endpoint de Análise IA Manual
+router.post("/:id/analyze", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+
+        const project = await prisma.culturalProject.findUnique({ where: { id } });
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+
+        // Verificar permissão
+        if (user.role !== Role.MASTER && project.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
+        // Chamar análise
+        const analysis = await analyzeProjectWithAI(id, project.tenantId);
+
+        if (!analysis) {
+            return res.status(500).json({ message: "Falha ao gerar análise IA" });
+        }
+
+        return res.json(analysis);
+    } catch (err) {
+        console.error("Erro no endpoint de análise manual", err);
+        return res.status(500).json({ message: "Erro ao processar análise" });
     }
 });
 

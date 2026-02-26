@@ -289,6 +289,7 @@ model User {
   // Enterprise Features
   producerConversations Conversation[] @relation("ProducerConversations")
   providerProfile       AccessibilityProvider? 
+  culturalProjects      CulturalProject[]
 }
 
 model RefreshToken {
@@ -1341,6 +1342,7 @@ model PublicNotice {
   attachments      Json?
   
   requiresAccessibilityPlan Boolean @default(true)
+  showScoresInResults       Boolean @default(true)
   
   tenantId         String
   tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1388,11 +1390,23 @@ model CulturalProject {
   // Plano de Acessibilidade
   accessibilityPlan Json?
   
+  // Análise IA
+  aiAnalysis       Json?
+  aiAnalyzedAt     DateTime?
+  
+  // Avaliação (Secretaria/Admin)
+  reviewNotes      String?
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  humanScore       Float?
+  finalScore       Float?
+  
   // Vínculos
   noticeId         String?
   notice           PublicNotice? @relation(fields: [noticeId], references: [id])
   
   proponentId      String
+  proponent        User          @relation(fields: [proponentId], references: [id])
   
   // Evento gerado a partir deste projeto (quando publicado na Agenda)
   eventId          String?
