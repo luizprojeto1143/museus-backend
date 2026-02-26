@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { limiter } from '../middleware/rateLimiter.js';
+import { asaasService } from '../services/asaasService.js';
 import { z } from 'zod';
 
 const router = Router();
