@@ -154,23 +154,78 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     startOfMonth.setHours(0, 0, 0, 0);
 
     // Run parallel queries
-    const [visitorsThisMonth, topWorksRaw, totalQRScans, totalXP, rawIntervals, upcomingBookings] = await Promise.all([
+    const now = new Date();
+    const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    const [
+      visitorsThisMonth,
+      visitorsPrevMonth,
+      visitsLast7Days,
+      visitsPrev7Days,
+      topWorksRaw,
+      topTrailsRaw,
+      topEventsRaw,
+      totalQRScans,
+      totalXP,
+      xpByCategoryRaw,
+      sourceStatsRaw,
+      rawIntervals,
+      upcomingBookings
+    ] = await Promise.all([
       prisma.visitorVisit.count({
-        where: { visitor: { tenantId }, createdAt: { gte: startOfMonth } }
+        where: { visitor: { tenantId }, createdAt: { gte: startOfCurrentMonth } }
+      }),
+      prisma.visitorVisit.count({
+        where: { visitor: { tenantId }, createdAt: { gte: startOfPrevMonth, lt: startOfCurrentMonth } }
+      }),
+      prisma.visitorVisit.count({
+        where: { visitor: { tenantId }, createdAt: { gte: sevenDaysAgo } }
+      }),
+      prisma.visitorVisit.count({
+        where: { visitor: { tenantId }, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } }
       }),
       prisma.visitorVisit.groupBy({
         by: ["workId"],
         where: { workId: { not: null }, visitor: { tenantId } },
-        _count: { workId: true },
-        orderBy: { _count: { workId: "desc" } },
+        _count: { workId: "desc" },
+        take: 5
+      }),
+      prisma.visitorVisit.groupBy({
+        by: ["trailId"],
+        where: { trailId: { not: null }, visitor: { tenantId } },
+        _count: { trailId: "desc" },
+        take: 5
+      }),
+      prisma.visitorVisit.groupBy({
+        by: ["eventId"],
+        where: { eventId: { not: null }, visitor: { tenantId } },
+        _count: { eventId: "desc" },
         take: 5
       }),
       prisma.visitorVisit.count({
-        where: { visitor: { tenantId }, workId: { not: null } }
+        where: { visitor: { tenantId }, source: "QR" }
       }),
       prisma.visitor.aggregate({
         where: { tenantId },
         _sum: { xp: true }
+      }),
+      // XP by Category (Work Category)
+      prisma.$queryRaw`
+        SELECT c.name as category, SUM(vv."xpGained") as xp
+        FROM "VisitorVisit" vv
+        JOIN "Work" w ON vv."workId" = w.id
+        JOIN "Category" c ON w."categoryId" = c.id
+        WHERE w."tenantId" = ${tenantId}
+        GROUP BY c.name
+      ` as Promise<{ category: string, xp: bigint }[]>,
+      // Source Distribution
+      prisma.visitorVisit.groupBy({
+        by: ["source"],
+        where: { visitor: { tenantId } },
+        _count: { id: true }
       }),
       // Optimized 7-day query using raw SQL for Postgres
       prisma.$queryRaw`
@@ -207,6 +262,33 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       visits: p._count.workId
     }));
 
+    // Enrich Top Trails
+    const trailIds = topTrailsRaw.map(p => p.trailId).filter((id): id is string => !!id);
+    const trails = await prisma.trail.findMany({ where: { id: { in: trailIds } }, select: { id: true, title: true } });
+    const topTrails = topTrailsRaw.map(p => ({
+      id: p.trailId!,
+      title: trails.find(t => t.id === p.trailId)?.title || "Desconhecido",
+      completions: p._count.trailId
+    }));
+
+    // Enrich Top Events
+    const eventIds = topEventsRaw.map(p => p.eventId).filter((id): id is string => !!id);
+    const events = await prisma.event.findMany({ where: { id: { in: eventIds } }, select: { id: true, title: true } });
+    const topEvents = topEventsRaw.map(p => ({
+      id: p.eventId!,
+      title: events.find(e => e.id === p.eventId)?.title || "Desconhecido",
+      views: p._count.eventId
+    }));
+
+    // Calculate Growths
+    const calcGrowth = (curr: number, prev: number) => {
+      if (prev === 0) return curr > 0 ? 100 : 0;
+      return Math.round(((curr - prev) / prev) * 100);
+    };
+
+    const weeklyGrowth = calcGrowth(visitsLast7Days, visitsPrev7Days);
+    const monthlyGrowth = calcGrowth(visitorsThisMonth, visitorsPrevMonth);
+
     // Process Date Buckets
     const map = new Map<string, number>();
     (await rawIntervals).forEach(r => {
@@ -226,19 +308,34 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       });
     }
 
+    // Process XP by Category
+    const xpByCategory = (await xpByCategoryRaw).map(item => ({
+      category: item.category,
+      xp: Number(item.xp)
+    }));
+
+    // Process Source Stats
+    const accessBySource = { qr: 0, app: 0, map: 0, trails: 0 };
+    sourceStatsRaw.forEach(s => {
+      if (s.source === "QR") accessBySource.qr = s._count.id;
+      else if (s.source === "APP") accessBySource.app = s._count.id;
+      else if (s.source === "MAP") accessBySource.map = s._count.id;
+      else if (s.source === "TRAIL") accessBySource.trails = s._count.id;
+    });
+
     return res.json({
       visitorsThisMonth,
       topWorks,
-      topTrails: [],
-      topEvents: [],
+      topTrails,
+      topEvents,
       totalQRScans,
       totalXPDistributed: totalXP._sum.xp || 0,
-      weeklyGrowth: 0,
-      monthlyGrowth: 0,
+      weeklyGrowth,
+      monthlyGrowth,
       visitsByDay,
       visitsByWork: topWorks.map(w => ({ workTitle: w.title, count: w.visits })),
-      xpByCategory: [],
-      accessBySource: { qr: totalQRScans, app: 0, map: 0, trails: 0 },
+      xpByCategory,
+      accessBySource,
       upcomingBookings,
       alerts: []
     });
@@ -369,13 +466,35 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
     }));
 
     // Enrich Hot Items
-    const workIds = hotWorksRaw.map(i => i.workId!).filter(Boolean);
-    const works = await prisma.work.findMany({ where: { id: { in: workIds } }, select: { id: true, title: true } });
-    const hotWorks = hotWorksRaw.map(i => ({
-      id: i.workId,
-      name: works.find(w => w.id === i.workId)?.title || "Desconhecido",
-      count: i._count.workId
-    }));
+    const [hotWorks, hotTrails, hotEvents] = await Promise.all([
+      (async () => {
+        const ids = hotWorksRaw.map(i => i.workId!).filter(Boolean);
+        const details = await prisma.work.findMany({ where: { id: { in: ids } }, select: { id: true, title: true } });
+        return hotWorksRaw.map(i => ({
+          id: i.workId,
+          title: details.find(w => w.id === i.workId)?.title || "Desconhecido",
+          heat: Math.round((i._count.workId / Math.max(...hotWorksRaw.map(x => x._count.workId), 1)) * 100)
+        }));
+      })(),
+      (async () => {
+        const ids = hotTrailsRaw.map(i => i.trailId!).filter(Boolean);
+        const details = await prisma.trail.findMany({ where: { id: { in: ids } }, select: { id: true, title: true } });
+        return hotTrailsRaw.map(i => ({
+          id: i.trailId,
+          title: details.find(t => t.id === i.trailId)?.title || "Desconhecido",
+          heat: Math.round((i._count.trailId / Math.max(...hotTrailsRaw.map(x => x._count.trailId), 1)) * 100)
+        }));
+      })(),
+      (async () => {
+        const ids = hotEventsRaw.map(i => i.eventId!).filter(Boolean);
+        const details = await prisma.event.findMany({ where: { id: { in: ids } }, select: { id: true, title: true } });
+        return hotEventsRaw.map(i => ({
+          id: i.eventId,
+          title: details.find(e => e.id === i.eventId)?.title || "Desconhecido",
+          heat: Math.round((i._count.eventId / Math.max(...hotEventsRaw.map(x => x._count.eventId), 1)) * 100)
+        }));
+      })()
+    ]);
 
     // Process Age Distribution (Bucketize)
     const ageGroups = { '0-18': 0, '19-24': 0, '25-34': 0, '35-44': 0, '45-60': 0, '60+': 0 };
@@ -401,8 +520,8 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
       accessBySource,
       peakHours,
       hotWorks,
-      hotTrails: hotTrailsRaw.length, // Placeholder count
-      hotEvents: hotEventsRaw.length, // Placeholder count
+      hotTrails,
+      hotEvents,
       visitorsByAge,
       visitorsByDay,
       dateRange: { start: startDate.toISOString(), end: new Date().toISOString() }
@@ -452,12 +571,22 @@ router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTE
       _sum: { approvedBudget: true }
     });
 
+    // Conversion Rate: (Confirmed Tickets) / (Unique Visitors in same period)
+    const uniqueVisitorsCount = await prisma.visitorVisit.groupBy({
+      by: ['visitorId'],
+      where: { visitor: { tenantId: user.role === Role.MASTER ? undefined : (tenantId || undefined) } }
+    }).then(res => res.length);
+
+    const conversionRate = uniqueVisitorsCount > 0
+      ? Math.round((aggregations._count.id / uniqueVisitorsCount) * 100)
+      : 0;
+
     return res.json({
       totalRevenue: Number(aggregations._sum.pricePaid || 0),
       raisedAmount: Number(raisedAgg._sum?.approvedBudget || 0),
       ticketsSold: aggregations._count.id || 0,
       checkInCount: checkIns,
-      conversionRate: 0 // Placeholder: requires visit tracking to calc real conversion
+      conversionRate
     });
 
   } catch (err) {
