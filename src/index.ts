@@ -79,8 +79,10 @@ const corsOrigin = (() => {
       console.warn("⚠️  WARNING: FRONTEND_URL is not set in production. Defaulting to '*' for demo purposes.");
       return "*";
     }
-    const urls = process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''));
-    return urls.length === 1 ? urls[0] : urls;
+    const baseUrls = process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''));
+    // Return both with and without trailing slash to be safe
+    const allUrls = [...baseUrls, ...baseUrls.map(u => `${u}/`)];
+    return allUrls.length === 1 ? allUrls[0] : allUrls;
   }
   return "*";
 })();
@@ -88,7 +90,8 @@ const corsOrigin = (() => {
 app.use(cors({
   origin: corsOrigin,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-ID", "X-Requested-With", "Accept"],
+  credentials: true
 }));
 
 // Handle preflight requests explicitly
