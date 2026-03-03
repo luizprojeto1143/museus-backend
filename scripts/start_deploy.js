@@ -27,20 +27,20 @@ function maskUrl(url) {
 const urlObj = new URL(DB_URL);
 let modifiedUrl = DB_URL;
 
-// RENDER EXTERNAL URL FIX:
-// Se a URL for externa (.render.com) ela EXIGE SSL.
-const isExternalRender = urlObj.hostname.includes('.render.com');
+// RENDER SSL FIX:
+// Render database connections often require sslmode=no-verify regardless of hostname
 const hasSSLParam = urlObj.searchParams.has('sslmode');
 
-if (isExternalRender && !hasSSLParam) {
-    console.log("⚠️ URL Externa do Render detectada sem SSL. Adicionando 'sslmode=no-verify'...");
+if (!hasSSLParam) {
+    console.log("ℹ️ SSL: Adicionando 'sslmode=no-verify' para garantir conectividade no Render...");
     urlObj.searchParams.set('sslmode', 'no-verify');
     modifiedUrl = urlObj.toString();
 }
 
 // Apenas logar mascarado para debug
-console.log(`🔍 Connection Info: ${maskUrl(modifiedUrl)}`);
-console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS || 'default'}`);
+console.log(`🔍 Info da Conexo: ${maskUrl(modifiedUrl)}`);
+console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS || 'padro'}`);
+console.log(`📂 Diretrio Atual: ${process.cwd()}`);
 
 // Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
