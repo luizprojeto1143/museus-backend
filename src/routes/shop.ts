@@ -455,7 +455,25 @@ router.post('/webhook', async (req, res) => {
                 const orderStatus = paymentStatus === 'CONFIRMED' ? 'PAID' : 'CANCELLED';
                 if (order.status !== orderStatus) {
                     await prisma.order.update({ where: { id: order.id }, data: { status: orderStatus } });
-                    if (orderStatus === 'CANCELLED') console.log(`Order ${order.id} cancelled. Restocking needed.`);
+                    if (orderStatus === 'CANCELLED') {
+                        console.log(`Order ${order.id} cancelled. Restocking...`);
+
+                        // RESTOCKING LOGIC: Increment stock for each item in the order
+                        const orderWithItems = await prisma.order.findUnique({
+                            where: { id: order.id },
+                            include: { items: true }
+                        });
+
+                        if (orderWithItems) {
+                            for (const item of orderWithItems.items) {
+                                await prisma.product.update({
+                                    where: { id: item.productId },
+                                    data: { stock: { increment: item.quantity } }
+                                });
+                            }
+                            console.log(`Restocking completed for Order ${order.id}`);
+                        }
+                    }
                 }
                 return res.json({ received: true, mappedTo: 'Order' });
             }

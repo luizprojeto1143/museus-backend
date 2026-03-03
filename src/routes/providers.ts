@@ -8,7 +8,7 @@ import { z } from "zod";
 const router = Router();
 
 // Lista prestadores
-router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
     try {
         const user = req.user!;
         const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;

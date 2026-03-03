@@ -159,6 +159,7 @@ app.use("/donations", donationsRoutes);
 app.use("/audit-logs", auditRoutes);
 app.use("/shop", shopRoutes);
 app.use("/challenges", challengesRoutes);
+app.use("/backup", backupRoutes);
 app.use("/floor-plans", floorPlansRoutes);
 
 app.use("/navigation", navigationRoutes);
