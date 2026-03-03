@@ -190,19 +190,22 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       prisma.visitorVisit.groupBy({
         by: ["workId"],
         where: { workId: { not: null }, visitor: { tenantId } },
-        _count: { workId: "desc" },
+        _count: { workId: true },
+        orderBy: { _count: { workId: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.groupBy({
         by: ["trailId"],
         where: { trailId: { not: null }, visitor: { tenantId } },
-        _count: { trailId: "desc" },
+        _count: { trailId: true },
+        orderBy: { _count: { trailId: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.groupBy({
         by: ["eventId"],
         where: { eventId: { not: null }, visitor: { tenantId } },
-        _count: { eventId: "desc" },
+        _count: { eventId: true },
+        orderBy: { _count: { eventId: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.count({
@@ -259,7 +262,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     const topWorks = topWorksRaw.map(p => ({
       id: p.workId!,
       title: works.find(w => w.id === p.workId)?.title || "Desconhecido",
-      visits: p._count.workId
+      visits: (p._count as any)?.workId || 0
     }));
 
     // Enrich Top Trails
@@ -268,7 +271,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     const topTrails = topTrailsRaw.map(p => ({
       id: p.trailId!,
       title: trails.find(t => t.id === p.trailId)?.title || "Desconhecido",
-      completions: p._count.trailId
+      completions: (p._count as any)?.trailId || 0
     }));
 
     // Enrich Top Events
@@ -277,7 +280,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     const topEvents = topEventsRaw.map(p => ({
       id: p.eventId!,
       title: events.find(e => e.id === p.eventId)?.title || "Desconhecido",
-      views: p._count.eventId
+      views: (p._count as any)?.eventId || 0
     }));
 
     // Calculate Growths
