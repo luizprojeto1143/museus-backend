@@ -5,22 +5,11 @@ import { authMiddleware } from "../middleware/auth.js";
 const router = Router();
 
 // Top visitantes por XP (Leaderboard)
-// Extend Express Request to include user (or import from a definition file if exists)
-interface AuthenticatedRequest extends Request {
-    user?: {
-        id: string;
-        email: string;
-        name: string;
-        tenantId: string;
-        photoUrl?: string;
-    };
-}
-
 // ...
 
 router.get("/", authMiddleware, async (req, res) => {
     try {
-        const user = (req as unknown as AuthenticatedRequest).user;
+        const user = req.user;
         const userEmail = user?.email;
 
         // 1. Determine Context (Tenant)
@@ -76,7 +65,7 @@ router.get("/", authMiddleware, async (req, res) => {
             xp: myTotalXp,
             name: user.name,
             email: userEmail,
-            photoUrl: user.photoUrl
+            photoUrl: (user as any).photoUrl || "" // Keep empty if not present
         };
 
         const serializedTop = topVisitors.map((v, index) => ({

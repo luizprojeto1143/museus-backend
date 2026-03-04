@@ -7,6 +7,7 @@ declare global {
       role: Role;
       tenantId?: string | null;
       email: string;
+      name?: string;
     }
     interface Request {
       user?: UserPayload;
@@ -14,4 +15,4 @@ declare global {
   }
 }
 
-export {};
+export { };

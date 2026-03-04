@@ -23,8 +23,8 @@ const registerTokenSchema = z.object({
 router.post('/register', authMiddleware, async (req: Request, res: Response) => {
     try {
         const { token, platform, userAgent } = registerTokenSchema.parse(req.body);
-        const userId = (req as AuthenticatedRequest).userId;
-        const tenantId = (req as AuthenticatedRequest).tenantId;
+        const userId = req.user?.id;
+        const tenantId = req.user?.tenantId;
 
         // Upsert the device token
         const deviceToken = await prisma.deviceToken.upsert({
@@ -81,7 +81,9 @@ router.delete('/unregister', authMiddleware, async (req: Request, res: Response)
 // Send test notification (admin only)
 router.post('/test', authMiddleware, async (req: Request, res: Response) => {
     try {
-        const userId = (req as AuthenticatedRequest).userId;
+        const user = req.user;
+        const userId = user?.id;
+        const userEmail = user?.email;
 
         // Get user's device tokens
         const tokens = await prisma.deviceToken.findMany({
@@ -124,7 +126,7 @@ router.post('/test', authMiddleware, async (req: Request, res: Response) => {
 // Send notification to all users of a tenant (admin only)
 router.post('/broadcast', authMiddleware, async (req: Request, res: Response) => {
     try {
-        const tenantId = (req as AuthenticatedRequest).tenantId;
+        const tenantId = req.user?.tenantId;
         const { title, body, url } = z.object({
             title: z.string().min(1),
             body: z.string().min(1),

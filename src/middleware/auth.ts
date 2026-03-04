@@ -17,6 +17,7 @@ interface JwtPayload {
   role: Role;
   tenantId: string;
   email: string;
+  name?: string;
 }
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {

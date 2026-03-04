@@ -20,10 +20,10 @@ const ACCESS_TOKEN_EXPIRES_IN = "15m";
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 
 // Helper para gerar tokens
-const generateTokens = async (userId: string, email: string, role: Role, tenantId: string | null, tenantType: any) => {
+const generateTokens = async (userId: string, email: string, role: Role, tenantId: string | null, tenantType: any, name?: string) => {
   // 1. Gera Access Token (JWT)
   const accessToken = jwt.sign(
-    { email, role, tenantId, type: tenantType },
+    { email, role, tenantId, type: tenantType, name },
     JWT_SECRET as jwt.Secret,
     { subject: userId, expiresIn: ACCESS_TOKEN_EXPIRES_IN }
   );
@@ -73,7 +73,8 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       user.email,
       user.role,
       user.tenantId,
-      user.tenant?.type
+      user.tenant?.type,
+      user.name
     );
 
     return res.json({
@@ -355,7 +356,7 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
       });
     }
 
-    const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, targetTenantId, tenant.type);
+    const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, targetTenantId, tenant.type, user.name);
 
     return res.json({
       accessToken,
