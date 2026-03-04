@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import bcrypt from "bcrypt";
-import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { authMiddleware, requireRole, softAuthMiddleware } from "../middleware/auth.js";
 import { Role, TenantType } from "@prisma/client";
 import { z } from "zod";
 import { limiter } from "../middleware/rateLimiter.js";
@@ -34,57 +34,77 @@ router.get("/public", limiter, async (req, res) => {
   }
 });
 
-// Get Tenant Settings (Public or Auth)
-router.get("/:id/settings", async (req, res) => {
+/**
+ * Get Tenant Settings
+ * Handled as a single endpoint for both public and authenticated users.
+ * Public users get a subset of fields.
+ */
+router.get("/:id/settings", softAuthMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const user = req.user;
+
+    // Determine if requester is authorized for all fields (Master or Admin of this tenant)
+    const isAuthorized = user && (user.role === Role.MASTER || (user.role === Role.ADMIN && user.tenantId === id));
+
     const tenant = await prisma.tenant.findUnique({
-      where: { id },
-      select: {
-        name: true,
-        type: true,
-        logoUrl: true,
-        primaryColor: true,
-        secondaryColor: true,
-        historicalFont: true,
-        mapImageUrl: true,
-        latitude: true,
-        longitude: true,
-        // Welcome Media
-        welcomeAudioUrl: true,
-        welcomeVideoUrl: true,
-        // Feature Flags
-        featureWorks: true,
-        featureTrails: true,
-        featureEvents: true,
-        featureGamification: true,
-        featureQRCodes: true,
-        featureChatAI: true,
-        featureShop: true,
-        featureDonations: true,
-        featureCertificates: true,
-        featureReviews: true,
-        featureGuestbook: true,
-
-        featureAccessibility: true,
-
-        featureMinigames: true,
-        isCityMode: true,
-        featureEditaisSubmission: true,
-        // Municipal Features
-        featureEditais: true,
-        featureProjects: true,
-        featureProviders: true,
-        featureAccessibilityMgmt: true,
-        featureInstitutionalReports: true
-      }
+      where: { id }
     });
 
     if (!tenant) {
       return res.status(404).json({ message: "Museu não encontrado" });
     }
 
-    return res.json(tenant);
+    if (isAuthorized) {
+      return res.json(tenant); // Return everything for Admins
+    }
+
+    // Filtered settings for public visitors
+    const publicSettings = {
+      name: tenant.name,
+      type: tenant.type,
+      logoUrl: tenant.logoUrl,
+      primaryColor: tenant.primaryColor,
+      secondaryColor: tenant.secondaryColor,
+      historicalFont: tenant.historicalFont,
+      mapImageUrl: tenant.mapImageUrl,
+      latitude: tenant.latitude,
+      longitude: tenant.longitude,
+      // Welcome Media
+      welcomeAudioUrl: tenant.welcomeAudioUrl,
+      welcomeVideoUrl: tenant.welcomeVideoUrl,
+      // Feature Flags
+      featureWorks: tenant.featureWorks,
+      featureTrails: tenant.featureTrails,
+      featureEvents: tenant.featureEvents,
+      featureGamification: tenant.featureGamification,
+      featureQRCodes: tenant.featureQRCodes,
+      featureChatAI: tenant.featureChatAI,
+      featureShop: tenant.featureShop,
+      featureDonations: tenant.featureDonations,
+      featureCertificates: tenant.featureCertificates,
+      featureReviews: tenant.featureReviews,
+      featureGuestbook: tenant.featureGuestbook,
+      featureAccessibility: tenant.featureAccessibility,
+      featureMinigames: tenant.featureMinigames,
+      isCityMode: tenant.isCityMode,
+      featureEditaisSubmission: tenant.featureEditaisSubmission,
+      // Municipal Features
+      featureEditais: tenant.featureEditais,
+      featureProjects: tenant.featureProjects,
+      featureProviders: tenant.featureProviders,
+      featureAccessibilityMgmt: tenant.featureAccessibilityMgmt,
+      featureInstitutionalReports: tenant.featureInstitutionalReports,
+      // Added missing common fields for better UI
+      mission: tenant.mission,
+      address: tenant.address,
+      openingHours: tenant.openingHours,
+      whatsapp: tenant.whatsapp,
+      email: tenant.email,
+      website: tenant.website
+    };
+
+    return res.json(publicSettings);
   } catch (err) {
     console.error("Erro ao buscar configurações do museu", err);
     return res.status(500).json({ message: "Erro interno" });
@@ -325,30 +345,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
   }
 });
 
-// GET Settings
-router.get("/:id/settings", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const user = req.user!;
-
-    if (user.role === Role.ADMIN && user.tenantId !== id) {
-      return res.status(403).json({ message: "Sem permissão" });
-    }
-
-    const tenant = await prisma.tenant.findUnique({
-      where: { id }
-    });
-
-    if (!tenant) {
-      return res.status(404).json({ message: "Tenant não encontrado" });
-    }
-
-    return res.json(tenant);
-  } catch (err) {
-    console.error("Erro ao buscar settings", err);
-    return res.status(500).json({ message: "Erro interno" });
-  }
-});
+// This route is now merged into the one above
 
 // Atualiza configurações do tenant (ADMIN ou MASTER)
 router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {

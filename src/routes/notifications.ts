@@ -126,15 +126,17 @@ router.post('/test', authMiddleware, async (req: Request, res: Response) => {
 // Send notification to all users of a tenant (admin only)
 router.post('/broadcast', authMiddleware, async (req: Request, res: Response) => {
     try {
-        const tenantId = req.user?.tenantId;
-        const { title, body, url } = z.object({
+        const { title, body, url, targetTenantId } = z.object({
             title: z.string().min(1),
             body: z.string().min(1),
             url: z.string().optional(),
+            targetTenantId: z.string().uuid().optional(),
         }).parse(req.body);
 
+        const tenantId = targetTenantId || req.user?.tenantId;
+
         if (!tenantId) {
-            return res.status(400).json({ error: 'Tenant ID required' });
+            return res.status(400).json({ error: 'Tenant ID não identificado (tenantId ausente no token e no corpo)' });
         }
 
         // Get all active device tokens for this tenant
@@ -147,7 +149,7 @@ router.post('/broadcast', authMiddleware, async (req: Request, res: Response) =>
         });
 
         if (tokens.length === 0) {
-            return res.status(400).json({ error: 'No registered devices in this tenant' });
+            return res.status(400).json({ error: `Nenhum dispositivo registrado para o tenant ${tenantId}. Os usuários precisam abrir o app e permitir notificações primeiro.` });
         }
 
         const payload: PushNotificationPayload = {

@@ -33,7 +33,8 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
       id: payload.sub,
       role: payload.role,
       tenantId: payload.tenantId,
-      email: payload.email
+      email: payload.email,
+      name: payload.name
     };
     return next();
   } catch (err) {
@@ -68,7 +69,8 @@ export function softAuthMiddleware(req: Request, res: Response, next: NextFuncti
       id: payload.sub,
       role: payload.role,
       tenantId: payload.tenantId,
-      email: payload.email
+      email: payload.email,
+      name: payload.name
     };
   } catch (err) {
     // Ignore invalid tokens in soft auth

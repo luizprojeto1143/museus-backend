@@ -136,7 +136,8 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
       storedToken.user.email,
       storedToken.user.role,
       storedToken.user.tenantId,
-      storedToken.user.tenant?.type
+      storedToken.user.tenant?.type,
+      storedToken.user.name
     );
 
     return res.json({
@@ -306,7 +307,7 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
       }
     });
 
-    const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, user.tenantId, null);
+    const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, user.tenantId, null, user.name);
 
     return res.status(201).json({
       accessToken,
