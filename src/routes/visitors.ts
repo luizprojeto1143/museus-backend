@@ -166,6 +166,40 @@ router.get("/me/summary", async (req, res) => {
     return res.status(500).json({ message: "Erro ao buscar resumo" });
   }
 });
+
+// Retorna perfil do visitante logado
+router.get("/me", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = user.tenantId;
+    const email = user.email;
+
+    if (!tenantId || !email) {
+      return res.status(400).json({ message: "Autenticação incompleta" });
+    }
+
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: email.toLowerCase(), tenantId }
+    });
+
+    if (!visitor) {
+      return res.json({ isTeacher: false });
+    }
+
+    return res.json({
+      id: visitor.id,
+      name: visitor.name,
+      email: visitor.email,
+      xp: visitor.xp,
+      isTeacher: (visitor as any).isTeacher ?? false,
+      createdAt: visitor.createdAt
+    });
+  } catch (err) {
+    console.error("Erro GET /me", err);
+    return res.status(500).json({ message: "Erro ao buscar perfil" });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;

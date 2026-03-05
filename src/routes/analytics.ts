@@ -160,6 +160,29 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
+    // Fetch visitor ids first to avoid Prisma relation-in-groupBy limitations
+    const visitors = await prisma.visitor.findMany({ where: { tenantId }, select: { id: true } });
+    const visitorsInTenant = visitors.map(v => v.id);
+
+    if (visitorsInTenant.length === 0) {
+      return res.json({
+        visitorsThisMonth: 0,
+        topWorks: [],
+        topTrails: [],
+        topEvents: [],
+        totalQRScans: 0,
+        totalXPDistributed: 0,
+        weeklyGrowth: 0,
+        monthlyGrowth: 0,
+        visitsByDay: [],
+        visitsByWork: [],
+        xpByCategory: [],
+        accessBySource: { qr: 0, app: 0, map: 0, trails: 0 },
+        upcomingBookings: [],
+        alerts: []
+      });
+    }
+
     const [
       visitorsThisMonth,
       visitorsPrevMonth,
@@ -176,40 +199,40 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       upcomingBookings
     ] = await Promise.all([
       prisma.visitorVisit.count({
-        where: { visitor: { tenantId }, createdAt: { gte: startOfCurrentMonth } }
+        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: startOfCurrentMonth } }
       }),
       prisma.visitorVisit.count({
-        where: { visitor: { tenantId }, createdAt: { gte: startOfPrevMonth, lt: startOfCurrentMonth } }
+        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: startOfPrevMonth, lt: startOfCurrentMonth } }
       }),
       prisma.visitorVisit.count({
-        where: { visitor: { tenantId }, createdAt: { gte: sevenDaysAgo } }
+        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: sevenDaysAgo } }
       }),
       prisma.visitorVisit.count({
-        where: { visitor: { tenantId }, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } }
+        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } }
       }),
       prisma.visitorVisit.groupBy({
         by: ["workId"],
-        where: { workId: { not: null }, visitor: { tenantId } },
+        where: { workId: { not: null }, visitorId: { in: visitorsInTenant } },
         _count: { workId: true },
         orderBy: { _count: { workId: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.groupBy({
         by: ["trailId"],
-        where: { trailId: { not: null }, visitor: { tenantId } },
+        where: { trailId: { not: null }, visitorId: { in: visitorsInTenant } },
         _count: { trailId: true },
         orderBy: { _count: { trailId: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.groupBy({
         by: ["eventId"],
-        where: { eventId: { not: null }, visitor: { tenantId } },
+        where: { eventId: { not: null }, visitorId: { in: visitorsInTenant } },
         _count: { eventId: true },
         orderBy: { _count: { eventId: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.count({
-        where: { visitor: { tenantId }, source: "QR" }
+        where: { visitorId: { in: visitorsInTenant }, source: "QR" }
       }),
       prisma.visitor.aggregate({
         where: { tenantId },
@@ -223,11 +246,11 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
         JOIN "Category" c ON w."categoryId" = c.id
         WHERE w."tenantId" = ${tenantId}
         GROUP BY c.name
-      ` as Promise<{ category: string, xp: bigint }[]>,
+      ` as Promise<{ category: string, xp: bigint | null }[]>,
       // Source Distribution
       prisma.visitorVisit.groupBy({
         by: ["source"],
-        where: { visitor: { tenantId } },
+        where: { visitorId: { in: visitorsInTenant } },
         _count: { id: true }
       }),
       // Optimized 7-day query using raw SQL for Postgres
@@ -314,7 +337,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     // Process XP by Category
     const xpByCategory = (await xpByCategoryRaw).map(item => ({
       category: item.category,
-      xp: Number(item.xp)
+      xp: item.xp ? Number(item.xp) : 0
     }));
 
     // Process Source Stats
@@ -534,6 +557,30 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
     return res.status(500).json({ message: "Erro ao carregar analytics avançado" });
   }
 });
+// Accessibility Summary (for Producer Reports)
+router.get("/accessibility-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = user.tenantId;
+
+    if (!tenantId && user.role !== Role.MASTER) {
+      return res.status(400).json({ message: "Tenant obrigatório" });
+    }
+
+    const whereClause = tenantId ? { tenantId } : {};
+
+    const [executions, requests] = await Promise.all([
+      prisma.accessibilityExecution.count({ where: whereClause }),
+      prisma.accessibilityRequest.count({ where: whereClause })
+    ]);
+
+    return res.json({ executions, requests });
+  } catch (err) {
+    console.error("Erro accessibility summary", err);
+    return res.status(500).json({ message: "Erro ao buscar resumo de acessibilidade" });
+  }
+});
+
 // Sales & Ticket Analytics (Sympla Killer Dashboard)
 router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
@@ -595,6 +642,140 @@ router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTE
   } catch (err) {
     console.error("Erro sales analytics", err);
     return res.status(500).json({ message: "Erro ao buscar métricas de vendas" });
+  }
+});
+
+// Heatmap — QR scan / visit frequency by room and work
+router.get("/heatmap", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = (req.query.tenantId as string) || user.tenantId;
+    const days = parseInt(req.query.days as string) || 30;
+
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId obrigatório" });
+    }
+
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // Count visits per work with room info
+    const visits = await prisma.visitorVisit.groupBy({
+      by: ['workId'],
+      where: {
+        workId: { not: null },
+        visitor: { tenantId },
+        createdAt: { gte: since }
+      },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } }
+    });
+
+    // Fetch work details
+    const workIds = visits.map(v => v.workId).filter(Boolean) as string[];
+    const works = await prisma.work.findMany({
+      where: { id: { in: workIds } },
+      select: { id: true, title: true, room: true, floor: true, imageUrl: true }
+    });
+
+    const workMap = new Map(works.map(w => [w.id, w]));
+
+    const heatmapData = visits.map(v => {
+      const work = workMap.get(v.workId!);
+      return {
+        workId: v.workId,
+        title: work?.title || 'Desconhecido',
+        room: work?.room || 'Sem sala',
+        floor: work?.floor || '0',
+        visits: v._count.id,
+        imageUrl: work?.imageUrl
+      };
+    });
+
+    // Aggregate by room
+    const roomMap = new Map<string, { visits: number; works: number }>();
+    heatmapData.forEach(h => {
+      const existing = roomMap.get(h.room) || { visits: 0, works: 0 };
+      existing.visits += h.visits;
+      existing.works++;
+      roomMap.set(h.room, existing);
+    });
+
+    const byRoom = Array.from(roomMap.entries())
+      .map(([room, data]) => ({ room, ...data }))
+      .sort((a, b) => b.visits - a.visits);
+
+    return res.json({
+      period: { days, since: since.toISOString() },
+      totalVisits: heatmapData.reduce((sum, h) => sum + h.visits, 0),
+      byWork: heatmapData.slice(0, 30),
+      byRoom
+    });
+  } catch (err) {
+    console.error("Error generating heatmap:", err);
+    return res.status(500).json({ message: "Erro ao gerar heatmap" });
+  }
+});
+
+// Funnel — Conversion funnel analytics
+router.get("/funnel", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = (req.query.tenantId as string) || user.tenantId;
+    const days = parseInt(req.query.days as string) || 30;
+
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId obrigatório" });
+    }
+
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    // Stage 1: Total visitors (registered)
+    const totalVisitors = await prisma.visitor.count({
+      where: { tenantId, createdAt: { gte: since } }
+    });
+
+    // Stage 2: Visitors who scanned at least 1 QR / made a visit
+    const activeVisitors = await prisma.visitorVisit.groupBy({
+      by: ['visitorId'],
+      where: { visitor: { tenantId }, createdAt: { gte: since } }
+    }).then(r => r.length);
+
+    // Stage 3: Visitors who registered for an event
+    const eventRegistrants = await prisma.registration.groupBy({
+      by: ['guestEmail'],
+      where: { event: { tenantId }, createdAt: { gte: since } }
+    }).then(r => r.length);
+
+    // Stage 4: Visitors who bought from shop
+    const shopBuyers = await prisma.order.count({
+      where: { tenantId, createdAt: { gte: since }, status: { not: 'CANCELLED' } }
+    });
+
+    // Stage 5: Returning visitors (2+ visits in different days)
+    const returningVisitors = await prisma.$queryRaw`
+      SELECT COUNT(DISTINCT vv."visitorId") as count
+      FROM "VisitorVisit" vv
+      JOIN "Visitor" v ON v.id = vv."visitorId"
+      WHERE v."tenantId" = ${tenantId}
+        AND vv."createdAt" >= ${since}
+      GROUP BY vv."visitorId"
+      HAVING COUNT(DISTINCT DATE(vv."createdAt")) >= 2
+    `.then((r: any) => r.length).catch(() => 0);
+
+    const funnel = [
+      { stage: 'Cadastrados', count: totalVisitors, pct: 100 },
+      { stage: 'Ativos (escanearam QR)', count: activeVisitors, pct: totalVisitors > 0 ? Math.round((activeVisitors / totalVisitors) * 100) : 0 },
+      { stage: 'Inscritos em evento', count: eventRegistrants, pct: totalVisitors > 0 ? Math.round((eventRegistrants / totalVisitors) * 100) : 0 },
+      { stage: 'Compraram na loja', count: shopBuyers, pct: totalVisitors > 0 ? Math.round((shopBuyers / totalVisitors) * 100) : 0 },
+      { stage: 'Retornaram (2+ visitas)', count: returningVisitors, pct: totalVisitors > 0 ? Math.round((returningVisitors / totalVisitors) * 100) : 0 }
+    ];
+
+    return res.json({ period: { days }, funnel });
+  } catch (err) {
+    console.error("Error generating funnel:", err);
+    return res.status(500).json({ message: "Erro ao gerar funil" });
   }
 });
 

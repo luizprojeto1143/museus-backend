@@ -458,6 +458,125 @@ async function main() {
     console.log(`   - Cidade: ${cityTenant.name} (parentId: null)`);
     console.log(`   - Museu filho: ${childMuseum?.name || "existente"} (parentId: ${cityTenant.id})`);
     console.log(`   - Centro Cultural filho: ${childCultural?.name || "existente"} (parentId: ${cityTenant.id})`);
+
+    // ============================================================
+    // SEED: New Phase Features — Heritage, Check-ins, Cards, RPG
+    // ============================================================
+    console.log("\n✨ Populando novas tabelas...");
+
+    // --- Intangible Heritage ---
+    const heritageData = [
+        { title: "Congada de Betim", description: "Manifestação cultural afro-brasileira com dança, canto e cortejo. Celebra reis e rainhas negros em festejo de sincretismo religioso.", category: "FESTEJO", status: "REGISTRADO", holders: "Comunidade do bairro São João", region: "Betim - MG" },
+        { title: "Saber do Queijo Minas", description: "Técnica artesanal de fabricação do queijo Minas, transmitida entre gerações de produtores rurais da Serra da Mantiqueira.", category: "SABER", status: "REGISTRADO", holders: "Produtores da Serra da Mantiqueira", region: "Minas Gerais" },
+        { title: "Festa do Divino Espírito Santo", description: "Celebração religiosa com procissões, novenas, danças e fartas distribuições de alimentos à comunidade.", category: "CELEBRACAO", status: "ATIVO", holders: "Paróquia São José", region: "Betim - MG" },
+        { title: "Capoeira Regional", description: "Arte marcial brasileira que combina luta, dança, música e acrobacia. Patrimônio Cultural Imaterial da Humanidade.", category: "EXPRESSAO", status: "REGISTRADO", holders: "Mestres de capoeira locais", region: "Todo o município" },
+        { title: "Praça da Matriz", description: "Lugar de memória e convivência comunitária, palco de feiras, encontros e manifestações culturais há mais de 100 anos.", category: "LUGAR", status: "ATIVO", holders: "Comunidade local", region: "Centro de Betim" }
+    ];
+
+    for (const h of heritageData) {
+        const exists = await prisma.intangibleHeritage.findFirst({ where: { title: h.title, tenantId: tenant.id } });
+        if (!exists) {
+            await prisma.intangibleHeritage.create({ data: { ...h, tenantId: tenant.id } });
+            console.log(`   ✓ Patrimônio: ${h.title}`);
+        }
+    }
+
+    // --- Collectible Cards ---
+    const cardsData = [
+        { title: "Mona Lisa Dourada", description: "Card raro da obra mais famosa do mundo", rarity: "LEGENDARY", xpReward: 500, totalMinted: 10 },
+        { title: "Explorador do Renascimento", description: "Visitou todas as obras da Sala do Renascimento", rarity: "EPIC", xpReward: 200, totalMinted: 50 },
+        { title: "Primeira Visita", description: "Card comemorativo da sua primeira viagem ao museu", rarity: "COMMON", xpReward: 50, totalMinted: 1000 },
+        { title: "Caçador de QR Codes", description: "Escaneou 10 QR Codes em uma única visita", rarity: "RARE", xpReward: 150, totalMinted: 100 },
+        { title: "Madrugador Cultural", description: "Visitou o museu nos primeiros 30 minutos de abertura", rarity: "UNCOMMON", xpReward: 75, totalMinted: 200 },
+        { title: "Mestre da Arte Moderna", description: "Completou todos os desafios da sala de Arte Moderna", rarity: "EPIC", xpReward: 250, totalMinted: 30 },
+        { title: "Colecionador Supremo", description: "Coletou todos os cards disponíveis!", rarity: "LEGENDARY", xpReward: 1000, totalMinted: 5 }
+    ];
+
+    for (const card of cardsData) {
+        const exists = await prisma.collectibleCard.findFirst({ where: { title: card.title, tenantId: tenant.id } });
+        if (!exists) {
+            await prisma.collectibleCard.create({ data: { ...card, tenantId: tenant.id } });
+            console.log(`   ✓ Card: ${card.title} (${card.rarity})`);
+        }
+    }
+
+    // --- Group Tickets ---
+    const groupData = [
+        { groupName: "Escola Municipal São Paulo", totalTickets: 35, contactName: "Maria Silva", contactEmail: "maria@escola-sp.edu.br", contactPhone: "(31) 99999-1111", status: "CONFIRMED" },
+        { groupName: "Turma de Artes Visuais - UFMG", totalTickets: 22, contactName: "Prof. Carlos Souza", contactEmail: "carlos@ufmg.br", status: "PENDING" },
+        { groupName: "Associação de Idosos Betim", totalTickets: 15, contactName: "Dona Aparecida", contactEmail: "assoc.idosos@betim.mg", contactPhone: "(31) 3333-4444", status: "CONFIRMED" }
+    ];
+
+    for (const g of groupData) {
+        const exists = await prisma.groupTicket.findFirst({ where: { groupName: g.groupName, tenantId: tenant.id } });
+        if (!exists) {
+            await prisma.groupTicket.create({ data: { ...g, tenantId: tenant.id } });
+            console.log(`   ✓ Grupo: ${g.groupName} (${g.totalTickets} ingressos)`);
+        }
+    }
+
+    // --- Social Check-ins ---
+    // Get some visitors to create check-ins
+    const visitors = await prisma.visitor.findMany({ where: { tenantId: tenant.id }, take: 5 });
+    const checkinMessages = [
+        { message: "Incrível a exposição de Arte Moderna! 🎨", emoji: "🎨" },
+        { message: "Primeira vez aqui e já amei!", emoji: "❤️" },
+        { message: "Trouxe a família toda pra conhecer", emoji: "👀" },
+        { message: "O Mona Lisa é ainda mais impressionante pessoalmente", emoji: "✨" },
+        { message: "", emoji: "🏛️" }
+    ];
+
+    for (let i = 0; i < Math.min(visitors.length, checkinMessages.length); i++) {
+        const existingCheckin = await prisma.socialCheckin.findFirst({ where: { visitorId: visitors[i].id, tenantId: tenant.id } });
+        if (!existingCheckin) {
+            await prisma.socialCheckin.create({
+                data: { visitorId: visitors[i].id, tenantId: tenant.id, ...checkinMessages[i] }
+            });
+        }
+    }
+    if (visitors.length > 0) console.log(`   ✓ Check-ins: ${Math.min(visitors.length, checkinMessages.length)} criados`);
+
+    // --- Visitor RPG profiles ---
+    for (const v of visitors.slice(0, 3)) {
+        const existingRPG = await prisma.visitorRPG.findUnique({ where: { visitorId: v.id } });
+        if (!existingRPG) {
+            const levels = [
+                { characterName: "Explorador Destemido", characterClass: "APRENDIZ", level: 5, currentXp: 200, nextLevelXp: 250 },
+                { characterName: "Mestre da Cultura", characterClass: "MESTRE", level: 12, currentXp: 800, nextLevelXp: 1500 },
+                { characterName: "Novato Curioso", characterClass: "NOVATO", level: 2, currentXp: 50, nextLevelXp: 130 }
+            ];
+            const idx = visitors.indexOf(v);
+            const lvl = levels[idx] || levels[0];
+            await prisma.visitorRPG.create({ data: { visitorId: v.id, ...lvl, totalVisits: idx * 3 + 1, totalWorks: idx * 5 + 2 } });
+        }
+    }
+    if (visitors.length > 0) console.log(`   ✓ RPG: ${Math.min(3, visitors.length)} perfis criados`);
+
+    // --- Work Translations ---
+    const works = await prisma.work.findMany({ where: { tenantId: tenant.id }, take: 3 });
+    for (const w of works) {
+        const exists = await prisma.workTranslation.findFirst({ where: { workId: w.id, language: "en" } });
+        if (!exists) {
+            await prisma.workTranslation.create({
+                data: {
+                    workId: w.id,
+                    language: "en",
+                    title: `${w.title} (EN)`,
+                    description: `English translation of ${w.title}. This artwork is a masterpiece of ${w.artist || "an unknown artist"}.`,
+                    tenantId: tenant.id
+                }
+            });
+        }
+    }
+    if (works.length > 0) console.log(`   ✓ Traduções EN: ${works.length} obras traduzidas`);
+
+    console.log("\n🎉 Seed completo com todas as novas tabelas!");
+    console.log("   - Patrimônio Imaterial: 5 registros");
+    console.log("   - Cards Colecionáveis: 7 cards");
+    console.log("   - Ingressos de Grupo: 3 solicitações");
+    console.log("   - Check-ins Sociais: até 5");
+    console.log("   - Perfis RPG: até 3");
+    console.log("   - Traduções EN: até 3 obras");
 }
 
 main()

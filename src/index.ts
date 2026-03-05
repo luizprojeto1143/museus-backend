@@ -65,6 +65,23 @@ import secretaryRoutes from "./routes/secretary.js";
 import aiCostsRoutes from "./routes/ai-costs.js";
 import institutionalExportRoutes from "./routes/institutional-export.js";
 import inboxRoutes from "./routes/inbox.js";
+import curatorNotesRoutes from "./routes/curator-notes.js";
+import npsRoutes from "./routes/nps.js";
+import sentimentRoutes from "./routes/sentiment.js";
+import teachersRoutes from "./routes/teachers.js";
+import ticketTransfersRoutes from "./routes/ticket-transfers.js";
+import membershipsRoutes from "./routes/memberships.js";
+import volunteersRoutes from "./routes/volunteers.js";
+import conservationRoutes from "./routes/conservation.js";
+import ppaRoutes from "./routes/ppa.js";
+import collectiblesRoutes from "./routes/collectibles.js";
+import translationsRoutes from "./routes/translations.js";
+import museumBattleRoutes from "./routes/museum-battle.js";
+import moderationRoutes from "./routes/moderation.js";
+import heritageRoutes from "./routes/heritage.js";
+import socialCheckinRoutes from "./routes/social-checkin.js";
+import groupTicketsRoutes from "./routes/group-tickets.js";
+import rpgRoutes from "./routes/rpg.js";
 import { validateEnv } from "./config/validateEnv.js";
 
 // Validate critical environment variables on boot
@@ -197,6 +214,31 @@ app.use("/ai-costs", aiCostsRoutes);
 app.use("/institutional-export", institutionalExportRoutes);
 app.use("/inbox", inboxRoutes);
 app.use("/seeder", seederRoutes);
+
+// Phase 1 — Analytics & UX
+app.use("/curator-notes", curatorNotesRoutes);
+app.use("/nps", npsRoutes);
+app.use("/sentiment", sentimentRoutes);
+
+// Phase 2-5 Routes
+app.use("/teachers", teachersRoutes);
+app.use("/ticket-transfers", ticketTransfersRoutes);
+app.use("/memberships", membershipsRoutes);
+app.use("/volunteers", volunteersRoutes);
+app.use("/conservation", conservationRoutes);
+app.use("/ppa", ppaRoutes);
+
+// Phase 5 Routes
+app.use("/collectibles", collectiblesRoutes);
+app.use("/translations", translationsRoutes);
+app.use("/museum-battle", museumBattleRoutes);
+app.use("/moderation", moderationRoutes);
+
+// Final Batch Routes
+app.use("/heritage", heritageRoutes);
+app.use("/social-checkin", socialCheckinRoutes);
+app.use("/group-tickets", groupTicketsRoutes);
+app.use("/rpg", rpgRoutes);
 
 const PORT = process.env.PORT || 3000;
 

@@ -252,7 +252,7 @@ router.post("/reset-password", authLimiter, async (req: Request, res: Response):
 
 router.post("/register", authLimiter, validate(registerSchema), async (req: Request, res: Response): Promise<any> => {
   try {
-    const { email, password, name, tenantId, role, cpf, phone, bio, website } = req.body;
+    const { email, password, name, tenantId, role, cpf, phone, bio, website, isTeacher } = req.body;
 
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) {
@@ -353,7 +353,7 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
 
     if (!visitor) {
       await prisma.visitor.create({
-        data: { name: user.name, email: user.email, tenantId: targetTenantId }
+        data: { name: user.name, email: user.email, tenantId: targetTenantId, isTeacher: (user as any).isTeacher || false }
       });
     }
 

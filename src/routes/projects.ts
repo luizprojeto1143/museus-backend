@@ -31,6 +31,7 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
             orderBy: { createdAt: "desc" },
             include: {
                 notice: { select: { id: true, title: true, status: true } },
+                proponent: { select: { id: true, name: true, email: true } },
                 _count: { select: { accessibilityExecutions: true } }
             }
         });

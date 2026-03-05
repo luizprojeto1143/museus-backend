@@ -529,6 +529,40 @@ router.post('/webhook', async (req, res) => {
     }
 });
 
+// GET /shop/my-orders - Get orders for the logged-in visitor
+router.get('/my-orders', authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+
+        if (!user.email) {
+            return res.status(400).json({ message: 'Email do usuário não encontrado' });
+        }
+
+        const orders = await prisma.order.findMany({
+            where: { customerEmail: user.email },
+            include: {
+                items: { include: { product: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        // Map to match frontend expected format
+        const mapped = orders.map(order => ({
+            ...order,
+            items: order.items.map(item => ({
+                product: { name: item.product.name },
+                quantity: item.quantity,
+                priceAtTime: Number(item.unitPrice)
+            }))
+        }));
+
+        res.json(mapped);
+    } catch (error) {
+        console.error('Error fetching my orders:', error);
+        res.status(500).json({ message: 'Erro ao buscar seus pedidos' });
+    }
+});
+
 // GET /shop/orders/:id - Get order details (Customer or Admin)
 router.get('/orders/:id', authMiddleware, async (req, res) => {
     try {

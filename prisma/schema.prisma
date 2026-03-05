@@ -200,6 +200,11 @@ model Tenant {
   featureInstitutionalReports Boolean @default(false) // Relatórios institucionais
   featureEditaisSubmission    Boolean @default(false) // Produtores podem submeter a editais
   
+  // Phase 1 Features
+  featureCuratorNotes  Boolean @default(false) // Notas de curador nas obras
+  featureNPS           Boolean @default(false) // Net Promoter Score
+  featureSponsorship   Boolean @default(false) // Patrocínio de obras
+  
   // Terms & Privacy (LGPD)
   termsOfUse    String?  // Texto dos termos de uso (Markdown/HTML)
   privacyPolicy String?  // Política de privacidade
@@ -250,6 +255,10 @@ model Tenant {
   floorPlans      FloorPlan[]
   accessibilityRequests AccessibilityRequest[]
   coupons         Coupon[]
+  curatorNotes    CuratorNote[]
+  npsResponses    NPSResponse[]
+  sponsorships    WorkSponsorship[]
+  sentimentAnalyses SentimentAnalysis[]
   
   // Municipal Features Relations
   publicNotices            PublicNotice[]
@@ -375,6 +384,13 @@ model Work {
   librasUrl   String?
   videoUrl    String?
   
+  // Art metadata (Phase 1 — Timeline & Comparator)
+  technique   String?  // Ex: "Óleo sobre tela", "Escultura em bronze"
+  period      String?  // Ex: "Barroco", "Modernismo", "Contemporâneo"
+  medium      String?  // Ex: "Pintura", "Escultura", "Gravura"
+  dimensions  String?  // Ex: "120x80cm"
+  yearNumeric Int?     // Ano numérico para ordenação na timeline
+  
   // Geo-fencing
   latitude    Float?
   longitude   Float?
@@ -393,6 +409,8 @@ model Work {
   favorites Favorite[]
   reviews  Review[]
   accessibilityRequests AccessibilityRequest[]
+  curatorNotes CuratorNote[]
+  sponsorships WorkSponsorship[]
 
   @@index([tenantId, categoryId])
   @@index([tenantId, room])
@@ -679,6 +697,7 @@ model Visitor {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   isFake   Boolean @default(false)
+  isTeacher Boolean @default(false)
 
   visits       VisitorVisit[]
   achievements VisitorAchievement[]
@@ -1654,4 +1673,554 @@ model VisitorCoupon {
   @@unique([visitorId, couponId])
   @@index([visitorId])
   @@index([couponId])
+}
+
+// ========== PHASE 1 — ANALYTICS & UX ==========
+
+// Curator Notes — Admin publishes contextual notes on works
+model CuratorNote {
+  id        String   @id @default(uuid())
+  
+  content   String   // Texto da nota do curador
+  author    String?  // Nome do curador
+  pinned    Boolean  @default(false)
+  
+  workId    String
+  work      Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([workId])
+  @@index([tenantId])
+}
+
+// NPS — Net Promoter Score responses
+model NPSResponse {
+  id        String   @id @default(uuid())
+  
+  score     Int      // 0-10
+  comment   String?
+  
+  visitorId String?
+  email     String?  // For anonymous NPS
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@index([tenantId])
+  @@index([createdAt])
+}
+
+// Sentiment Analysis — AI-generated insights from reviews
+model SentimentAnalysis {
+  id            String   @id @default(uuid())
+  
+  sentiment     String   // POSITIVE, NEGATIVE, NEUTRAL
+  confidence    Float    // 0.0 - 1.0
+  keywords      String[] // Ex: ["iluminação", "audiodescrição", "limpeza"]
+  summary       String?  // AI-generated summary
+  
+  reviewCount   Int      @default(0)
+  period        String?  // Ex: "2026-03", "2026-Q1"
+  
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  generatedAt   DateTime @default(now())
+  
+  @@index([tenantId])
+}
+
+// Work Sponsorship — Companies/people sponsor a work
+model WorkSponsorship {
+  id            String   @id @default(uuid())
+  
+  sponsorName   String
+  sponsorLogo   String?
+  sponsorUrl    String?
+  message       String?
+  
+  amount        Decimal? @db.Decimal(10, 2)
+  active        Boolean  @default(true)
+  startDate     DateTime @default(now())
+  endDate       DateTime?
+  
+  workId        String
+  work          Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([workId])
+  @@index([tenantId])
+}
+
+// ========== PHASE 2 — EDUCATION & GROUPS ==========
+
+model TeacherProfile {
+  id            String   @id @default(uuid())
+  
+  name          String
+  email         String
+  phone         String?
+  school        String   // Nome da escola
+  city          String?
+  subject       String?  // Disciplina principal
+  
+  tenantId      String
+  
+  schoolVisits  SchoolVisit[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([email, tenantId])
+  @@index([tenantId])
+}
+
+model SchoolVisit {
+  id            String   @id @default(uuid())
+  
+  teacherId     String
+  teacher       TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  schoolName    String
+  grade         String?    // "6º ano", "Ensino Médio", etc
+  studentCount  Int        @default(0)
+  ageGroup      String?    // "6-8", "9-12", "13-17", "18+"
+  
+  visitDate     DateTime
+  selectedWorkIds String[] // IDs das obras selecionadas pelo professor
+  
+  notes         String?    // Roteiro / observações pedagógicas
+  status        String     @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  
+  certificateIssued Boolean @default(false)
+  
+  tenantId      String
+  
+  activities    PostVisitActivity[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([teacherId])
+}
+
+model PostVisitActivity {
+  id            String   @id @default(uuid())
+  
+  title         String
+  description   String?
+  questions     Json?    // Array of { question, type, options }
+  ageGroup      String?  // "6-8", "9-12", "13-17", "18+"
+  workIds       String[] // Obras relacionadas
+  
+  autoSend      Boolean  @default(true)
+  sentAt        DateTime?
+  
+  schoolVisitId String?
+  schoolVisit   SchoolVisit? @relation(fields: [schoolVisitId], references: [id])
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([tenantId])
+}
+
+// ========== PHASE 3 — MONETIZATION ==========
+
+model TicketTransfer {
+  id              String   @id @default(uuid())
+  
+  registrationId  String
+  
+  fromEmail       String
+  toName          String
+  toEmail         String
+  
+  newCode         String   @unique  // Novo QR code
+  
+  status          String   @default("PENDING") // PENDING, COMPLETED, REJECTED
+  
+  transferredAt   DateTime?
+  createdAt       DateTime @default(now())
+  
+  @@index([registrationId])
+}
+
+model MembershipPlan {
+  id            String   @id @default(uuid())
+  
+  name          String   // "Amigo do Museu", "Patrono", etc
+  description   String?
+  
+  monthlyPrice  Decimal  @db.Decimal(10, 2)
+  yearlyPrice   Decimal? @db.Decimal(10, 2)
+  
+  benefits      Json?    // Array of strings
+  badgeCode     String?  // Achievement code for members
+  shopDiscount  Int?     // % de desconto na loja
+  
+  active        Boolean  @default(true)
+  
+  tenantId      String
+  
+  memberships   Membership[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([tenantId])
+}
+
+model Membership {
+  id            String   @id @default(uuid())
+  
+  planId        String
+  plan          MembershipPlan @relation(fields: [planId], references: [id])
+  
+  visitorEmail  String
+  visitorName   String
+  
+  status        String   @default("ACTIVE") // ACTIVE, PAUSED, CANCELLED, EXPIRED
+  
+  startDate     DateTime @default(now())
+  renewDate     DateTime?
+  cancelledAt   DateTime?
+  
+  paymentId     String?
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([visitorEmail])
+}
+
+// ========== PHASE 4 — MUNICIPAL ADVANCED ==========
+
+model Volunteer {
+  id            String   @id @default(uuid())
+  
+  name          String
+  email         String
+  phone         String?
+  skills        String[]
+  availability  String?  // "manhã", "tarde", "integral"
+  
+  status        String   @default("ACTIVE") // ACTIVE, INACTIVE
+  totalHours    Float    @default(0)
+  
+  tenantId      String
+  
+  shifts        VolunteerShift[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([email, tenantId])
+  @@index([tenantId])
+}
+
+model VolunteerShift {
+  id            String   @id @default(uuid())
+  
+  volunteerId   String
+  volunteer     Volunteer @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+  
+  date          DateTime
+  startTime     String   // "08:00"
+  endTime       String   // "12:00"
+  hours         Float    @default(0)
+  
+  activity      String?  // Descrição da atividade
+  confirmed     Boolean  @default(false)
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([volunteerId])
+}
+
+model ConservationRecord {
+  id            String   @id @default(uuid())
+  
+  workId        String
+  
+  type          String   // "LIMPEZA", "RESTAURO", "FUMIGACAO", "VISTORIA"
+  description   String?
+  responsibleName String
+  
+  condition     String?  // "BOM", "REGULAR", "RUIM", "CRITICO"
+  notes         String?
+  attachments   Json?    // Array of file URLs (laudos PDF)
+  
+  performedAt   DateTime @default(now())
+  nextScheduled DateTime?
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([workId])
+  @@index([tenantId])
+}
+
+model WorkLoan {
+  id            String   @id @default(uuid())
+  
+  workId        String
+  
+  borrowerName  String    // Instituição que recebeu
+  borrowerContact String?
+  
+  purpose       String?   // "Exposição temporária", "Restauro externo"
+  
+  departureDate DateTime
+  expectedReturn DateTime?
+  actualReturn  DateTime?
+  
+  status        String   @default("ACTIVE") // ACTIVE, RETURNED, OVERDUE
+  
+  conditions    String?  // Condições do empréstimo
+  insuranceInfo String?
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([workId])
+  @@index([tenantId])
+}
+
+model PPAGoal {
+  id            String   @id @default(uuid())
+  
+  title         String
+  description   String?
+  metric        String   // "visitantes", "eventos", "projetos", etc
+  
+  targetValue   Int
+  currentValue  Int      @default(0)
+  
+  year          Int
+  quarter       Int?     // 1-4 (null = annual)
+  
+  status        String   @default("IN_PROGRESS") // IN_PROGRESS, ACHIEVED, MISSED
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([tenantId, year])
+}
+
+// ========== PHASE 5 — GAMIFICATION, AI & i18n ==========
+
+// Collectible Cards — digital trading cards for works
+model CollectibleCard {
+  id            String   @id @default(uuid())
+  
+  title         String
+  description   String?
+  imageUrl      String?
+  rarity        String   @default("COMMON") // COMMON, RARE, EPIC, LEGENDARY
+  
+  workId        String?  // Linked to a work (optional)
+  
+  totalMinted   Int      @default(100)
+  
+  xpReward      Int      @default(10)
+  
+  tenantId      String
+  
+  owners        VisitorCard[]
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([tenantId])
+  @@index([rarity])
+}
+
+// Visitor's card collection
+model VisitorCard {
+  id            String   @id @default(uuid())
+  
+  cardId        String
+  card          CollectibleCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  
+  visitorId     String
+  
+  earnedAt      DateTime @default(now())
+  
+  @@unique([cardId, visitorId])
+  @@index([visitorId])
+}
+
+// Review Moderation — AI-powered review moderation
+model ReviewModeration {
+  id            String   @id @default(uuid())
+  
+  reviewId      String   @unique
+  
+  isApproved    Boolean?
+  flagReason    String?  // "SPAM", "OFFENSIVE", "LOW_QUALITY", "OK"
+  
+  aiScore       Float?   // 0-1 confidence
+  aiReason      String?
+  
+  moderatedBy   String?  // null = AI, user id = human
+  moderatedAt   DateTime?
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([reviewId])
+}
+
+// Work Translations — multi-language support for artwork
+model WorkTranslation {
+  id            String   @id @default(uuid())
+  
+  workId        String
+  
+  language      String   // "en", "es", "fr", "de", "ja", etc
+  title         String?
+  description   String?
+  audioUrl      String?  // TTS generated audio in target language
+  
+  isAutoGenerated Boolean @default(true)
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([workId, language])
+  @@index([tenantId])
+}
+
+// Museum Battle — competitive rankings between museums
+model MuseumBattle {
+  id            String   @id @default(uuid())
+  
+  month         String   // "2026-03"
+  
+  tenantId      String
+  
+  totalVisitors Int      @default(0)
+  totalEvents   Int      @default(0)
+  totalReviews  Int      @default(0)
+  avgRating     Float    @default(0)
+  
+  score         Int      @default(0) // Calculated composite score
+  rank          Int?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([tenantId, month])
+  @@index([month, score])
+}
+
+// ========== FINAL BATCH — Remaining Features ==========
+
+// Intangible Heritage — patrimônio imaterial
+model IntangibleHeritage {
+  id            String   @id @default(uuid())
+  
+  title         String
+  description   String?
+  category      String?  // "FESTEJO", "SABER", "CELEBRACAO", "EXPRESSAO", "LUGAR"
+  status        String   @default("ATIVO") // ATIVO, EM_ESTUDO, REGISTRADO
+  
+  imageUrl      String?
+  videoUrl      String?
+  
+  holders       String?  // Detentores do saber
+  region        String?
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([tenantId])
+}
+
+// Social Check-in
+model SocialCheckin {
+  id            String   @id @default(uuid())
+  
+  visitorId     String
+  tenantId      String
+  
+  message       String?
+  emoji         String?  @default("🏛️")
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([tenantId])
+  @@index([visitorId])
+}
+
+// Group Ticket — checkout de grupo
+model GroupTicket {
+  id            String   @id @default(uuid())
+  
+  groupName     String
+  totalTickets  Int
+  
+  contactName   String
+  contactEmail  String
+  contactPhone  String?
+  
+  eventId       String?
+  
+  status        String   @default("PENDING") // PENDING, CONFIRMED, CANCELED
+  totalPrice    Float    @default(0)
+  
+  tenantId      String
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([tenantId])
+}
+
+// Visitor RPG — simple character evolution
+model VisitorRPG {
+  id            String   @id @default(uuid())
+  
+  visitorId     String   @unique
+  
+  characterName String   @default("Explorador")
+  characterClass String  @default("NOVATO") // NOVATO, APRENDIZ, MESTRE, LENDA
+  level         Int      @default(1)
+  currentXp     Int      @default(0)
+  nextLevelXp   Int      @default(100)
+  
+  totalVisits   Int      @default(0)
+  totalWorks    Int      @default(0)
+  totalCards    Int       @default(0)
+  
+  avatarUrl     String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([level])
 }

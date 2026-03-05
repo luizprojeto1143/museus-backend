@@ -135,6 +135,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       room, floor, description,
       imageUrl, audioUrl, librasUrl, videoUrl,
       latitude, longitude, radius,
+      technique, period, medium, dimensions,
       code // Dialer code from frontend
     } = req.body;
 
@@ -170,6 +171,10 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         audioUrl,
         librasUrl,
         videoUrl,
+        technique,
+        period,
+        medium,
+        dimensions,
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
         radius: radius ? Number(radius) : 5,
@@ -280,6 +285,10 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       audioUrl: data.audioUrl,
       librasUrl: data.librasUrl,
       videoUrl: data.videoUrl,
+      technique: data.technique,
+      period: data.period,
+      medium: data.medium,
+      dimensions: data.dimensions,
       published: data.published,
     };
 
