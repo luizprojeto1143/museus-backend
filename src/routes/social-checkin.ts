@@ -7,12 +7,16 @@ const router = Router();
 // POST /social-checkin — Visitor checks in
 router.post('/', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user!.id;
+        const userEmail = req.user!.email;
         const tenantId = req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+
         const { message, emoji } = req.body;
         const checkin = await prisma.socialCheckin.create({
-            data: { visitorId, tenantId, message, emoji: emoji || '🏛️' }
+            data: { visitorId: visitor.id, tenantId, message, emoji: emoji || '🏛️' }
         });
         res.status(201).json(checkin);
     } catch (error) {

@@ -14,12 +14,44 @@ const classThresholds = [
 // GET /rpg/me — Get visitor's RPG profile
 router.get('/me', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user!.id;
+        const userEmail = req.user!.email;
+        const tenantId = req.user!.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+        const visitorId = visitor.id;
+
         let rpg = await prisma.visitorRPG.findUnique({ where: { visitorId } });
+
+        // Sync real stats
+        const [totalVisits, totalWorks] = await Promise.all([
+            prisma.visitorVisit.count({ where: { visitorId } }),
+            prisma.visitorVisit.count({ where: { visitorId, workId: { not: null } } })
+        ]);
+
+        let currentXp = visitor.xp;
+        let newLevel = 1;
+        let nextLevelXp = 100;
+
+        while (currentXp >= nextLevelXp) {
+            currentXp -= nextLevelXp;
+            newLevel += 1;
+            nextLevelXp = Math.floor(nextLevelXp * 1.3);
+        }
+
+        let newClass = 'NOVATO';
+        for (const threshold of classThresholds) {
+            if (newLevel >= threshold.level) newClass = threshold.name;
+        }
 
         if (!rpg) {
             rpg = await prisma.visitorRPG.create({
-                data: { visitorId, characterName: 'Explorador', characterClass: 'NOVATO', level: 1, currentXp: 0, nextLevelXp: 100 }
+                data: { visitorId, characterName: req.user!.name || 'Explorador', characterClass: newClass, level: newLevel, currentXp, nextLevelXp, totalVisits, totalWorks }
+            });
+        } else {
+            rpg = await prisma.visitorRPG.update({
+                where: { visitorId },
+                data: { characterClass: newClass, level: newLevel, currentXp, nextLevelXp, totalVisits, totalWorks }
             });
         }
 
@@ -30,10 +62,15 @@ router.get('/me', authMiddleware, async (req, res) => {
     }
 });
 
-// POST /rpg/add-xp — Add XP and level up
 router.post('/add-xp', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user!.id;
+        const userEmail = req.user!.email;
+        const tenantId = req.user!.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+        const visitorId = visitor.id;
+
         const { xp, source } = req.body;
         const amount = parseInt(xp) || 0;
         if (amount <= 0) return res.status(400).json({ message: 'XP inválido' });
@@ -76,10 +113,15 @@ router.post('/add-xp', authMiddleware, async (req, res) => {
     }
 });
 
-// PUT /rpg/customize — Update character name/avatar
 router.put('/customize', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user!.id;
+        const userEmail = req.user!.email;
+        const tenantId = req.user!.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+        const visitorId = visitor.id;
+
         const { characterName, avatarUrl } = req.body;
         const rpg = await prisma.visitorRPG.update({
             where: { visitorId },

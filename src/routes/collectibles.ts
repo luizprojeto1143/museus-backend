@@ -24,9 +24,14 @@ router.get('/', async (req, res) => {
 // GET /collectibles/my — Get visitor's collection
 router.get('/my', authMiddleware, async (req, res) => {
     try {
-        const visitorId = req.user!.id;
+        const userEmail = req.user!.email;
+        const tenantId = req.user!.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+
         const cards = await prisma.visitorCard.findMany({
-            where: { visitorId },
+            where: { visitorId: visitor.id },
             include: { card: true },
             orderBy: { earnedAt: 'desc' }
         });
@@ -53,11 +58,15 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
     }
 });
 
-// POST /collectibles/earn/:cardId — Visitor earns a card
 router.post('/earn/:cardId', authMiddleware, async (req, res) => {
     try {
         const { cardId } = req.params;
-        const visitorId = req.user!.id;
+        const userEmail = req.user!.email;
+        const tenantId = req.user!.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+        const visitorId = visitor.id;
 
         // Check if already owns
         const existing = await prisma.visitorCard.findUnique({
