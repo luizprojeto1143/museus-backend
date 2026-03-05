@@ -297,7 +297,7 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
         password: hash,
         name,
         role: userRole,
-        tenantId: tenantId || null,
+        tenantId: newTenantId,
         termsAcceptedAt: new Date(),
         termsAcceptedIp: String(ipString),
         cpf,
