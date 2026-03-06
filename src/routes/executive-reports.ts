@@ -24,6 +24,13 @@ router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), a
 
         if (!tenantId) return res.status(400).json({ message: "Tenant obrigatório" });
 
+        // Get all child tenant IDs to aggregate their data
+        const children = await prisma.tenant.findMany({
+            where: { parentId: tenantId },
+            select: { id: true }
+        });
+        const allRelatedTenantIds = [tenantId, ...children.map(c => c.id)];
+
         const { startDate, endDate } = req.query;
         const start = startDate ? new Date(String(startDate)) : new Date(new Date().setMonth(new Date().getMonth() - 1));
         const end = endDate ? new Date(String(endDate)) : new Date();
@@ -37,7 +44,7 @@ router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), a
         // 2. Accessibility Status
         const accessibilityExecutions = await prisma.accessibilityExecution.findMany({
             where: {
-                tenantId,
+                tenantId: { in: allRelatedTenantIds },
                 createdAt: { gte: start, lte: end }
             }
         });
@@ -55,7 +62,7 @@ router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), a
         // 3. Cultural Projects
         const projects = await prisma.culturalProject.findMany({
             where: {
-                tenantId,
+                tenantId: { in: allRelatedTenantIds },
                 createdAt: { gte: start, lte: end }
             }
         });
@@ -70,14 +77,14 @@ router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), a
         // 4. Public Impact (Estimated)
         const totalEvents = await prisma.event.count({
             where: {
-                tenantId,
+                tenantId: { in: allRelatedTenantIds },
                 startDate: { gte: start, lte: end }
             }
         });
 
         const registrations = await prisma.registration.count({
             where: {
-                event: { tenantId },
+                event: { tenantId: { in: allRelatedTenantIds } },
                 createdAt: { gte: start, lte: end }
             }
         });
@@ -141,6 +148,13 @@ router.get("/pdf", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 
         if (!tenantId) return res.status(400).send("Tenant obrigatório");
 
+        // Get all child tenant IDs to aggregate their data
+        const children = await prisma.tenant.findMany({
+            where: { parentId: tenantId },
+            select: { id: true }
+        });
+        const allRelatedTenantIds = [tenantId, ...children.map(c => c.id)];
+
         const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
         if (!tenant) return res.status(404).json({ message: "Tenant não encontrado" });
 
@@ -149,10 +163,10 @@ router.get("/pdf", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         const end = endDate ? new Date(String(endDate)) : new Date();
 
         // Get summary data
-        const childTenants = await prisma.tenant.count({ where: { parentId: tenantId } });
-        const projects = await prisma.culturalProject.count({ where: { tenantId } });
-        const accessibilityActions = await prisma.accessibilityExecution.count({ where: { tenantId } });
-        const events = await prisma.event.count({ where: { tenantId } });
+        const childTenantsCount = await prisma.tenant.count({ where: { parentId: tenantId } });
+        const projectsCount = await prisma.culturalProject.count({ where: { tenantId: { in: allRelatedTenantIds } } });
+        const accessibilityActionsCount = await prisma.accessibilityExecution.count({ where: { tenantId: { in: allRelatedTenantIds } } });
+        const eventsCount = await prisma.event.count({ where: { tenantId: { in: allRelatedTenantIds } } });
 
         // Generate PDF
         const doc = new PDFDocument({ margin: 50 });
@@ -173,10 +187,10 @@ router.get("/pdf", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         doc.fontSize(14).text("RESUMO EXECUTIVO", { underline: true });
         doc.moveDown();
         doc.fontSize(11);
-        doc.text(`• Equipamentos Culturais Vinculados: ${childTenants}`);
-        doc.text(`• Projetos Culturais Registrados: ${projects}`);
-        doc.text(`• Ações de Acessibilidade Executadas: ${accessibilityActions}`);
-        doc.text(`• Eventos Realizados: ${events}`);
+        doc.text(`• Equipamentos Culturais Vinculados: ${childTenantsCount}`);
+        doc.text(`• Projetos Culturais Registrados: ${projectsCount}`);
+        doc.text(`• Ações de Acessibilidade Executadas: ${accessibilityActionsCount}`);
+        doc.text(`• Eventos Realizados: ${eventsCount}`);
         doc.moveDown(2);
 
         // Legal Compliance
@@ -209,23 +223,29 @@ async function getMonthlyEvolution(tenantId: string, start: Date, end: Date) {
         const monthStart = new Date(current.getFullYear(), current.getMonth(), 1);
         const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
 
-        const [projects, accessibility, events] = await Promise.all([
+        const children = await prisma.tenant.findMany({
+            where: { parentId: tenantId },
+            select: { id: true }
+        });
+        const allRelatedTenantIds = [tenantId, ...children.map(c => c.id)];
+
+        const [monthProjects, monthAccessibility, monthEvents] = await Promise.all([
             prisma.culturalProject.count({
-                where: { tenantId, createdAt: { gte: monthStart, lte: monthEnd } }
+                where: { tenantId: { in: allRelatedTenantIds }, createdAt: { gte: monthStart, lte: monthEnd } }
             }),
             prisma.accessibilityExecution.count({
-                where: { tenantId, createdAt: { gte: monthStart, lte: monthEnd } }
+                where: { tenantId: { in: allRelatedTenantIds }, createdAt: { gte: monthStart, lte: monthEnd } }
             }),
             prisma.event.count({
-                where: { tenantId, startDate: { gte: monthStart, lte: monthEnd } }
+                where: { tenantId: { in: allRelatedTenantIds }, startDate: { gte: monthStart, lte: monthEnd } }
             })
         ]);
 
         months.push({
             month: `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`,
-            projects,
-            accessibility,
-            events
+            projects: monthProjects,
+            accessibility: monthAccessibility,
+            events: monthEvents
         });
 
         current.setMonth(current.getMonth() + 1);

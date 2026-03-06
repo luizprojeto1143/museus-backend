@@ -24,6 +24,13 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
 
         if (!tenantId) return res.status(400).json({ message: "Tenant obrigatório" });
 
+        // Get all child tenant IDs to aggregate their data
+        const children = await prisma.tenant.findMany({
+            where: { parentId: tenantId },
+            select: { id: true }
+        });
+        const allRelatedTenantIds = [tenantId, ...children.map(c => c.id)];
+
         // 1. Main Cards
         const [
             totalEquipments,
@@ -34,16 +41,25 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
             upcomingEvents
         ] = await Promise.all([
             prisma.tenant.count({ where: { parentId: tenantId } }),
-            prisma.culturalProject.count({ where: { tenantId } }),
+            prisma.culturalProject.count({ where: { tenantId: { in: allRelatedTenantIds } } }),
             prisma.culturalProject.count({
-                where: { tenantId, status: { in: ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "IN_EXECUTION"] } }
+                where: {
+                    tenantId: { in: allRelatedTenantIds },
+                    status: { in: ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "IN_EXECUTION"] }
+                }
             }),
             prisma.accessibilityExecution.count({
-                where: { tenantId, status: { in: ["PENDING", "IN_PROGRESS"] } }
+                where: {
+                    tenantId: { in: allRelatedTenantIds },
+                    status: { in: ["PENDING", "IN_PROGRESS"] }
+                }
             }),
-            prisma.event.count({ where: { tenantId } }),
+            prisma.event.count({ where: { tenantId: { in: allRelatedTenantIds } } }),
             prisma.event.count({
-                where: { tenantId, startDate: { gte: new Date() } }
+                where: {
+                    tenantId: { in: allRelatedTenantIds },
+                    startDate: { gte: new Date() }
+                }
             })
         ]);
 
@@ -76,7 +92,7 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
 
         // 3. Recent Projects (last 5)
         const recentProjects = await prisma.culturalProject.findMany({
-            where: { tenantId },
+            where: { tenantId: { in: allRelatedTenantIds } },
             orderBy: { createdAt: "desc" },
             take: 5,
             select: { id: true, title: true, status: true, createdAt: true }
