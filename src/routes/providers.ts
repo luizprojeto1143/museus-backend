@@ -4,6 +4,7 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcrypt";
+import { mailService } from "../services/email.js";
 
 const router = Router();
 
