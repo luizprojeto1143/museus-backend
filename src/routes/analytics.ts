@@ -5,6 +5,44 @@ import { Role } from "@prisma/client";
 
 const router = Router();
 
+// Resumo simplificado para componentes como TCE Export, etc.
+router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = (req.query.tenantId as string) || user.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId obrigatório" });
+    }
+
+    const [tenant, totalWorks, totalEvents, totalVisitors, totalReviews, avgRatingResult, totalRevenue] = await Promise.all([
+      prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
+      prisma.work.count({ where: { tenantId } }),
+      prisma.event.count({ where: { tenantId } }),
+      prisma.visitor.count({ where: { tenantId } }),
+      prisma.review.count({ where: { work: { tenantId } } }),
+      prisma.review.aggregate({ where: { work: { tenantId } }, _avg: { rating: true } }),
+      prisma.registration.aggregate({
+        where: { event: { tenantId }, status: { in: ["CONFIRMED", "CHECKED_IN"] } },
+        _sum: { pricePaid: true }
+      })
+    ]);
+
+    return res.json({
+      tenantName: tenant?.name || "Equipamento Cultural",
+      totalWorks,
+      totalEvents,
+      totalVisitors,
+      totalReviews,
+      avgRating: avgRatingResult._avg.rating || 0,
+      totalRevenue: Number(totalRevenue._sum.pricePaid || 0)
+    });
+  } catch (err) {
+    console.error("Erro analytics summary", err);
+    return res.status(500).json({ message: "Erro ao carregar resumo" });
+  }
+});
+
 // Resumo geral para MASTER
 router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async (_req, res) => {
   try {
