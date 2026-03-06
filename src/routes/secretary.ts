@@ -11,7 +11,16 @@ const router = Router();
 router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const user = req.user!;
-        const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
+        let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
+
+        // Fallback for Master users hitting municipal routes with a Museum selected
+        if (user.role === Role.MASTER) {
+            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId || "" } });
+            if (!tenant || tenant.type === 'MUSEUM') {
+                const cityTenant = await prisma.tenant.findFirst({ where: { type: { in: ['CITY', 'SECRETARIA'] } } });
+                if (cityTenant) tenantId = cityTenant.id;
+            }
+        }
 
         if (!tenantId) return res.status(400).json({ message: "Tenant obrigatório" });
 
@@ -131,7 +140,16 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
 router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const user = req.user!;
-        const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
+        let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
+
+        if (user.role === Role.MASTER) {
+            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId || "" } });
+            if (!tenant || tenant.type === 'MUSEUM') {
+                const cityTenant = await prisma.tenant.findFirst({ where: { type: { in: ['CITY', 'SECRETARIA'] } } });
+                if (cityTenant) tenantId = cityTenant.id;
+            }
+        }
+
         const { projectId, childTenantId } = req.query;
 
         if (!tenantId) return res.status(400).json({ message: "Tenant obrigatório" });
@@ -185,7 +203,15 @@ router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, R
 router.get("/legal-compliance", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const user = req.user!;
-        const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
+        let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
+
+        if (user.role === Role.MASTER) {
+            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId || "" } });
+            if (!tenant || tenant.type === 'MUSEUM') {
+                const cityTenant = await prisma.tenant.findFirst({ where: { type: { in: ['CITY', 'SECRETARIA'] } } });
+                if (cityTenant) tenantId = cityTenant.id;
+            }
+        }
 
         if (!tenantId) return res.status(400).json({ message: "Tenant obrigatório" });
 
