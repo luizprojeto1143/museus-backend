@@ -2,8 +2,8 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
-import { mailService } from "../services/email.js";
 import { z } from "zod";
+import bcrypt from "bcrypt";
 
 const router = Router();
 
@@ -80,7 +80,8 @@ const createProviderSchema = z.object({
     phone: z.string().optional(),
     description: z.string().optional(),
     services: z.array(z.nativeEnum(AccessibilityServiceType)).min(1, "Pelo menos um serviço é obrigatório"),
-    tenantId: z.string().optional() // Se não informado, é prestador global
+    tenantId: z.string().optional(), // Se não informado, é prestador global
+    password: z.string().optional() // Obrigatório no frontend ao criar
 });
 
 router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
@@ -103,16 +104,44 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
             }
         }
 
-        const provider = await prisma.accessibilityProvider.create({
-            data: {
-                name: data.name,
-                document: data.document,
-                email: data.email,
-                phone: data.phone,
-                description: data.description,
-                services: data.services,
-                tenantId: user.role === Role.MASTER ? data.tenantId : user.tenantId
+        // Se enviou senha (e deve enviar, pois email é pro login), cria o usuário
+        const targetTenantId = user.role === Role.MASTER && data.tenantId ? data.tenantId : user.tenantId;
+
+        // Vamos usar transação para garantir as duas criações
+        const provider = await prisma.$transaction(async (tx) => {
+            let userId = null;
+            if (data.email && data.password && data.name) {
+                // Checar se e-mail já existe
+                const existingUser = await tx.user.findUnique({ where: { email: data.email } });
+                if (existingUser) {
+                    throw new Error("E-mail já está em uso por outro usuário do sistema.");
+                }
+
+                const hashedPassword = await bcrypt.hash(data.password, 10);
+                const newUser = await tx.user.create({
+                    data: {
+                        name: data.name,
+                        email: data.email,
+                        password: hashedPassword,
+                        role: Role.PRODUCER,
+                        tenantId: targetTenantId
+                    }
+                });
+                userId = newUser.id;
             }
+
+            return await tx.accessibilityProvider.create({
+                data: {
+                    name: data.name,
+                    document: data.document,
+                    email: data.email,
+                    phone: data.phone,
+                    description: data.description,
+                    services: data.services,
+                    tenantId: targetTenantId,
+                    userId: userId
+                }
+            });
         });
 
         return res.status(201).json(provider);
