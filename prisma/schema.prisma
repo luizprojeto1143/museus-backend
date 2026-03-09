@@ -259,6 +259,8 @@ model Tenant {
   npsResponses          NPSResponse[]
   sponsorships          WorkSponsorship[]
   sentimentAnalyses     SentimentAnalysis[]
+  inPersonServices      InPersonService[]      // Serviços criados por este tenant (Master)
+  enabledServices       TenantInPersonService[] // Serviços que este tenant ativou (Qualquer museu)
 
   // Municipal Features Relations
   publicNotices           PublicNotice[]
@@ -402,6 +404,7 @@ model Work {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Notificações e Push
   visits                VisitorVisit[]
   stamps                PassportStamp[]
   clues                 Clue[]
@@ -557,6 +560,7 @@ model Event {
   visits                    VisitorVisit[]
   attendances               EventAttendance[]
   tickets                   Ticket[]
+  bookings                  Booking[]
   registrations             Registration[]
   reviews                   Review[]
   favorites                 Favorite[]
@@ -829,8 +833,17 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Novas adições para Serviços Presenciais e Agendamentos
+  inPersonServiceId String?
+  inPersonService   InPersonService? @relation(fields: [inPersonServiceId], references: [id])
+  participants      Int?
+  eventId           String?
+  event             Event?           @relation(fields: [eventId], references: [id])
+
   @@index([tenantId, date])
   @@index([spaceId, date])
+  @@index([inPersonServiceId])
+  @@index([eventId])
 }
 
 model Space {
@@ -853,6 +866,42 @@ model Space {
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+}
+
+model InPersonService {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  active      Boolean  @default(true)
+
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  bookings    Booking[]
+  enabledBy   TenantInPersonService[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model TenantInPersonService {
+  id                String   @id @default(uuid())
+  active            Boolean  @default(true)
+
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  inPersonServiceId String
+  inPersonService   InPersonService  @relation(fields: [inPersonServiceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([tenantId, inPersonServiceId])
+  @@index([tenantId])
+  @@index([inPersonServiceId])
 }
 
 model GuestbookEntry {

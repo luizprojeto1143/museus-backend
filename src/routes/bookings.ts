@@ -67,8 +67,45 @@ const createBookingSchema = z.object({
         spaceId: z.string().uuid().optional(),
         startTime: z.string().datetime().optional(),
         endTime: z.string().datetime().optional(),
-        purpose: z.string().optional()
+        purpose: z.string().optional(),
+        inPersonServiceId: z.string().uuid().optional(),
+        participants: z.number().int().positive().optional(),
+        eventId: z.string().uuid().optional()
     })
+});
+
+// Listar agendamentos com serviços presenciais (Master)
+router.get("/in-person", authMiddleware, async (req, res) => {
+    try {
+        const userRole = req.user?.role;
+        const targetTenantId = userRole === Role.MASTER ? (req.query.tenantId as string) : req.user?.tenantId;
+
+        // Either master viewing all, master filtering by tenant, or admin viewing their tenant
+        const where: any = {
+            inPersonServiceId: { not: null }
+        };
+
+        if (targetTenantId) {
+            where.tenantId = targetTenantId;
+        }
+
+        const bookings = await prisma.booking.findMany({
+            where,
+            include: {
+                inPersonService: true,
+                tenant: { select: { name: true } },
+                space: { select: { name: true } },
+                event: { select: { title: true } },
+                user: { select: { name: true, email: true } }
+            },
+            orderBy: { createdAt: "desc" }
+        });
+
+        return res.json(bookings);
+    } catch (err) {
+        console.error("Erro ao listar agendamentos presenciais", err);
+        return res.status(500).json({ message: "Erro ao listar agendamentos" });
+    }
 });
 
 // Criar agendamento (Transaction Protected)
@@ -77,7 +114,11 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
         const userId = req.user?.id;
         if (!userId) return res.status(401).json({ message: "Não autorizado" });
 
-        const { date, tenantId, spaceId, startTime, endTime, purpose } = req.body;
+        const { date, spaceId, startTime, endTime, purpose, inPersonServiceId, participants, eventId } = req.body;
+        const tenantId = req.user?.role === Role.MASTER ? req.body.tenantId : req.user?.tenantId;
+
+        if (!tenantId) return res.status(400).json({ message: "Tenant Id inválido" });
+
         const bookingDate = new Date(date);
 
         // 1. Validate Past Dates
@@ -134,7 +175,10 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
                     startTime: start,
                     endTime: end,
                     purpose,
-                    status: "CONFIRMED"
+                    status: "CONFIRMED",
+                    inPersonServiceId,
+                    participants,
+                    eventId
                 }
             });
 
@@ -184,7 +228,9 @@ router.post("/", authMiddleware, validate(createBookingSchema), async (req, res)
                     userId,
                     tenantId,
                     date: bookingDate,
-                    status: "CONFIRMED"
+                    status: inPersonServiceId ? "PENDING" : "CONFIRMED",
+                    inPersonServiceId,
+                    participants: participants || 1,
                 }
             });
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
