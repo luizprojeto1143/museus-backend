@@ -498,13 +498,27 @@ router.post("/visit-from-qr", async (req, res) => {
       }
 
       if (trailId) {
-        // For trails, we might need to check if ALL items are visited. 
-        // complex logic omitted for now, assuming simple trigger
-        await CertificateEngine.evaluate('TRAIL_COMPLETED', {
-          tenantId: qr.tenantId,
-          visitorId: visitor.id,
-          trailId: trailId
-        });
+        // Check if ALL items in the trail are visited
+        const trail = await prisma.trail.findUnique({ where: { id: trailId } });
+        if (trail && trail.workIds.length > 0) {
+          const visitedInTrail = await prisma.visitorVisit.findMany({
+            where: {
+              visitorId: visitor.id,
+              trailId: trailId,
+              workId: { in: trail.workIds }
+            },
+            select: { workId: true }
+          });
+
+          const uniqueVisited = new Set(visitedInTrail.map(v => v.workId));
+          if (uniqueVisited.size >= trail.workIds.length) {
+            await CertificateEngine.evaluate('TRAIL_COMPLETED', {
+              tenantId: qr.tenantId,
+              visitorId: visitor.id,
+              trailId: trailId
+            });
+          }
+        }
       }
 
       if (eventId) {

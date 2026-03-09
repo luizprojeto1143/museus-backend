@@ -84,6 +84,10 @@ import heritageRoutes from "./routes/heritage.js";
 import socialCheckinRoutes from "./routes/social-checkin.js";
 import groupTicketsRoutes from "./routes/group-tickets.js";
 import rpgRoutes from "./routes/rpg.js";
+import communityRoutes from "./routes/community.js";
+import quizRoutes from "./routes/quiz.js";
+import extraRoutes from "./routes/roadmap-extra.js";
+import familyRoutes from "./routes/roadmap-family.js";
 import { validateEnv } from "./config/validateEnv.js";
 
 // Validate critical environment variables on boot
@@ -243,6 +247,10 @@ app.use("/heritage", heritageRoutes);
 app.use("/social-checkin", socialCheckinRoutes);
 app.use("/group-tickets", groupTicketsRoutes);
 app.use("/rpg", rpgRoutes);
+app.use("/community", communityRoutes);
+app.use("/quiz", quizRoutes);
+app.use("/roadmap-extra", extraRoutes);
+app.use("/roadmap-family", familyRoutes);
 
 const PORT = process.env.PORT || 3000;
 
