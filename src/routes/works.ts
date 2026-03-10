@@ -292,6 +292,10 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       published: data.published,
     };
 
+    if (data.metadata !== undefined) {
+      updateData.metadata = data.metadata;
+    }
+
     if (data.radius !== undefined) {
       updateData.radius = parseInt(data.radius) || 5;
     }

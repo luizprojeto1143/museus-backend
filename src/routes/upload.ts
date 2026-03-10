@@ -6,6 +6,8 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
 import { Role } from "@prisma/client";
+import https from "https";
+import http from "http";
 
 const router = Router();
 
@@ -257,6 +259,36 @@ export async function deleteFromStorage(fileUrl: string) {
     console.warn(`[Storage] Failed to delete file ${fileUrl}`, err);
   }
 }
+
+// PROXY IMAGE (FOR CORS)
+router.get("/proxy", async (req, res) => {
+  try {
+    const imageUrl = req.query.url as string;
+    if (!imageUrl) return res.status(400).send("URL is required");
+
+    // Fetch the image from the external URL using https or http
+    const httpModule = imageUrl.startsWith("https") ? https : http;
+
+    httpModule.get(imageUrl, (response) => {
+      // Forward the content-type from the external response
+      if (response.headers['content-type']) {
+        res.setHeader('Content-Type', response.headers['content-type']);
+      }
+      // Add CORS headers so the canvas in the frontend can read the data
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
+      // Pipe the external image stream directly to our response
+      response.pipe(res);
+    }).on('error', (err) => {
+      console.error("Erro no proxy de imagem:", err);
+      res.status(500).send("Error fetching image");
+    });
+  } catch (err) {
+    console.error("Erro no proxy de imagem (try/catch):", err);
+    res.status(500).send("Error fetching image");
+  }
+});
 
 export default router;
 

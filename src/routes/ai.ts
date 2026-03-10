@@ -429,4 +429,61 @@ router.post("/tts", authMiddleware, async (req, res) => {
   }
 });
 
+// Auto-Translation Endpoint
+router.post("/translate", authMiddleware, async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
+    }
+    const { title, description } = req.body;
+
+    if (!title && !description) {
+      return res.status(400).json({ message: "Título ou descrição são obrigatórios para tradução" });
+    }
+
+    const systemPrompt = `Você é um tradutor especializado em arte e cultura trabalhando para um museu.
+Sua tarefa é traduzir o título e a descrição fornecidos para o Inglês e Espanhol.
+Retorne APENAS um JSON válido contendo as traduções, com a seguinte estrutura exata:
+{
+  "en": {
+    "title": "translated title",
+    "description": "translated description"
+  },
+  "es": {
+    "title": "título traducido",
+    "description": "descripción traducida"
+  }
+}
+Mantenha o tom cultural, profissional e adequado para um catálogo de museu. Se algum campo original estiver vazio, deixe-o vazio na tradução.`;
+
+    const userPrompt = `Por favor, traduza os seguintes textos:
+Título: ${title || ""}
+Descrição: ${description || ""}`;
+
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3, // Mais precisão para tradução
+    });
+
+    const content = completion.choices[0]?.message?.content || "{}";
+
+    try {
+      const parsed = JSON.parse(content);
+      return res.json(parsed);
+    } catch (e) {
+      console.error("Erro ao parsear JSON da tradução", e);
+      return res.status(500).json({ message: "Erro ao formatar resposta da tradução" });
+    }
+
+  } catch (err) {
+    console.error("Erro IA translate", err);
+    return res.status(500).json({ message: "Erro ao gerar tradução" });
+  }
+});
+
 export default router;

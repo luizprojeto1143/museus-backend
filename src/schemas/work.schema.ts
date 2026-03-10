@@ -22,10 +22,10 @@ export const createWorkSchema = z.object({
         qrCode: z.string().optional().nullable(),
         code: z.string().optional().nullable(),
         categoryId: z.string().uuid().optional().nullable(),
-        isHighlight: z.boolean().optional(),
         isAccessible: z.boolean().optional(),
         order: z.number().int().optional(),
-        radius: z.number().int().optional()
+        radius: z.number().int().optional(),
+        metadata: z.any().optional()
     })
 });
 

@@ -19,6 +19,7 @@ enum QRType {
   TRAIL
   EVENT
   SPACE
+  TENANT // QR Code para um Museu ou Ponto Histórico
   CUSTOM
 }
 
@@ -55,6 +56,7 @@ enum TenantType {
   SECRETARIA // Secretaria de Cultura Municipal
   CULTURAL_SPACE // Centro Cultural, Biblioteca, Arquivo, etc.
   CITY // Cidade/Prefeitura (tenant pai)
+  ARCHITECTURAL_LANDMARK // Ponto de interesse arquitetônico/histórico
 }
 
 // ========== GOVERNANCE / CONTRACT PLANS ==========
@@ -409,6 +411,8 @@ model Work {
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  metadata Json? // Usado para traduções e outros metadados flexíveis
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
