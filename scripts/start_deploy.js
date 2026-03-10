@@ -68,7 +68,37 @@ console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS || 'padro'}`);
 // Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
 
+import { Socket } from 'net';
+function testConnectivity(host, port) {
+    return new Promise((resolve) => {
+        console.log(`📡 Testando conexo TCP com ${host}:${port}...`);
+        const socket = new Socket();
+        const timeout = 5000;
+        socket.setTimeout(timeout);
+        socket.on('connect', () => {
+            console.log(`✅ Conexo TCP com ${host}:${port} BEM SUCEDIDA.`);
+            socket.destroy();
+            resolve(true);
+        });
+        socket.on('timeout', () => {
+            console.error(`❌ Conexo TCP com ${host}:${port} TIMEOUT após ${timeout}ms.`);
+            socket.destroy();
+            resolve(false);
+        });
+        socket.on('error', (err) => {
+            console.error(`❌ Conexo TCP com ${host}:${port} ERRO: ${err.message}`);
+            socket.destroy();
+            resolve(false);
+        });
+        socket.connect(port, host);
+    });
+}
+
 console.log("🚀 [Render-Boost] Iniciando Aplicação IMEDIATAMENTE...");
+
+// Iniciar diagnstico em paralelo
+testConnectivity(urlObj.hostname, parseInt(urlObj.port || '5432')).catch(() => {});
+if (urlObj.port !== '5432') testConnectivity(urlObj.hostname, 5432).catch(() => {});
 
 // INICIAR APP PRIMEIRO para o Render detectar a porta aberta
 const appProcess = spawn('node', ['dist/index.js'], {
