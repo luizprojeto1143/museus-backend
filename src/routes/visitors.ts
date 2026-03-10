@@ -73,8 +73,11 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
       }
     });
   } catch (err) {
-    console.error("Erro ao listar visitantes", err);
-    return res.status(500).json({ message: "Erro ao listar visitantes" });
+    console.error("Erro ao listar visitantes:", err);
+    return res.status(500).json({ 
+      message: "Erro ao listar visitantes",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -162,8 +165,11 @@ router.get("/me/summary", async (req, res) => {
       nextLevelXp: (Math.floor(visitor.xp / 100) + 1) * 100
     });
   } catch (err) {
-    console.error("Erro me summary", err);
-    return res.status(500).json({ message: "Erro ao buscar resumo" });
+    console.error("Erro me summary:", err);
+    return res.status(500).json({ 
+      message: "Erro ao buscar resumo",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -195,8 +201,11 @@ router.get("/me", authMiddleware, async (req, res) => {
       createdAt: visitor.createdAt
     });
   } catch (err) {
-    console.error("Erro GET /me", err);
-    return res.status(500).json({ message: "Erro ao buscar perfil" });
+    console.error("Erro GET /me:", err);
+    return res.status(500).json({ 
+      message: "Erro ao buscar perfil",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 

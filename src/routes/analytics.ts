@@ -38,8 +38,11 @@ router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Rol
       totalRevenue: Number(totalRevenue._sum.pricePaid || 0)
     });
   } catch (err) {
-    console.error("Erro analytics summary", err);
-    return res.status(500).json({ message: "Erro ao carregar resumo" });
+    console.error("Erro analytics summary:", err);
+    return res.status(500).json({ 
+      message: "Erro ao carregar resumo",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -100,8 +103,11 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
 
     return res.json(data);
   } catch (err) {
-    console.error("Erro analytics tenants", err);
-    return res.status(500).json({ message: "Erro ao carregar analytics" });
+    console.error("Erro analytics tenants:", err);
+    return res.status(500).json({ 
+      message: "Erro ao carregar analytics",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -138,8 +144,11 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
       visits: visitsCount
     });
   } catch (err) {
-    console.error("Erro analytics tenant", err);
-    return res.status(500).json({ message: "Erro ao carregar analytics" });
+    console.error("Erro analytics tenant:", err);
+    return res.status(500).json({ 
+      message: "Erro ao carregar analytics",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -405,8 +414,11 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     });
 
   } catch (err) {
-    console.error("Erro dashboard analytics", err);
-    return res.status(500).json({ message: "Erro ao carregar dashboard" });
+    console.error("Erro dashboard analytics:", err);
+    return res.status(500).json({ 
+      message: "Erro ao carregar dashboard",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
