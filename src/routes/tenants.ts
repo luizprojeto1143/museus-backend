@@ -29,8 +29,11 @@ router.get("/public", limiter, async (req, res) => {
     });
     return res.json(tenants);
   } catch (err) {
-    console.error("Erro listar tenants públicos", err);
-    return res.status(500).json({ message: "Erro ao listar museus" });
+    console.error("Erro ao listar museus públicos:", err);
+    return res.status(500).json({ 
+      message: "Erro ao listar museus",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -106,8 +109,11 @@ router.get("/:id/settings", softAuthMiddleware, async (req, res) => {
 
     return res.json(publicSettings);
   } catch (err) {
-    console.error("Erro ao buscar configurações do museu", err);
-    return res.status(500).json({ message: "Erro interno" });
+    console.error("Erro ao buscar configurações do museu:", err);
+    return res.status(500).json({ 
+      message: "Erro interno",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -182,8 +188,11 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
     });
     return res.json(tenants);
   } catch (err) {
-    console.error("Erro listar tenants", err);
-    return res.status(500).json({ message: "Erro ao listar tenants" });
+    console.error("Erro ao listar museus:", err);
+    return res.status(500).json({
+      message: "Erro ao listar museus",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -208,8 +217,11 @@ router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async
 
     return res.json(tenant);
   } catch (err) {
-    console.error("Erro ao buscar tenant", err);
-    return res.status(500).json({ message: "Erro ao buscar tenant" });
+    console.error("Erro ao buscar tenant:", err);
+    return res.status(500).json({ 
+      message: "Erro ao buscar tenant",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -422,8 +434,11 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
 
     return res.json(tenant);
   } catch (err) {
-    console.error("Erro atualizar settings tenant", err);
-    return res.status(500).json({ message: "Erro ao atualizar configurações" });
+    console.error("Erro ao atualizar configurações:", err);
+    return res.status(500).json({ 
+      message: "Erro ao atualizar configurações",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 

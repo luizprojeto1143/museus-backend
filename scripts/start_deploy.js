@@ -30,6 +30,8 @@ let modifiedUrl = DB_URL;
 // RENDER SSL & TIMEOUT FIX:
 const hasSSLParam = urlObj.searchParams.has('sslmode');
 const hasTimeout = urlObj.searchParams.has('connect_timeout');
+const hasPoolTimeout = urlObj.searchParams.has('pool_timeout');
+const hasConnLimit = urlObj.searchParams.has('connection_limit');
 
 if (!hasSSLParam) {
     console.log("ℹ️ SSL: Adicionando 'sslmode=require'...");
@@ -38,6 +40,21 @@ if (!hasSSLParam) {
 
 if (!hasTimeout) {
     urlObj.searchParams.set('connect_timeout', '60');
+}
+
+// Otimização para connection pooler do Supabase no Render
+if (!hasPoolTimeout) {
+    urlObj.searchParams.set('pool_timeout', '30');
+}
+
+if (!hasConnLimit) {
+    // Reduzido para evitar esgotar o pooler em instâncias pequenas
+    urlObj.searchParams.set('connection_limit', '5');
+}
+
+// Se estiver usando o pooler do Supabase (porta 5432 ou 6543), adicionar pgbouncer=true se necessário
+if (urlObj.hostname.includes('pooler.supabase.com')) {
+    urlObj.searchParams.set('pgbouncer', 'true');
 }
 
 // Forçar porta 5432 se for o host do pooler e porta 6543 estiver falhando

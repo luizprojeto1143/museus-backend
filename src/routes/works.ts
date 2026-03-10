@@ -56,8 +56,11 @@ router.get("/", softAuthMiddleware, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error("Erro listar obras", err);
-    return res.status(500).json({ message: "Erro ao listar obras" });
+    console.error("Erro ao buscar obras:", err);
+    return res.status(500).json({
+      message: "Erro ao buscar obras",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -85,15 +88,10 @@ router.get("/:id", softAuthMiddleware, async (req, res) => {
 
     return res.json(work);
   } catch (err: any) {
-    console.error(`Erro detalhar obra ID: ${req.params.id}`, {
-      message: err.message,
-      code: err.code,
-      meta: err.meta,
-      stack: err.stack
-    });
+    console.error("Erro ao buscar obra:", err);
     return res.status(500).json({
       message: "Erro ao buscar obra",
-      debug: process.env.NODE_ENV === 'development' ? err.message : undefined
+      error: err instanceof Error ? err.message : String(err)
     });
   }
 });
@@ -197,14 +195,17 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
 
     return res.status(201).json(work);
   } catch (err: any) {
-    console.error("Erro criar obra", err);
+    console.error("Erro criar obra:", err);
     if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
       return res.status(400).json({ message: "Este código já está em uso." });
     }
     if (err.code === 'P2003') {
       return res.status(400).json({ message: "Categoria fornecida é inválida ou não existe." });
     }
-    return res.status(500).json({ message: "Erro ao criar obra" });
+    return res.status(500).json({ 
+      message: "Erro ao criar obra",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
@@ -316,13 +317,13 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     });
     return res.json(work);
   } catch (err: any) {
-    console.error(`Erro atualizar obra ID: ${req.params.id}`, err);
+    console.error(`Erro ao atualizar obra ID: ${req.params.id}`, err);
     if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
       return res.status(400).json({ message: "Este código já está em uso." });
     }
     return res.status(500).json({
       message: "Erro ao atualizar obra",
-      debug: process.env.NODE_ENV === 'development' ? err.message : undefined
+      error: err instanceof Error ? err.message : String(err)
     });
   }
 });
@@ -356,8 +357,11 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
 
     return res.status(204).send();
   } catch (err) {
-    console.error("Erro excluir obra", err);
-    return res.status(500).json({ message: "Erro ao excluir obra" });
+    console.error("Erro ao excluir obra:", err);
+    return res.status(500).json({ 
+      message: "Erro ao excluir obra",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 
