@@ -44,17 +44,18 @@ if (!hasTimeout) {
 
 // Otimização para connection pooler do Supabase no Render
 if (!hasPoolTimeout) {
-    urlObj.searchParams.set('pool_timeout', '30');
+    urlObj.searchParams.set('pool_timeout', '60');
 }
 
 if (!hasConnLimit) {
-    // Reduzido para evitar esgotar o pooler em instâncias pequenas
-    urlObj.searchParams.set('connection_limit', '5');
+    // Aumentado de 5 para 10 para evitar timeouts em picos
+    urlObj.searchParams.set('connection_limit', '10');
 }
 
-// Se estiver usando o pooler do Supabase (porta 5432 ou 6543), adicionar pgbouncer=true se necessário
+// Usar Session Mode (Porta 5432) no host do pooler para evitar problemas de IPv6/PgBouncer
+// No modo session do Supabase (5432), não precisamos de ?pgbouncer=true para o Prisma
 if (urlObj.hostname.includes('pooler.supabase.com')) {
-    urlObj.searchParams.set('pgbouncer', 'true');
+    urlObj.searchParams.delete('pgbouncer');
 }
 
 // Forçar porta 5432 se for o host do pooler e porta 6543 estiver falhando
