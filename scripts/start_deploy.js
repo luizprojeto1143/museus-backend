@@ -27,15 +27,22 @@ function maskUrl(url) {
 const urlObj = new URL(DB_URL);
 let modifiedUrl = DB_URL;
 
-// RENDER SSL FIX:
-// Render database connections often require sslmode=no-verify regardless of hostname
+// RENDER SSL & TIMEOUT FIX:
+// Supabase usually requires sslmode=require and sometimes fails with no-verify
 const hasSSLParam = urlObj.searchParams.has('sslmode');
+const hasTimeout = urlObj.searchParams.has('connect_timeout');
 
 if (!hasSSLParam) {
-    console.log("ℹ️ SSL: Adicionando 'sslmode=no-verify' para garantir conectividade no Render...");
-    urlObj.searchParams.set('sslmode', 'no-verify');
-    modifiedUrl = urlObj.toString();
+    console.log("ℹ️ SSL: Adicionando 'sslmode=require' para garantir conectividade no Supabase...");
+    urlObj.searchParams.set('sslmode', 'require');
 }
+
+if (!hasTimeout) {
+    console.log("ℹ️ Timeout: Adicionando 'connect_timeout=30'...");
+    urlObj.searchParams.set('connect_timeout', '30');
+}
+
+modifiedUrl = urlObj.toString();
 
 // Apenas logar mascarado para debug
 console.log(`🔍 Info da Conexo: ${maskUrl(modifiedUrl)}`);
