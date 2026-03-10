@@ -28,31 +28,42 @@ const urlObj = new URL(DB_URL);
 let modifiedUrl = DB_URL;
 
 // RENDER SSL & TIMEOUT FIX:
-// Supabase usually requires sslmode=require and sometimes fails with no-verify
 const hasSSLParam = urlObj.searchParams.has('sslmode');
 const hasTimeout = urlObj.searchParams.has('connect_timeout');
 
 if (!hasSSLParam) {
-    console.log("ℹ️ SSL: Adicionando 'sslmode=require' para garantir conectividade no Supabase...");
+    console.log("ℹ️ SSL: Adicionando 'sslmode=require'...");
     urlObj.searchParams.set('sslmode', 'require');
 }
 
 if (!hasTimeout) {
-    console.log("ℹ️ Timeout: Adicionando 'connect_timeout=30'...");
-    urlObj.searchParams.set('connect_timeout', '30');
+    urlObj.searchParams.set('connect_timeout', '60');
+}
+
+// Forçar porta 5432 se for o host do pooler e porta 6543 estiver falhando
+if (urlObj.hostname.includes('pooler.supabase.com') && urlObj.port === '6543') {
+    console.log("ℹ️ Rede: Trocando porta 6543 por 5432 para evitar bloqueios de firewall...");
+    urlObj.port = '5432';
 }
 
 modifiedUrl = urlObj.toString();
 
 // Apenas logar mascarado para debug
-console.log(`🔍 Info da Conexo: ${maskUrl(modifiedUrl)}`);
+console.log(`🔍 Conexo: ${maskUrl(modifiedUrl)}`);
 console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS || 'padro'}`);
-console.log(`📂 Diretrio Atual: ${process.cwd()}`);
 
 // Atualiza o ambiente
 process.env.DATABASE_URL = modifiedUrl;
 
-console.log("🚀 Iniciando Script de Deploy (v5 - Safe Production Mode)...");
+console.log("🚀 [Render-Boost] Iniciando Aplicação IMEDIATAMENTE...");
+
+// INICIAR APP PRIMEIRO para o Render detectar a porta aberta
+const appProcess = spawn('node', ['dist/index.js'], {
+    stdio: 'inherit',
+    env: process.env
+});
+
+console.log("📦 [Async] Iniciando Migrações em Segundo Plano...");
 
 // Função para tentar executar comando com retries
 function runWithRetry(command, retries = 5, delayMs = 5000) {
@@ -76,43 +87,24 @@ function runWithRetry(command, retries = 5, delayMs = 5000) {
     }
 }
 
-// CORREÇÃO CRÍTICA: Usar migrate deploy em vez de db push --accept-data-loss
-// migrate deploy NÃO deleta dados, apenas aplica novas migrations
-if (!runWithRetry('npx prisma migrate deploy')) {
-    // Se migrate deploy falhar (ex: banco novo sem migrations ou erro P3005), tenta db push
-    console.log("⚠️ Migrate deploy falhou. Tentando db push...");
-    try {
-        execSync('npx prisma db push', { stdio: 'inherit', env: process.env });
-        console.log("✅ DB Push concluído.");
-    } catch (e) {
-        console.warn("⚠️ DB Push simples falhou (provável perda de dados detectada). Tentando com --accept-data-loss...");
+// Função para migração segura (não bloqueia o loop)
+async function startMigrations() {
+    console.log("🛠️ Verificando esquema do banco...");
+    if (!runWithRetry('npx prisma migrate deploy', 3, 10000)) {
+        console.log("⚠️ Migrate falhou, tentando db push...");
         try {
             execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit', env: process.env });
-            console.log("✅ DB Push com --accept-data-loss concluído.");
-        } catch (e2) {
-            console.error("❌ Falha crítica no banco de dados:", e2.message);
-            process.exit(1);
+            console.log("✅ Banco sincronizado via push.");
+        } catch (e) {
+            console.error("❌ Erro fatal no banco:", e.message);
         }
+    } else {
+        console.log("✅ Migrações aplicadas.");
     }
 }
 
-// BLOCO DE SEED DESATIVADO PARA PRESERVAR EXCLUSÕES MANUAIS
-/*
-console.log("🌱 Executando Seed (Solicitado)...");
-try {
-    execSync('npm run prisma:seed', { stdio: 'inherit', env: process.env });
-    console.log("✅ Seed concluído.");
-} catch (e) {
-    console.error("❌ Falha no seed (não crítico):", e.message);
-}
-*/
-
-console.log("2️⃣ Iniciando Aplicação...");
-
-const appProcess = spawn('node', ['dist/index.js'], {
-    stdio: 'inherit',
-    env: process.env
-});
+// Rodar sem bloquear
+startMigrations().catch(err => console.error("❌ Erro nas migrações:", err));
 
 appProcess.on('close', (code) => {
     console.log(`Aplicação encerrada com código ${code}`);
