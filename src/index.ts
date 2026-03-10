@@ -258,10 +258,12 @@ const PORT = process.env.PORT || 3000;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("❌ Global Error:", err);
-  const isDev = process.env.NODE_ENV !== 'production';
+  // Temporarily exposing details in production to debug 500 errors
+  // const isDev = process.env.NODE_ENV !== 'production';
   res.status(500).json({
     error: "Internal Server Error",
-    details: isDev ? err.message : undefined
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 });
 
