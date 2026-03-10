@@ -52,16 +52,11 @@ if (!hasConnLimit) {
     urlObj.searchParams.set('connection_limit', '10');
 }
 
-// Usar Session Mode (Porta 5432) no host do pooler para evitar problemas de IPv6/PgBouncer
-// No modo session do Supabase (5432), não precisamos de ?pgbouncer=true para o Prisma
+// Se for host do pooler do Supabase, forçar porta 6543 e pgbouncer=true
 if (urlObj.hostname.includes('pooler.supabase.com')) {
-    urlObj.searchParams.delete('pgbouncer');
-}
-
-// Forçar porta 5432 se for o host do pooler e porta 6543 estiver falhando
-if (urlObj.hostname.includes('pooler.supabase.com') && urlObj.port === '6543') {
-    console.log("ℹ️ Rede: Trocando porta 6543 por 5432 para evitar bloqueios de firewall...");
-    urlObj.port = '5432';
+    console.log("ℹ️ Rede: Usando porta 6543 e pgbouncer=true para o pooler do Supabase...");
+    urlObj.port = '6543';
+    urlObj.searchParams.set('pgbouncer', 'true');
 }
 
 modifiedUrl = urlObj.toString();

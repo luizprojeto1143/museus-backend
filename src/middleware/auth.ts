@@ -38,8 +38,14 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     };
     return next();
   } catch (err) {
-    console.error("Erro JWT", err);
-    return res.status(401).json({ message: "Token inválido" });
+    if (err instanceof jwt.TokenExpiredError) {
+      console.warn("⚠️ Token Expirado:", { sub: (jwt.decode(token) as any)?.sub, expiredAt: err.expiredAt });
+    } else {
+      console.error("❌ Erro JWT Verificação:", err instanceof Error ? err.message : err);
+    }
+    return res.status(401).json({ 
+      message: err instanceof jwt.TokenExpiredError ? "Sessão expirada" : "Token inválido"
+    });
   }
 }
 
@@ -73,7 +79,11 @@ export function softAuthMiddleware(req: Request, res: Response, next: NextFuncti
       name: payload.name
     };
   } catch (err) {
-    // Ignore invalid tokens in soft auth
+    if (err instanceof jwt.TokenExpiredError) {
+      // Opt-out logging for soft-auth expired tokens if they are too frequent
+    } else {
+      console.log("ℹ️ Soft-auth hint: Token inválido ou malformado ignorado.");
+    }
   }
   return next();
 }
