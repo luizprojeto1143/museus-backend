@@ -5,6 +5,7 @@ import { validate } from "../middleware/validate.js";
 import { createUserSchema, updateUserSchema } from "../schemas/user.schema.js";
 import { Role } from "@prisma/client";
 import bcrypt from "bcrypt";
+import { createAuditLog } from "./audit.js";
 
 const router = Router();
 
@@ -123,6 +124,18 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), validate(createUser
       }
     });
 
+    await createAuditLog(
+      'CREATE',
+      'User',
+      user.id,
+      req.user!.id,
+      req.user!.email,
+      user.tenantId || req.user!.tenantId || 'master',
+      null,
+      user,
+      req
+    );
+
     return res.status(201).json(user);
   } catch (err) {
     console.error("Erro ao criar usuário", err);
@@ -174,6 +187,8 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUs
     if (tenantId !== undefined) data.tenantId = tenantId || null;
     if (password) data.password = await bcrypt.hash(password, 10);
 
+    const oldUser = await prisma.user.findUnique({ where: { id } });
+
     const user = await prisma.user.update({
       where: { id },
       data,
@@ -187,6 +202,18 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUs
       }
     });
 
+    await createAuditLog(
+      'UPDATE',
+      'User',
+      id,
+      req.user!.id,
+      req.user!.email,
+      user.tenantId || req.user!.tenantId || 'master',
+      oldUser,
+      user,
+      req
+    );
+
     return res.json(user);
   } catch (err) {
     console.error("Erro ao atualizar usuário", err);
@@ -197,7 +224,22 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUs
 router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const oldUser = await prisma.user.findUnique({ where: { id } });
+
     await prisma.user.delete({ where: { id } });
+
+    await createAuditLog(
+      'DELETE',
+      'User',
+      id,
+      req.user!.id,
+      req.user!.email,
+      oldUser?.tenantId || req.user!.tenantId || 'master',
+      oldUser,
+      null,
+      req
+    );
+
     return res.json({ message: "Usuário excluído com sucesso" });
   } catch (err) {
     console.error("Erro ao excluir usuário", err);

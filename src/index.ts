@@ -47,8 +47,12 @@ import backupRoutes from "./routes/backup.js";
 import floorPlansRoutes from "./routes/floorPlans.js";
 import { financeRouter } from "./routes/finance.js";
 import { couponsRouter } from "./routes/coupons.js";
+import skinsRoutes from "./routes/skins.js";
+import marketplaceRoutes from "./routes/marketplace.js";
+import badgeRoutes from "./routes/badgeRoutes.js";
 
 import navigationRoutes from "./routes/navigation.js";
+import publicPassportRoutes from "./routes/public/passport.js";
 import accessibilityRoutes from "./routes/accessibility.js";
 import surveysRoutes from "./routes/surveys.js";
 import notificationsRoutes from "./routes/notifications.js";
@@ -88,6 +92,7 @@ import communityRoutes from "./routes/community.js";
 import quizRoutes from "./routes/quiz.js";
 import extraRoutes from "./routes/roadmap-extra.js";
 import familyRoutes from "./routes/roadmap-family.js";
+import webhooksRoutes from "./routes/webhooks.js";
 import { validateEnv } from "./config/validateEnv.js";
 
 // Validate critical environment variables on boot
@@ -187,11 +192,15 @@ app.use("/donations", donationsRoutes);
 app.use("/audit-logs", auditRoutes);
 app.use("/shop", shopRoutes);
 app.use("/challenges", challengesRoutes);
+app.use("/skins", skinsRoutes);
+app.use("/marketplace", marketplaceRoutes);
+app.use("/badges", badgeRoutes);
 app.use("/backup", backupRoutes);
 app.use("/floor-plans", floorPlansRoutes);
 
 app.use("/navigation", navigationRoutes);
 app.use("/accessibility", accessibilityRoutes);
+app.use("/public-passport", publicPassportRoutes);
 app.use(surveysRoutes); // Uses /events/:eventId/survey pattern
 import publicCertificateRoutes from "./routes/public/certificates.js";
 
@@ -251,6 +260,7 @@ app.use("/community", communityRoutes);
 app.use("/quiz", quizRoutes);
 app.use("/roadmap-extra", extraRoutes);
 app.use("/roadmap-family", familyRoutes);
+app.use("/webhooks", webhooksRoutes);
 
 const PORT = process.env.PORT || 3000;
 

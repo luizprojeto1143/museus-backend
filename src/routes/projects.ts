@@ -14,27 +14,38 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
     try {
         const user = req.user!;
         const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
-        const { status, noticeId, culturalCategory, targetRegion } = req.query;
-
-        if (!tenantId) {
-            return res.status(400).json({ message: "tenantId é obrigatório" });
-        }
-
-        const where: any = { tenantId };
-        if (status) where.status = status;
-        if (noticeId) where.noticeId = noticeId;
-        if (culturalCategory) where.culturalCategory = culturalCategory;
-        if (targetRegion) where.targetRegion = targetRegion;
-
-        const projects = await prisma.culturalProject.findMany({
-            where,
-            orderBy: { createdAt: "desc" },
-            include: {
-                notice: { select: { id: true, title: true, status: true } },
-                proponent: { select: { id: true, name: true, email: true } },
-                _count: { select: { accessibilityExecutions: true } }
-            }
-        });
+        const { status, noticeId, culturalCategory, targetRegion, consolidated } = req.query;
+ 
+         if (!tenantId) {
+             return res.status(400).json({ message: "tenantId é obrigatório" });
+         }
+ 
+         let targetTenantIds = [tenantId];
+ 
+         if (consolidated === "true") {
+             const children = await prisma.tenant.findMany({
+                 where: { parentId: tenantId },
+                 select: { id: true }
+             });
+             targetTenantIds = [tenantId, ...children.map(c => c.id)];
+         }
+ 
+         const where: any = { tenantId: { in: targetTenantIds } };
+         if (status) where.status = status;
+         if (noticeId) where.noticeId = noticeId;
+         if (culturalCategory) where.culturalCategory = culturalCategory;
+         if (targetRegion) where.targetRegion = targetRegion;
+ 
+         const projects = await prisma.culturalProject.findMany({
+             where,
+             orderBy: { createdAt: "desc" },
+             include: {
+                 notice: { select: { id: true, title: true, status: true } },
+                 proponent: { select: { id: true, name: true, email: true } },
+                 tenant: { select: { name: true } },
+                 _count: { select: { accessibilityExecutions: true } }
+             }
+         });
 
         return res.json(projects);
     } catch (err) {

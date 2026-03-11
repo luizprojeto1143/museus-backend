@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { z } from 'zod';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
-import { mailService } from '../services/email.js';
+import { mailService, sendCertificateEmail } from '../services/email.js';
 
 import { asaasService } from '../services/asaasService.js';
 
@@ -160,7 +160,7 @@ router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER']),
         const registration = await prisma.registration.findUnique({
             where: { code },
             include: {
-                event: { select: { title: true, tenantId: true } },
+                event: { select: { title: true, tenantId: true, certificateRequiresSurvey: true } },
                 ticket: { select: { name: true, type: true } }
             }
         });
@@ -192,17 +192,57 @@ router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER']),
         }
 
         // 4. Perform Check-in
-        const updated = await prisma.registration.update({
-            where: { id: registration.id },
-            data: {
-                status: 'CHECKED_IN',
-                checkInDate: new Date()
+        const XP_AMOUNT = 50;
+        const updated = await prisma.$transaction(async (tx) => {
+            const up = await tx.registration.update({
+                where: { id: registration.id },
+                data: {
+                    status: 'CHECKED_IN',
+                    checkInDate: new Date()
+                }
+            });
+
+            if (registration.visitorId) {
+                await tx.visitor.update({
+                    where: { id: registration.visitorId },
+                    data: { xp: { increment: XP_AMOUNT } }
+                });
             }
+
+            return up;
         });
+
+        // Optional: Trigger Automated Certificate if event is set for it
+        if (!registration.event.certificateRequiresSurvey) {
+            try {
+                const event = await prisma.event.findUnique({
+                    where: { id: registration.eventId },
+                    include: { tenant: true }
+                });
+
+                if (event) {
+                    await sendCertificateEmail(
+                        updated.guestEmail,
+                        updated.guestName,
+                        event.title,
+                        event.startDate.toLocaleDateString("pt-BR"),
+                        event.tenant.name,
+                        updated.id.split("-")[0].toUpperCase(),
+                        event.tenant.logoUrl,
+                        event.tenant.signatureUrl,
+                        event.tenant.certificateBackgroundUrl
+                    );
+                }
+            } catch (certError) {
+                console.error("Auto-certificate error:", certError);
+                // Non-blocking
+            }
+        }
 
         return res.json({
             valid: true,
             message: 'Entrada Liberada!',
+            xpAwarded: registration.visitorId ? XP_AMOUNT : 0,
             details: {
                 guestName: updated.guestName,
                 eventName: registration.event.title,
@@ -363,6 +403,21 @@ router.post('/checkin', authMiddleware, requireRole(['ADMIN', 'MASTER']), async 
 
             return { updated, xpAwarded };
         });
+
+        // Automated Certificate Trigger
+        if (!registration.event.certificateRequiresSurvey) {
+            try {
+                await sendCertificateEmail(
+                    result.updated.guestEmail,
+                    result.updated.guestName,
+                    registration.event.title,
+                    registration.event.startDate.toLocaleDateString("pt-BR"),
+                    "Museus Enterprise", // Or fetch tenant name
+                    result.updated.id.split("-")[0].toUpperCase(),
+                    null, null, null
+                );
+            } catch (e) { console.error("Auto-cert error", e); }
+        }
 
         res.json({ success: true, registration: result.updated, xpAwarded: result.xpAwarded });
     } catch (error) {

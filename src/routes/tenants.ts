@@ -5,6 +5,7 @@ import { authMiddleware, requireRole, softAuthMiddleware } from "../middleware/a
 import { Role, TenantType } from "@prisma/client";
 import { z } from "zod";
 import { limiter } from "../middleware/rateLimiter.js";
+import { createAuditLog } from "./audit.js";
 
 const router = Router();
 
@@ -337,6 +338,18 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
       include: { users: true }
     });
 
+    await createAuditLog(
+      'CREATE',
+      'Tenant',
+      tenant.id,
+      user.id,
+      user.email,
+      tenant.id,
+      null,
+      tenant,
+      req
+    );
+
     return res.status(201).json(tenant);
   } catch (err: unknown) {
     console.error("Erro criar tenant", err);
@@ -460,6 +473,8 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
     // Convert maxWorks to number if present
     const maxWorksInt = maxWorks ? parseInt(maxWorks) : undefined;
 
+    const oldTenant = await prisma.tenant.findUnique({ where: { id } });
+
     const tenant = await prisma.tenant.update({
       where: { id },
       data: {
@@ -494,6 +509,18 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       }
     });
 
+    await createAuditLog(
+      'UPDATE',
+      'Tenant',
+      id,
+      req.user!.id,
+      req.user!.email,
+      id,
+      oldTenant,
+      tenant,
+      req
+    );
+
     return res.json(tenant);
   } catch (err) {
     console.error("Erro atualizar tenant", err);
@@ -512,10 +539,24 @@ router.delete("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), as
       return res.status(403).json({ message: "Sem permissão" });
     }
 
+    const oldTenant = await prisma.tenant.findUnique({ where: { id } });
+
     // Cascate delete is handled by Database (Prisma schema)
     await prisma.tenant.delete({
       where: { id }
     });
+
+    await createAuditLog(
+      'DELETE',
+      'Tenant',
+      id,
+      req.user!.id,
+      req.user!.email,
+      id,
+      oldTenant,
+      null,
+      req
+    );
 
     return res.status(204).send();
   } catch (err) {

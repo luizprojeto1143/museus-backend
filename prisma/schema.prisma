@@ -59,6 +59,23 @@ enum TenantType {
   ARCHITECTURAL_LANDMARK // Ponto de interesse arquitetônico/histórico
 }
 
+enum SkinRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+  EXCLUSIVE
+}
+
+enum BadgeStatus {
+  PENDING
+  APPROVED
+  PRINTING
+  SHIPPED
+  DELIVERED
+  REJECTED
+}
+
 // ========== GOVERNANCE / CONTRACT PLANS ==========
 
 enum AITier {
@@ -276,6 +293,8 @@ model Tenant {
   culturalProjects        CulturalProject[]
   accessibilityExecutions AccessibilityExecution[]
   accessibilityProviders  AccessibilityProvider[]
+  skins                  Skin[]
+  badgeRequests          BadgeRequest[]
 
   @@index([parentId])
 }
@@ -729,6 +748,8 @@ model Visitor {
   huntParticipations     ScavengerHuntParticipation[]
   deviceTokens           DeviceToken[]
   coupons                VisitorCoupon[]
+  skins                  VisitorSkin[]
+  badgeRequests          BadgeRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1595,6 +1616,9 @@ model AccessibilityProvider {
   // Link to Platform User (Login)
   userId String? @unique
   user   User?   @relation(fields: [userId], references: [id])
+
+  // Financial Data (for Splits)
+  asaasWalletId String? // ID da Carteira Asaas do Prestador
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2464,5 +2488,58 @@ model FamilyEvent {
   updatedAt DateTime @updatedAt
 
   @@index([familyProfileId, year])
+}
+
+// ========== SKINS & ENGAGEMENT ==========
+
+model Skin {
+  id          String   @id @default(uuid())
+  tenantId    String?  // null = global skin (Master only)
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  imageUrl    String
+  xpCost      Int
+  rarity      SkinRarity @default(COMMON)
+  active      Boolean  @default(true)
+  eventOnly   Boolean  @default(false)
+  spaceId     String?                      // Vinculada a um espaço específico
+  createdAt   DateTime @default(now())
+  owners      VisitorSkin[]
+}
+
+model VisitorSkin {
+  id          String   @id @default(uuid())
+  visitorId   String
+  skinId      String
+  acquiredAt  DateTime @default(now())
+  equipped    Boolean  @default(false)
+  visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  skin        Skin     @relation(fields: [skinId],    references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, skinId])
+}
+
+model BadgeRequest {
+  id              String      @id @default(uuid())
+  visitorId       String
+  tenantId        String
+  level           Int         // 1=Bronze, 2=Prata, 3=Ouro, 4=Platina
+  skinImageUrl    String      // snapshot da skin no momento
+  xpAtRequest     Int
+  status          BadgeStatus @default(PENDING)
+  addressName     String
+  addressStreet   String
+  addressCity     String
+  addressState    String
+  addressZip      String
+  trackingCode    String?
+  pdfUrl          String?
+  requestedAt     DateTime    @default(now())
+  approvedAt      DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  visitor         Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 

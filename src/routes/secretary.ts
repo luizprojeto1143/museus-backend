@@ -38,7 +38,9 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
             activeProjects,
             pendingAccessibility,
             totalEvents,
-            upcomingEvents
+            upcomingEvents,
+            totalAccessibilityActions,
+            impactResult
         ] = await Promise.all([
             prisma.tenant.count({ where: { parentId: tenantId } }),
             prisma.culturalProject.count({ where: { tenantId: { in: allRelatedTenantIds } } }),
@@ -60,6 +62,19 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
                     tenantId: { in: allRelatedTenantIds },
                     startDate: { gte: new Date() }
                 }
+            }),
+            prisma.accessibilityExecution.count({
+                where: {
+                    tenantId: { in: allRelatedTenantIds },
+                    status: "VALIDATED"
+                }
+            }),
+            prisma.culturalProject.aggregate({
+                where: {
+                    tenantId: { in: allRelatedTenantIds },
+                    status: "COMPLETED"
+                },
+                _sum: { expectedAudience: true }
             })
         ]);
 
@@ -139,7 +154,9 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
                 activeProjects,
                 pendingAccessibility,
                 totalEvents,
-                upcomingEvents
+                upcomingEvents,
+                totalAccessibilityActions, // validated executions
+                estimatedPublicImpact: impactResult._sum?.expectedAudience || 0
             },
             equipmentAccessibility,
             recentProjects,

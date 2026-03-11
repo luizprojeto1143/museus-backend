@@ -67,4 +67,65 @@ router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (r
     }
 });
 
+// GET /ppa/consolidated — Aggregate goals across child tenants
+router.get('/consolidated', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+    try {
+        const user = req.user!;
+        const parentId = (req.query.tenantId as string) || user.tenantId;
+        const year = parseInt(req.query.year as string) || new Date().getFullYear();
+
+        if (!parentId) return res.status(400).json({ message: 'tenantId (parentId) obrigatório' });
+
+        // Buscar todos os tenants filhos + o próprio pai
+        const family = await prisma.tenant.findMany({
+            where: {
+                OR: [
+                    { id: parentId },
+                    { parentId: parentId }
+                ]
+            },
+            select: { id: true, name: true }
+        });
+
+        const tenantIds = family.map(t => t.id);
+
+        // Buscar todas as metas para esse grupo de tenants
+        const goals = await prisma.pPAGoal.findMany({
+            where: {
+                tenantId: { in: tenantIds },
+                year
+            }
+        });
+
+        // Agrupar por título/métrica para consolidar? 
+        // Ou apenas listar agrupado por tenant? 
+        // Para o dashboard executivo, vamos consolidar por título se forem iguais, senão listar todas.
+        const consolidated: Record<string, any> = {};
+
+        goals.forEach(goal => {
+            const key = `${goal.title}_${goal.metric}`;
+            if (!consolidated[key]) {
+                consolidated[key] = {
+                    title: goal.title,
+                    metric: goal.metric,
+                    targetValue: 0,
+                    currentValue: 0,
+                    goals: []
+                };
+            }
+            consolidated[key].targetValue += goal.targetValue;
+            consolidated[key].currentValue += goal.currentValue;
+            consolidated[key].goals.push({
+                ...goal,
+                tenantName: family.find(f => f.id === goal.tenantId)?.name
+            });
+        });
+
+        res.json(Object.values(consolidated));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Erro ao consolidar metas' });
+    }
+});
+
 export default router;

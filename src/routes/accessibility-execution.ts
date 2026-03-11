@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
 import { z } from "zod";
+import { asaasService } from "../services/asaasService.js";
 
 const router = Router();
 
@@ -318,6 +319,87 @@ router.put("/:id/validate", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
     } catch (err) {
         console.error("Erro ao validar", err);
         return res.status(500).json({ message: "Erro ao validar" });
+    }
+});
+
+// Criar pagamento para contratação de prestador (com Split)
+router.post("/:id/pay", authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+
+        const execution = await prisma.accessibilityExecution.findUnique({
+            where: { id },
+            include: {
+                provider: true,
+                tenant: true
+            }
+        });
+
+        if (!execution || !execution.provider) {
+            return res.status(404).json({ message: "Execução ou prestador não encontrado" });
+        }
+
+        if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
+        if (!execution.approvedBudget) {
+            return res.status(400).json({ message: "Valor aprovado não definido" });
+        }
+
+        if (!(execution.provider as any).asaasWalletId) {
+            return res.status(400).json({ message: "Prestador não possui carteira Asaas configurada para recebimento" });
+        }
+
+        // Buscar carteira da plataforma (Master Tenant)
+        const masterTenant = await prisma.tenant.findFirst({
+            where: { type: "CITY" } // No sistema, o tenant CITY/SECRETARIA geralmente é o master
+        });
+
+        const platformWalletId = masterTenant?.asaasWalletId;
+
+        // Criar cliente no Asaas para o Payer (o tenant/usuário atual)
+        const customerId = await asaasService.createCustomer({
+            name: user.name || execution.tenant.name,
+            email: user.email,
+        });
+
+        // Split: 90% para o prestador, 10% para a plataforma (se houver wallet)
+        const splits = [];
+        if (platformWalletId) {
+            splits.push({
+                walletId: platformWalletId,
+                percentualValue: 10 // 10% de comissão
+            });
+        }
+
+        const payment = await asaasService.createPayment({
+            customer: customerId,
+            billingType: 'PIX',
+            value: Number(execution.approvedBudget),
+            dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Amanhã
+            description: `Serviço de Acessibilidade: ${execution.serviceType} - ${execution.id.slice(0, 8)}`,
+            externalReference: execution.id,
+            split: splits
+        });
+
+        // Se for PIX, pegar o QR Code
+        let pixData = null;
+        if (payment.id) {
+            pixData = await asaasService.getPixQrCode(payment.id);
+        }
+
+        // Registrar transação no banco (opcional, se houver tabela Transaction)
+        // Por enquanto retornamos o pagamento
+        return res.json({
+            payment,
+            pixData
+        });
+
+    } catch (err) {
+        console.error("Erro ao processar pagamento", err);
+        return res.status(500).json({ message: "Erro ao processar pagamento" });
     }
 });
 

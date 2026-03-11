@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
+import { createAuditLog } from "./audit.js";
 
 const router = Router();
 
@@ -64,6 +65,19 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
     try {
         const data = planSchema.parse(req.body);
         const plan = await prisma.contractPlan.create({ data });
+        
+        await createAuditLog(
+            'CREATE',
+            'ContractPlan',
+            plan.id,
+            req.user!.id,
+            req.user!.email,
+            'master',
+            null,
+            plan,
+            req
+        );
+
         return res.status(201).json(plan);
     } catch (err) {
         if (err instanceof z.ZodError) {
@@ -84,6 +98,19 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         if (!existing) return res.status(404).json({ message: "Plano não encontrado" });
 
         const plan = await prisma.contractPlan.update({ where: { id }, data });
+
+        await createAuditLog(
+            'UPDATE',
+            'ContractPlan',
+            id,
+            req.user!.id,
+            req.user!.email,
+            'master',
+            existing,
+            plan,
+            req
+        );
+
         return res.json(plan);
     } catch (err) {
         if (err instanceof z.ZodError) {
@@ -107,7 +134,21 @@ router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, re
             });
         }
 
+        const oldPlan = await prisma.contractPlan.findUnique({ where: { id } });
         await prisma.contractPlan.delete({ where: { id } });
+
+        await createAuditLog(
+            'DELETE',
+            'ContractPlan',
+            id,
+            req.user!.id,
+            req.user!.email,
+            'master',
+            oldPlan,
+            null,
+            req
+        );
+
         return res.status(204).send();
     } catch (err) {
         console.error("Error deleting plan", err);
