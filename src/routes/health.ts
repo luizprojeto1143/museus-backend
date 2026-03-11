@@ -17,6 +17,10 @@ router.get('/', async (req, res) => {
             status: 'healthy',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),
+            debug: {
+                db_host: new URL(process.env.DATABASE_URL || "").hostname,
+                db_port: new URL(process.env.DATABASE_URL || "").port || "5432"
+            },
             services: {
                 database: {
                     status: 'connected',
