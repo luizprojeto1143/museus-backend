@@ -75,21 +75,13 @@ async function resolveBestUrl() {
     console.log("🛠️  Resolvendo melhor URL de banco...");
     
     // 1. Se for Supabase Pooler, PRIORIZAR 6543 (Transaction Mode)
+    // NOTE: This is highly recommended for Render/Vercel to avoid connection limits and IPv6 issues.
     if (isSupabasePooler) {
-        console.log("💎 Supabase Pooler detectado.");
-        
-        // Tentar 6543 primeiro
+        console.log("💎 Supabase Pooler detectado. Forçando porta 6543 (Transaction Mode).");
         const transactionUrl = new URL(urlObj.toString());
         transactionUrl.port = '6543';
         transactionUrl.searchParams.set('pgbouncer', 'true');
-        
-        console.log("📡 Testando porta 6543 (Recommended)...");
-        if (await tryConnect(transactionUrl.toString())) {
-            console.log("✅ Conexão via porta 6543 confirmada!");
-            return transactionUrl.toString();
-        }
-        
-        console.warn("⚠️ Porta 6543 falhou inesperadamente. Render pode estar limitando esta porta.");
+        return transactionUrl.toString();
     }
 
     // 2. Tentar a URL original (geralmente 5432)
@@ -108,7 +100,7 @@ async function resolveBestUrl() {
         return cleanUrl.toString();
     }
 
-    console.warn("❌ Nenhuma URL respondeu ao teste TCP. Usando a URL original e torcendo pelo melhor.");
+    console.warn("❌ Nenhuma URL respondeu ao teste TCP. Usando a URL original.");
     return urlObj.toString(); 
 }
 
