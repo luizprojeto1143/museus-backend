@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { prisma } from "../prisma";
-import { authMiddleware as authenticate } from "../middleware/auth";
+import { prisma } from "../prisma.js";
+import { authMiddleware as authenticate } from "../middleware/auth.js";
 
 const router = Router();
 
