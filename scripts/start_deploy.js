@@ -72,38 +72,33 @@ async function tryConnect(urlStr) {
 }
 
 async function resolveBestUrl() {
-    // 1. Tentar URL original/modificada padrão
-    if (await tryConnect(urlObj.toString())) return urlObj.toString();
-
-    // 2. Se for Supabase Pooler e falhou, tentar alternar entre 6543 (Transaction) e 5432 (Session)
+    console.log("🛠️  Resolvendo melhor URL de banco...");
+    
+    // 1. Se for Supabase Pooler, tentar 6543 (Transaction) PRIMEIRO, pois é mais estável no Render
     if (isSupabasePooler) {
-        const currentPort = urlObj.port || '5432';
-        const nextPort = currentPort === '6543' ? '5432' : '6543';
+        console.log("💎 Supabase Pooler detectado. Priorizando porta 6543 (Transaction Mode)...");
+        const poolerUrl = new URL(urlObj.toString());
+        poolerUrl.port = '6543';
+        poolerUrl.searchParams.set('pgbouncer', 'true');
         
-        console.log(`⚠️ Porta ${currentPort} falhou. Tentando porta alternativa ${nextPort}...`);
-        const fallbackUrl = new URL(urlObj.toString());
-        fallbackUrl.port = nextPort;
-        
-        // Se mudar para 5432, geralmente pgbouncer deve ser false ou removido
-        if (nextPort === '5432') {
-            fallbackUrl.searchParams.delete('pgbouncer');
-        } else {
-            fallbackUrl.searchParams.set('pgbouncer', 'true');
+        if (await tryConnect(poolerUrl.toString())) {
+            console.log("✅ Conexão via porta 6543 bem-sucedida!");
+            return poolerUrl.toString();
         }
-
-        if (await tryConnect(fallbackUrl.toString())) {
-            console.log(`✨ Usando URL de fallback (Porta ${nextPort})`);
-            return fallbackUrl.toString();
-        }
+        console.log("⚠️ Porta 6543 falhou, tentando outras opções...");
     }
 
-    // 3. Tentar remover pgbouncer se nada funcionar
-    console.log("⚠️ Tentando conexo limpa (sem pgbouncer)...");
+    // 2. Tentar URL original/modificada padrão (geralmente porta 5432)
+    if (await tryConnect(urlObj.toString())) return urlObj.toString();
+
+    // 3. Fallback final: Tentar sem pgbouncer se nada funcionar
+    console.log("⚠️ Tentando conexão limpa (sem pgbouncer)...");
     const cleanUrl = new URL(urlObj.toString());
     cleanUrl.searchParams.delete('pgbouncer');
     if (await tryConnect(cleanUrl.toString())) return cleanUrl.toString();
 
-    return urlObj.toString(); // Retorna a melhor tentativa se tudo falhar
+    console.warn("❌ Nenhuma URL de banco respondeu ao teste TCP. Usando URL padrão e torcendo pelo melhor.");
+    return urlObj.toString(); 
 }
 
 import { Socket } from 'net';
