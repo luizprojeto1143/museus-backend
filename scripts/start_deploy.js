@@ -48,108 +48,132 @@ if (!hasPoolTimeout) {
 }
 
 if (!hasConnLimit) {
-    // Aumentado de 5 para 10 para evitar timeouts em picos
     urlObj.searchParams.set('connection_limit', '10');
 }
 
-// Se for host do pooler do Supabase, forçar porta 6543 e pgbouncer=true
-if (urlObj.hostname.includes('pooler.supabase.com')) {
-    console.log("ℹ️ Rede: Usando porta 6543 e pgbouncer=true para o pooler do Supabase...");
-    urlObj.port = '6543';
-    urlObj.searchParams.set('pgbouncer', 'true');
+// -------------------------------------------------------------------------
+// SMART FALLBACK LOGIC:
+// -------------------------------------------------------------------------
+const isSupabasePooler = urlObj.hostname.includes('pooler.supabase.com');
+
+async function tryConnect(urlStr) {
+    const testUrl = new URL(urlStr);
+    const host = testUrl.hostname;
+    const port = parseInt(testUrl.port || '5432');
+    
+    console.log(`📡 Testando conexo TCP com ${host}:${port}...`);
+    const success = await testConnectivity(host, port);
+    
+    if (success) {
+        console.log(`✅ Conexo TCP confirmada para ${host}:${port}`);
+        return true;
+    }
+    return false;
 }
 
-modifiedUrl = urlObj.toString();
+async function resolveBestUrl() {
+    // 1. Tentar URL original/modificada padrão
+    if (await tryConnect(urlObj.toString())) return urlObj.toString();
 
-// Apenas logar mascarado para debug
-console.log(`🔍 Conexo: ${maskUrl(modifiedUrl)}`);
-console.log(`🔌 NODE_OPTIONS: ${process.env.NODE_OPTIONS || 'padro'}`);
+    // 2. Se for Supabase Pooler e falhou, tentar alternar entre 6543 (Transaction) e 5432 (Session)
+    if (isSupabasePooler) {
+        const currentPort = urlObj.port || '5432';
+        const nextPort = currentPort === '6543' ? '5432' : '6543';
+        
+        console.log(`⚠️ Porta ${currentPort} falhou. Tentando porta alternativa ${nextPort}...`);
+        const fallbackUrl = new URL(urlObj.toString());
+        fallbackUrl.port = nextPort;
+        
+        // Se mudar para 5432, geralmente pgbouncer deve ser false ou removido
+        if (nextPort === '5432') {
+            fallbackUrl.searchParams.delete('pgbouncer');
+        } else {
+            fallbackUrl.searchParams.set('pgbouncer', 'true');
+        }
 
-// Atualiza o ambiente
-process.env.DATABASE_URL = modifiedUrl;
+        if (await tryConnect(fallbackUrl.toString())) {
+            console.log(`✨ Usando URL de fallback (Porta ${nextPort})`);
+            return fallbackUrl.toString();
+        }
+    }
+
+    // 3. Tentar remover pgbouncer se nada funcionar
+    console.log("⚠️ Tentando conexo limpa (sem pgbouncer)...");
+    const cleanUrl = new URL(urlObj.toString());
+    cleanUrl.searchParams.delete('pgbouncer');
+    if (await tryConnect(cleanUrl.toString())) return cleanUrl.toString();
+
+    return urlObj.toString(); // Retorna a melhor tentativa se tudo falhar
+}
 
 import { Socket } from 'net';
 function testConnectivity(host, port) {
     return new Promise((resolve) => {
-        console.log(`📡 Testando conexo TCP com ${host}:${port}...`);
         const socket = new Socket();
-        const timeout = 5000;
+        const timeout = 3000; // 3s para teste rpido
         socket.setTimeout(timeout);
-        socket.on('connect', () => {
-            console.log(`✅ Conexo TCP com ${host}:${port} BEM SUCEDIDA.`);
-            socket.destroy();
-            resolve(true);
-        });
-        socket.on('timeout', () => {
-            console.error(`❌ Conexo TCP com ${host}:${port} TIMEOUT após ${timeout}ms.`);
-            socket.destroy();
-            resolve(false);
-        });
-        socket.on('error', (err) => {
-            console.error(`❌ Conexo TCP com ${host}:${port} ERRO: ${err.message}`);
-            socket.destroy();
-            resolve(false);
-        });
+        socket.on('connect', () => { socket.destroy(); resolve(true); });
+        socket.on('timeout', () => { socket.destroy(); resolve(false); });
+        socket.on('error', () => { socket.destroy(); resolve(false); });
         socket.connect(port, host);
     });
 }
 
-console.log("🚀 [Render-Boost] Iniciando Aplicação IMEDIATAMENTE...");
+async function main() {
+    const finalUrl = await resolveBestUrl();
+    process.env.DATABASE_URL = finalUrl;
+    console.log(`🔍 URL Final Preparada: ${maskUrl(finalUrl)}`);
 
-// Iniciar diagnstico em paralelo
-testConnectivity(urlObj.hostname, parseInt(urlObj.port || '5432')).catch(() => {});
-if (urlObj.port !== '5432') testConnectivity(urlObj.hostname, 5432).catch(() => {});
+    console.log("🚀 [Render-Boost] Iniciando Aplicação...");
+    
+    const appProcess = spawn('node', ['dist/index.js'], {
+        stdio: 'inherit',
+        env: process.env
+    });
 
-// INICIAR APP PRIMEIRO para o Render detectar a porta aberta
-const appProcess = spawn('node', ['dist/index.js'], {
-    stdio: 'inherit',
-    env: process.env
-});
+    console.log("🛠️ Verificando esquema do banco em background...");
+    startMigrations();
 
-console.log("📦 [Async] Iniciando Migrações em Segundo Plano...");
+    appProcess.on('close', (code) => {
+        console.log(`Aplicação encerrada com código ${code}`);
+        process.exit(code || 0);
+    });
+}
 
 // Função para tentar executar comando com retries
-function runWithRetry(command, retries = 5, delayMs = 5000) {
+function runWithRetry(command, retries = 3, delayMs = 5000) {
     for (let i = 0; i < retries; i++) {
         try {
-            console.log(`1️⃣ Executando Migrate Deploy (Tentativa ${i + 1}/${retries})...`);
+            console.log(`📦 Prisma: ${command} (Tentativa ${i + 1}/${retries})...`);
             execSync(command, { stdio: 'inherit', env: process.env });
-            console.log("✅ Migrate Deploy concluído com sucesso.");
             return true;
         } catch (error) {
-            console.error(`❌ Falha na tentativa ${i + 1}: ${error.message}`);
+            console.error(`❌ Falha: ${error.message}`);
             if (i < retries - 1) {
-                console.log(`⏳ Aguardando ${delayMs}ms antes de tentar novamente...`);
+                console.log(`⏳ Aguardando ${delayMs}ms...`);
                 const start = Date.now();
-                while (Date.now() - start < delayMs) { /* busy wait */ }
-            } else {
-                console.error("❌ Todas as tentativas de migração falharam.");
-                return false;
+                while (Date.now() - start < delayMs) {}
             }
         }
     }
+    return false;
 }
 
-// Função para migração segura (não bloqueia o loop)
 async function startMigrations() {
-    console.log("🛠️ Verificando esquema do banco...");
-    if (!runWithRetry('npx prisma migrate deploy', 3, 10000)) {
-        console.log("⚠️ Migrate falhou, tentando db push...");
+    if (!runWithRetry('npx prisma migrate deploy', 2, 8000)) {
+        console.log("⚠️ Deploy falhou, tentando db push...");
         try {
             execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit', env: process.env });
-            console.log("✅ Banco sincronizado via push.");
+            console.log("✅ Sincronizado via push.");
         } catch (e) {
-            console.error("❌ Erro fatal no banco:", e.message);
+            console.error("❌ Erro fatal no banco.");
         }
     } else {
-        console.log("✅ Migrações aplicadas.");
+        console.log("✅ Migrações OK.");
     }
 }
 
-// Rodar sem bloquear
-startMigrations().catch(err => console.error("❌ Erro nas migrações:", err));
-
-appProcess.on('close', (code) => {
-    console.log(`Aplicação encerrada com código ${code}`);
-    process.exit(code || 0);
+main().catch(err => {
+    console.error("❌ Erro no script de deploy:", err);
+    process.exit(1);
 });
