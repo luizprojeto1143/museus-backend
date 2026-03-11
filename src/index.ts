@@ -267,13 +267,20 @@ const PORT = process.env.PORT || 3000;
 // Global Error Handler
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error("❌ Global Error:", err);
-  // Temporarily exposing details in production to debug 500 errors
-  // const isDev = process.env.NODE_ENV !== 'production';
+  console.error("❌ Global Error Detail:", {
+    message: err.message,
+    stack: err.stack,
+    name: err.name,
+    code: err.code // Prisma error codes
+  });
+  
   res.status(500).json({
     error: "Internal Server Error",
     message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    code: err.code,
+    // Helping debug in prod temporarily
+    path: _req.path,
+    timestamp: new Date().toISOString()
   });
 });
 

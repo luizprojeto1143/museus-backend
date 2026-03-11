@@ -1,0 +1,34 @@
+﻿
+> model Event {
+    id          String  @id @default(uuid())
+    title       String
+    description String?
+  
+    // Type & Workshop Logic
+    type       EventType @default(OTHER)
+    instructor String? // Name of the instructor/facilitator
+    materials  String? // List of materials needed/provided
+  
+    // Format & Visibility
+    format     String  @default("PRESENTIAL") // PRESENTIAL, ONLINE, HYBRID
+    visibility String  @default("PUBLIC") // PUBLIC, PRIVATE
+    isOnline   Boolean @default(false) // Keep for backward compatibility or computed
+  
+    // Date & Time
+    startDate    DateTime
+    endDate      DateTime?
+    // Link to generated event
+    eventId      String?   @unique
+    originEvent  Event?    @relation("EventDerivation", fields: [eventId], references: [id])
+    derivedEvent Event?    @relation("EventDerivation")
+  
+    // Location (Presential)
+    location     String? // Name of the place e.g. "SÃ­tio Terra Prometida"
+    zipCode      String?
+    address      String?
+    number       String?
+    complement   String?
+    neighborhood String?
+    city         String?
+
+

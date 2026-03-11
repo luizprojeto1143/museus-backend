@@ -1,0 +1,278 @@
+﻿
+> model EventAttendance {
+    id          String   @id @default(uuid())
+    eventId     String
+    visitorId   String
+    checkInTime DateTime @default(now())
+    status      String   @default("PRESENT") // PRESENT, REGISTERED
+  
+    event   Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+    visitor Visitor @relation(fields: [visitorId], references: [id])
+  
+    createdAt DateTime @default(now())
+  
+    @@unique([eventId, visitorId])
+  }
+  
+  // Update Event model to support Online Events
+  enum EventType {
+    WORKSHOP
+    EXHIBITION
+    SHOW
+    LECTURE
+    OTHER
+  }
+  
+> model Event {
+    id          String  @id @default(uuid())
+    title       String
+    description String?
+  
+    // Type & Workshop Logic
+    type       EventType @default(OTHER)
+    instructor String? // Name of the instructor/facilitator
+    materials  String? // List of materials needed/provided
+  
+    // Format & Visibility
+    format     String  @default("PRESENTIAL") // PRESENTIAL, ONLINE, HYBRID
+    visibility String  @default("PUBLIC") // PUBLIC, PRIVATE
+    isOnline   Boolean @default(false) // Keep for backward compatibility or computed
+  
+    // Date & Time
+    startDate    DateTime
+    endDate      DateTime?
+    // Link to generated event
+    eventId      String?   @unique
+    originEvent  Event?    @relation("EventDerivation", fields: [eventId], references: [id])
+    derivedEvent Event?    @relation("EventDerivation")
+  
+    // Location (Presential)
+    location     String? // Name of the place e.g. "SÃ­tio Terra Prometida"
+    zipCode      String?
+    address      String?
+    number       String?
+    complement   String?
+    neighborhood String?
+    city         String?
+    state        String?
+  
+    // Online
+    meetingLink String? // Zoom, Meet, etc.
+    platform    String? // ZOOM, YOUTUBE, MEET, OTHER
+  
+    // Producer Info
+    producerName        String?
+    producerDescription String?
+    producerLogoUrl     String?
+    coverImageUrl       String?
+    coverUrl            String? // Alias for cover image (used in projects-\u003eevents)
+  
+    // Certificate Settings
+    certificateBackgroundUrl String?
+    certificateText          String?
+    minMinutesForCertificate Int?
+  
+    // Media
+    audioUrl String? // Ãudio-guia de introduÃ§Ã£o do evento
+    videoUrl String? // VÃ­deo promocional do evento
+  
+    views  Int    @default(0)
+    status String @default("DRAFT") // DRAFT, PUBLISHED, CANCELED, FINISHED
+  
+    // Sympla Killer Features ðŸš€
+    customFormSchema Json? // Array of { id, label, type, required, options }
+    galleryUrls      String? // JSON array of strings (store as string for SQLite compat or Json if Postgres supports)
+    // Note: Using Json type is better if DB supports it. Prisma supports Json for SQLite.
+  
+    categoryId String?
+    category   Category? @relation(fields: [categoryId], references: [id])
+  
+    spaceId String?
+    space   Space?  @relation(fields: [spaceId], references: [id])
+  
+    tenantId String
+    tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+    visits                    VisitorVisit[]
+    attendances               EventAttendance[]
+    tickets                   Ticket[]
+    registrations             Registration[]
+    reviews                   Review[]
+    surveyQuestions           SurveyQuestion[]
+    certificateRequiresSurvey Boolean           @default(false)
+  
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+  
+    @@index([tenantId, startDate])
+  }
+  
+  // ========== SURVEY / SATISFACTION POLL ==========
+  
+  enum SurveyQuestionType {
+    STARS // 1-5 stars rating
+    TEXT // Free text answer
+    CHOICE // Multiple choice (radio)
+    NPS // Net Promoter Score (0-10)
+  }
+  
+  model SurveyQuestion {
+    id       String             @id @default(uuid())
+    eventId  String
+    question String
+    type     SurveyQuestionType @default(STARS)
+    options  Json? // Array of strings for CHOICE type
+    required Boolean            @default(true)
+    order    Int                @default(0)
+  
+    event     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+    responses SurveyResponse[]
+  
+    createdAt DateTime @default(now())
+  
+    @@index([eventId])
+  }
+  
+  model SurveyResponse {
+    id         String  @id @default(uuid())
+    questionId String
+    visitorId  String?
+    guestEmail String?
+    answer     String // Text, number (1-5 or 0-10), or selected option
+  
+    question SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+    createdAt DateTime @default(now())
+  
+    @@unique([questionId, visitorId])
+    @@unique([questionId, guestEmail])
+    @@index([questionId])
+  }
+  
+  enum TicketType {
+    FREE
+    PAID
+  }
+  
+  enum TicketStatus {
+    ACTIVE
+    PAUSED
+    SOLD_OUT
+    EXPIRED
+  }
+  
+  model Ticket {
+    id             String       @id @default(uuid())
+    eventId        String
+    name           String
+    description    String?
+    type           TicketType   @default(FREE)
+    price          Decimal      @default(0.0) // 10.00
+    quantity       Int // Total available
+    sold           Int          @default(0) // Track sold count
+    absorbFee      Boolean      @default(false)
+    minBuy         Int          @default(1)
+    maxBuy         Int          @default(5)
+    salesStartDate DateTime?
+    salesEndDate   DateTime?
+    status         TicketStatus @default(ACTIVE)
+  
+    event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+    registrations Registration[]
+  
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+  }
+  
+  enum RegistrationStatus {
+    PENDING
+    CONFIRMED
+    CANCELED
+    CHECKED_IN
+  }
+  
+  model Registration {
+    id        String  @id @default(uuid())
+    code      String  @unique // Unique booking code e.g. "ABC-123"
+    eventId   String
+    ticketId  String
+    visitorId String? // If linked to a known visitor
+  
+    // Guest Data (if not a registered visitor yet)
+    guestName  String
+    guestEmail String
+  
+    status             RegistrationStatus @default(PENDING)
+    checkInDate        DateTime?
+    pricePaid          Decimal            @default(0.0)
+    platformFee        Decimal?           @db.Decimal(10, 2)
+    asaasPaymentId     String?
+    asaasPaymentStatus String?
+  
+    // Sympla Killer Features ðŸš€
+    customFormData Json? // { questionId: answer }
+  
+    // Relations
+    event   Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+    ticket  Ticket   @relation(fields: [ticketId], references: [id])
+    visitor Visitor? @relation(fields: [visitorId], references: [id])
+  
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+  }
+  
+  model Visitor {
+    id       String  @id @default(uuid())
+    name     String?
+    email    String?
+    age      Int?
+    photoUrl String?
+    xp       Int     @default(0)
+  
+    tenantId String
+    tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+    isFake    Boolean @default(false)
+    isTeacher Boolean @default(false)
+  
+    visits                 VisitorVisit[]
+    achievements           VisitorAchievement[]
+    stamps                 PassportStamp[]
+    attendances            EventAttendance[]
+    guestbookEntries       GuestbookEntry[]
+    certificates           Certificate[]
+    registrations          Registration[]
+    favorites              Favorite[]
+    reviews                Review[]
+    notificationPreference NotificationPreference?
+    orders                 Order[]
+    challengeCompletions   DailyChallengeCompletion[]
+    huntParticipations     ScavengerHuntParticipation[]
+    deviceTokens           DeviceToken[]
+    coupons                VisitorCoupon[]
+  
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+  
+    @@unique([email, tenantId])
+    @@index([tenantId, xp])
+  }
+  
+  model VisitorVisit {
+    id        String  @id @default(uuid())
+    visitorId String
+    workId    String?
+    trailId   String?
+    eventId   String?
+    source    String? // "QR" | "APP"
+    xpGained  Int     @default(0)
+  
+    visitor Visitor @relation(fields: [visitorId], references: [id])
+    work    Work?   @relation(fields: [workId], references: [id])
+    trail   Trail?  @relation(fields: [trailId], references: [id])
+    event   Event?  @relation(fields: [eventId], references: [id])
+  
+    createdAt DateTime @default(now())
+  
+
+
