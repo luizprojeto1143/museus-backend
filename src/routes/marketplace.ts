@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { prisma } from "../lib/prisma";
-import { authenticate } from "../middleware/auth";
+import { prisma } from "../prisma";
+import { authMiddleware as authenticate } from "../middleware/auth";
 
 const router = Router();
 
@@ -14,7 +14,7 @@ router.get("/", authenticate, async (req, res) => {
     }
   });
 
-  const formatted = skins.map(s => ({
+  const formatted = skins.map((s: any) => ({
     ...s,
     owned: s.owners?.length > 0,
     equipped: s.owners?.[0]?.equipped || false
