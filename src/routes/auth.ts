@@ -49,6 +49,7 @@ const generateTokens = async (userId: string, email: string, role: Role, tenantI
 router.post("/login", authLimiter, validate(loginSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password } = req.body;
+    console.log(`[AUTH] Login attempt for: ${email}`);
 
     const user = await prisma.user.findUnique({
       where: { email },
@@ -59,27 +60,39 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     });
 
     if (!user) {
+      console.warn(`[AUTH] User not found: ${email}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
+      console.warn(`[AUTH] Invalid password for: ${email}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
+    console.log(`[AUTH] User authenticated: ${email}. Generating tokens...`);
+
     // Gerar Tokens
-    const { accessToken, refreshToken } = await generateTokens(
-      user.id,
-      user.email,
-      user.role,
-      user.tenantId,
-      user.tenant?.type,
-      user.name
-    );
+    let tokens;
+    try {
+      tokens = await generateTokens(
+        user.id,
+        user.email,
+        user.role,
+        user.tenantId,
+        user.tenant?.type,
+        user.name
+      );
+    } catch (tokenErr: any) {
+      console.error("[AUTH] Error generating tokens:", tokenErr);
+      throw new Error(`Token generation failed: ${tokenErr.message}`);
+    }
+
+    console.log(`[AUTH] Login successful for: ${email}`);
 
     return res.json({
-      accessToken,
-      refreshToken,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       role: user.role,
       tenantId: user.tenantId,
       tenantType: user.tenant?.type,
@@ -94,9 +107,13 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         hasProviderProfile: !!user.providerProfile
       }
     });
-  } catch (err) {
-    console.error("Erro login", err);
-    return res.status(500).json({ message: "Erro ao autenticar" });
+  } catch (err: any) {
+    console.error("[AUTH] Erro login:", err);
+    return res.status(500).json({ 
+      message: "Erro ao autenticar", 
+      error: err.message,
+      stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
+    });
   }
 });
 
