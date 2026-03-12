@@ -8,11 +8,11 @@ const router = Router();
 router.get("/my", authenticate, async (req, res) => {
   try {
     const userEmail = req.user!.email;
-    const tenantId = req.user!.tenantId;
-    const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+    const tenantId = req.user!.tenantId as string;
+    const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId: tenantId as string } });
     if (!visitor) return res.status(404).json({ error: "Visitor not found" });
 
-    const requests = await prisma.badgeRequest.findMany({
+    const requests = await (prisma as any).badgeRequest.findMany({
       where: { visitorId: visitor.id },
       orderBy: { requestedAt: "desc" }
     });
@@ -29,13 +29,13 @@ router.post("/", authenticate, async (req, res) => {
 
   const visitor = await prisma.visitor.findUnique({
     where: { id: visitorId },
-    include: { skins: { where: { equipped: true }, include: { skin: true } } }
+    include: { skins: { where: { equipped: true }, include: { skin: true } } } as any
   });
 
   if (!visitor) return res.status(404).json({ error: "Visitor not found" });
   if (visitor.xp < 100000) return res.status(400).json({ error: "Insufficient XP (min 100k)" });
 
-  const equippedSkin = visitor.skins[0]?.skin?.imageUrl || "default_avatar.png";
+  const equippedSkin = (visitor as any).skins[0]?.skin?.imageUrl || "default_avatar.png";
 
   // Calcule o nível do crachá com base no XP atual
   let level = 1; // Bronze
@@ -44,7 +44,7 @@ router.post("/", authenticate, async (req, res) => {
   else if (xp >= 500000) level = 3; // Ouro
   else if (xp >= 250000) level = 2; // Prata
 
-  const request = await prisma.badgeRequest.create({
+  const request = await (prisma as any).badgeRequest.create({
     data: {
       visitorId,
       tenantId,
@@ -64,7 +64,7 @@ router.post("/", authenticate, async (req, res) => {
 
 // Master: List and Approve Badge Requests
 router.get("/queue", authenticate, authorize(["MASTER"]), async (req, res) => {
-  const requests = await prisma.badgeRequest.findMany({
+  const requests = await (prisma as any).badgeRequest.findMany({
     include: { visitor: true, tenant: true }
   });
   res.json(requests);
@@ -72,7 +72,7 @@ router.get("/queue", authenticate, authorize(["MASTER"]), async (req, res) => {
 
 router.put("/:id/status", authenticate, authorize(["MASTER"]), async (req, res) => {
   const { status, trackingCode } = req.body;
-  const request = await prisma.badgeRequest.update({
+  const request = await (prisma as any).badgeRequest.update({
     where: { id: req.params.id },
     data: { 
       status, 
