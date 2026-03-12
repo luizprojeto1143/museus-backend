@@ -40,4 +40,54 @@ router.get("/migrate", async (req, res) => {
     });
 });
 
+router.get("/db-sync-check", async (req, res) => {
+    try {
+        // Test critical tables and columns
+        const checks = {
+            tenant_deletedAt: false,
+            work_deletedAt: false,
+            event_deletedAt: false,
+            accessibility_provider: false
+        };
+
+        try {
+            await prisma.tenant.findFirst({ select: { id: true, deletedAt: true }, take: 1 });
+            checks.tenant_deletedAt = true;
+        } catch (e) {
+            console.error("Check failed: Tenant.deletedAt", e);
+        }
+
+        try {
+            await prisma.work.findFirst({ select: { id: true, deletedAt: true }, take: 1 });
+            checks.work_deletedAt = true;
+        } catch (e) {
+            console.error("Check failed: Work.deletedAt", e);
+        }
+
+        try {
+            await prisma.event.findFirst({ select: { id: true, deletedAt: true }, take: 1 });
+            checks.event_deletedAt = true;
+        } catch (e) {
+            console.error("Check failed: Event.deletedAt", e);
+        }
+
+        try {
+            await prisma.accessibilityProvider.count();
+            checks.accessibility_provider = true;
+        } catch (e) {
+            console.error("Check failed: AccessibilityProvider", e);
+        }
+
+        const isFullySynced = Object.values(checks).every(v => v === true);
+
+        return res.json({
+            status: isFullySynced ? "fully_synced" : "partially_synced",
+            timestamp: new Date().toISOString(),
+            checks
+        });
+    } catch (err) {
+        return res.status(500).json({ error: "Sync check failed", details: String(err) });
+    }
+});
+
 export default router;
