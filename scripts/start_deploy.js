@@ -72,10 +72,10 @@ async function tryConnect(urlStr) {
 }
 
 async function resolveBestUrl() {
-    console.log("🛠️ Forando porta 6543 (PG-Bouncer) para estabilidade no Render.");
+    console.log("🛠️ Forçando porta 5432 (Session Mode) para estabilidade total.");
     const finalUrl = new URL(urlObj.toString());
-    finalUrl.port = '6543';
-    finalUrl.searchParams.set('pgbouncer', 'true');
+    finalUrl.port = '5432';
+    finalUrl.searchParams.delete('pgbouncer');
     finalUrl.searchParams.set('sslmode', 'require');
     return finalUrl.toString();
 }
