@@ -72,35 +72,12 @@ async function tryConnect(urlStr) {
 }
 
 async function resolveBestUrl() {
-    console.log("🛠️  Resolvendo melhor URL de banco...");
-    
-    // 1. Se for Supabase Pooler, PRIORIZAR 6543 (Transaction Mode) - provado alcanável em testes
-    if (isSupabasePooler) {
-        console.log("💎 Supabase Pooler detectado. Usando porta 6543 (Transaction Mode).");
-        const transactionUrl = new URL(urlObj.toString());
-        transactionUrl.port = '6543';
-        transactionUrl.searchParams.set('pgbouncer', 'true');
-        return transactionUrl.toString();
-    }
-
-    // 2. Tentar a URL original (geralmente 5432)
-    console.log(`📡 Testando porta padrão ${urlObj.port || '5432'}...`);
-    if (await tryConnect(urlObj.toString())) {
-        console.log("✅ Conexão via porta padrão confirmada.");
-        return urlObj.toString();
-    }
-
-    // 3. Fallback final: Tentar sem pgbouncer
-    console.log("⚠️ Tentando conexão limpa (sem pgbouncer)...");
-    const cleanUrl = new URL(urlObj.toString());
-    cleanUrl.searchParams.delete('pgbouncer');
-    if (await tryConnect(cleanUrl.toString())) {
-        console.log("✅ Conexão limpa bem-sucedida.");
-        return cleanUrl.toString();
-    }
-
-    console.warn("❌ Nenhuma URL respondeu ao teste TCP. Usando a URL original.");
-    return urlObj.toString(); 
+    console.log("🛠️ Usando porta 5432 conforme teste direto bem-sucedido.");
+    const finalUrl = new URL(urlObj.toString());
+    finalUrl.port = '5432';
+    // Remover pgbouncer param se existir para evitar conflitos na 5432
+    finalUrl.searchParams.delete('pgbouncer');
+    return finalUrl.toString();
 }
 
 import { Socket } from 'net';
