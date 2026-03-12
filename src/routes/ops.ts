@@ -1,5 +1,8 @@
 import { Router } from "express";
 import { exec } from "child_process";
+import fs from "fs";
+import path from "path";
+import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 
@@ -87,6 +90,38 @@ router.get("/db-sync-check", async (req, res) => {
         });
     } catch (err) {
         return res.status(500).json({ error: "Sync check failed", details: String(err) });
+    }
+});
+
+router.get("/apply-recovery-v3", async (req, res) => {
+    const { secret } = req.query;
+    if (secret !== "museus_admin_deploy_2024") {
+        return res.status(403).json({ message: "Forbidden" });
+    }
+
+    try {
+        const sqlPath = path.join(process.cwd(), "prisma/migrations/20260312093000_massive_recovery_v3/migration.sql");
+        
+        if (!fs.existsSync(sqlPath)) {
+            return res.status(404).json({ error: "Migration file not found", path: sqlPath });
+        }
+
+        const sql = fs.readFileSync(sqlPath, "utf8");
+
+        // Execute raw SQL block
+        // PostgreSQL allows multiple statements in one block if separated by semicolons
+        await prisma.$executeRawUnsafe(sql);
+
+        return res.json({ 
+            message: "Recovery V3 applied successfully via ExecuteRaw",
+            timestamp: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error("Manual migration failed:", err);
+        return res.status(500).json({ 
+            error: "Failed to apply SQL", 
+            details: err instanceof Error ? err.message : String(err) 
+        });
     }
 });
 
