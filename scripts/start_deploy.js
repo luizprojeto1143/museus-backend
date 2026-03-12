@@ -74,14 +74,12 @@ async function tryConnect(urlStr) {
 async function resolveBestUrl() {
     console.log("🛠️  Resolvendo melhor URL de banco...");
     
-    // 1. Se for Supabase Pooler, PRIORIZAR 6543 (Transaction Mode)
-    // NOTE: This is highly recommended for Render/Vercel to avoid connection limits and IPv6 issues.
+    // 1. Se for Supabase Pooler, PRIORIZAR 5432 (Session Mode) por ser mais estvel no Render
     if (isSupabasePooler) {
-        console.log("💎 Supabase Pooler detectado. Forçando porta 6543 (Transaction Mode).");
-        const transactionUrl = new URL(urlObj.toString());
-        transactionUrl.port = '6543';
-        transactionUrl.searchParams.set('pgbouncer', 'true');
-        return transactionUrl.toString();
+        console.log("💎 Supabase Pooler detectado. Tentando porta 5432 (Session Mode) primeiro.");
+        const sessionUrl = new URL(urlObj.toString());
+        sessionUrl.port = '5432';
+        return sessionUrl.toString();
     }
 
     // 2. Tentar a URL original (geralmente 5432)
@@ -121,51 +119,17 @@ async function main() {
     const finalUrl = await resolveBestUrl();
     process.env.DATABASE_URL = finalUrl;
     console.log(`🔍 URL Final Preparada: ${maskUrl(finalUrl)}`);
-
-    console.log("🚀 [Render-Boost] Iniciando Aplicação...");
+    console.log("🚀 [Render-Boost] Boot imediato...");
     
     const appProcess = spawn('node', ['dist/index.js'], {
         stdio: 'inherit',
         env: process.env
     });
 
-    console.log("🛠️ Verificando esquema do banco em background...");
-    startMigrations(); // Floating promise - non-blocking
-
     appProcess.on('close', (code) => {
         console.log(`Aplicação encerrada com código ${code}`);
         process.exit(code || 0);
     });
-}
-
-// Função para tentar executar comando com retries
-function runWithRetry(command, retries = 3, delayMs = 5000) {
-    for (let i = 0; i < retries; i++) {
-        try {
-            console.log(`📦 Prisma: ${command} (Tentativa ${i + 1}/${retries})...`);
-            execSync(command, { stdio: 'inherit', env: process.env });
-            return true;
-        } catch (error) {
-            console.error(`❌ Falha: ${error.message}`);
-            if (i < retries - 1) {
-                console.log(`⏳ Aguardando ${delayMs}ms...`);
-                const start = Date.now();
-                while (Date.now() - start < delayMs) {}
-            }
-        }
-    }
-    return false;
-}
-
-async function startMigrations() {
-    console.log("📦 Prisma: Iniciando npx prisma migrate deploy...");
-    if (!runWithRetry('npx prisma migrate deploy', 2, 8000)) {
-        console.error("❌ ERRO CRÍTICO: As migrações falharam após múltiplas tentativas.");
-        console.error("⚠️  A aplicação continuará a subir, mas pode haver inconsistências no banco.");
-        console.error("💡 Verifique os logs e tente executar as migrações manualmente.");
-    } else {
-        console.log("✅ Migrações aplicadas com sucesso.");
-    }
 }
 
 main().catch(err => {
