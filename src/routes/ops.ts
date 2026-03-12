@@ -99,30 +99,41 @@ router.get("/apply-recovery-v3", async (req, res) => {
         return res.status(403).json({ message: "Forbidden" });
     }
 
-    try {
-        const sqlPath = path.join(process.cwd(), "prisma/migrations/20260312093000_massive_recovery_v3/migration.sql");
-        
-        if (!fs.existsSync(sqlPath)) {
-            return res.status(404).json({ error: "Migration file not found", path: sqlPath });
+    const maxRetries = 3;
+    let lastError = null;
+
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            console.log(`Manual migration attempt ${i + 1}/${maxRetries}...`);
+            const sqlPath = path.join(process.cwd(), "prisma/migrations/20260312093000_massive_recovery_v3/migration.sql");
+            
+            if (!fs.existsSync(sqlPath)) {
+                return res.status(404).json({ error: "Migration file not found", path: sqlPath });
+            }
+
+            const sql = fs.readFileSync(sqlPath, "utf8");
+
+            // Split SQL into blocks if needed, but for now execute as one block
+            // executeRawUnsafe handles the connection
+            await prisma.$executeRawUnsafe(sql);
+
+            return res.json({ 
+                message: "Recovery V3 applied successfully via ExecuteRaw",
+                attempts: i + 1,
+                timestamp: new Date().toISOString()
+            });
+        } catch (err) {
+            lastError = err;
+            console.error(`Attempt ${i + 1} failed:`, err);
+            // Wait 2s before retry
+            await new Promise(r => setTimeout(r, 2000));
         }
-
-        const sql = fs.readFileSync(sqlPath, "utf8");
-
-        // Execute raw SQL block
-        // PostgreSQL allows multiple statements in one block if separated by semicolons
-        await prisma.$executeRawUnsafe(sql);
-
-        return res.json({ 
-            message: "Recovery V3 applied successfully via ExecuteRaw",
-            timestamp: new Date().toISOString()
-        });
-    } catch (err) {
-        console.error("Manual migration failed:", err);
-        return res.status(500).json({ 
-            error: "Failed to apply SQL", 
-            details: err instanceof Error ? err.message : String(err) 
-        });
     }
+
+    return res.status(500).json({ 
+        error: "Failed to apply SQL after retries", 
+        details: lastError instanceof Error ? lastError.message : String(lastError) 
+    });
 });
 
 export default router;
