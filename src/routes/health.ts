@@ -13,13 +13,34 @@ router.get('/', async (req, res) => {
         await prisma.$queryRaw`SELECT 1`;
         const dbLatency = Date.now() - startTime;
 
+        // 2. Critical Column Check (Diagnostic)
+        const columnCheck = {
+            work_deletedAt: false,
+            tenant_deletedAt: false,
+            event_deletedAt: false
+        };
+
+        try {
+            const workCols: any[] = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'Work' AND column_name = 'deletedAt'`;
+            columnCheck.work_deletedAt = workCols.length > 0;
+            
+            const tenantCols: any[] = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'Tenant' AND column_name = 'deletedAt'`;
+            columnCheck.tenant_deletedAt = tenantCols.length > 0;
+
+            const eventCols: any[] = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'Event' AND column_name = 'deletedAt'`;
+            columnCheck.event_deletedAt = eventCols.length > 0;
+        } catch (colErr) {
+            console.error('Column diagnostic failed:', colErr);
+        }
+
         res.json({
             status: 'healthy',
             timestamp: new Date().toISOString(),
             uptime: process.uptime(),
             debug: {
                 db_host: new URL(process.env.DATABASE_URL || "").hostname,
-                db_port: new URL(process.env.DATABASE_URL || "").port || "5432"
+                db_port: new URL(process.env.DATABASE_URL || "").port || "5432",
+                columns: columnCheck
             },
             services: {
                 database: {
@@ -44,6 +65,7 @@ router.get('/', async (req, res) => {
         res.status(200).json({ // FORCING 200 TO ALLOW DEPLOY
             status: 'unhealthy',
             timestamp: new Date().toISOString(),
+            error_type: error instanceof Error ? error.constructor.name : 'Unknown',
             services: {
                 database: {
                     status: 'disconnected',
