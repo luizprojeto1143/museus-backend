@@ -113,20 +113,38 @@ router.get("/apply-recovery-v3", async (req, res) => {
 
             const sql = fs.readFileSync(sqlPath, "utf8");
 
-            // Split by semicolon and filter out empty statements
-            const statements = sql
-                .split(";")
-                .map(s => s.trim())
-                .filter(s => s.length > 0);
+            // Split by semicolon but respect DO $$ blocks
+            const statements: string[] = [];
+            let currentStatement = "";
+            let inDollarBlock = false;
 
-            console.log(`Executing ${statements.length} SQL statements...`);
+            const lines = sql.split("\n");
+            for (const line of lines) {
+                currentStatement += line + "\n";
+                
+                // Toggle dollar block state if line contains $$
+                if (line.includes("$$")) {
+                    inDollarBlock = !inDollarBlock;
+                }
+
+                // If we're not inside a dollar block and the line ends with a semicolon
+                if (!inDollarBlock && line.trim().endsWith(";")) {
+                    const stmt = currentStatement.trim();
+                    if (stmt) statements.push(stmt);
+                    currentStatement = "";
+                }
+            }
+            // Add any remaining content
+            if (currentStatement.trim()) statements.push(currentStatement.trim());
+
+            console.log(`Executing ${statements.length} SQL blocks...`);
             
             for (const statement of statements) {
                 await prisma.$executeRawUnsafe(statement);
             }
 
             return res.json({ 
-                message: "Recovery V3 applied successfully statement by statement",
+                message: "Recovery V3 applied successfully with block awareness",
                 attempts: i + 1,
                 timestamp: new Date().toISOString()
             });
