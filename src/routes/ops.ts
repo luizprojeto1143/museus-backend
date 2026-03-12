@@ -54,28 +54,28 @@ router.get("/db-sync-check", async (req, res) => {
         };
 
         try {
-            await prisma.tenant.findFirst({ select: { id: true, deletedAt: true }, take: 1 });
+            await (prisma.tenant as any).findFirst({ select: { id: true, deletedAt: true } as any, take: 1 });
             checks.tenant_deletedAt = true;
         } catch (e) {
             console.error("Check failed: Tenant.deletedAt", e);
         }
 
         try {
-            await prisma.work.findFirst({ select: { id: true, deletedAt: true }, take: 1 });
+            await (prisma.work as any).findFirst({ select: { id: true, deletedAt: true } as any, take: 1 });
             checks.work_deletedAt = true;
         } catch (e) {
             console.error("Check failed: Work.deletedAt", e);
         }
 
         try {
-            await prisma.event.findFirst({ select: { id: true, deletedAt: true }, take: 1 });
+            await (prisma.event as any).findFirst({ select: { id: true, deletedAt: true } as any, take: 1 });
             checks.event_deletedAt = true;
         } catch (e) {
             console.error("Check failed: Event.deletedAt", e);
         }
 
         try {
-            await prisma.accessibilityProvider.count();
+            await (prisma as any).accessibilityProvider.count();
             checks.accessibility_provider = true;
         } catch (e) {
             console.error("Check failed: AccessibilityProvider", e);
