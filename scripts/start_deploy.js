@@ -58,17 +58,23 @@ const isSupabasePooler = urlObj.hostname.includes('pooler.supabase.com');
 
 async function resolveBestUrl() {
     console.log("🛠️ Analisando DATABASE_URL do ambiente...");
-    console.log(`📡 Original (masked): ${maskUrl(DB_URL)}`);
     
-    const finalUrl = new URL(DB_URL);
+    let urlToProcess = DB_URL;
+    // Auto-fix: Se a senha contiver '+' e no estiver encoded, o Prisma vai falhar
+    if (urlToProcess.includes('+') && !urlToProcess.includes('%2B')) {
+        console.log("⚠️  Detectado '+' na senha sem encoding. Corrigindo...");
+        urlToProcess = urlToProcess.replace(/\+/, '%2B');
+    }
+
+    const finalUrl = new URL(urlToProcess);
     
-    // Forar porta 5432 que  a que funciona localmente
-    console.log("🛠️ Forçando Porta 5432 (Session Mode) e timeouts longos...");
-    finalUrl.port = '5432';
+    // PORTA 6543  A ÚNICA QUE RESPONDE NO RENDER (via Pooler IPv4)
+    console.log("🛠️ Usando Porta 6543 (PgBouncer Mode) - Host IPv4 Resilient.");
+    finalUrl.port = '6543';
+    finalUrl.searchParams.set('pgbouncer', 'true');
     finalUrl.searchParams.set('sslmode', 'require');
     finalUrl.searchParams.set('connect_timeout', '60');
     finalUrl.searchParams.set('pool_timeout', '60');
-    finalUrl.searchParams.delete('pgbouncer'); // Session mode no aceita pgbouncer param
     
     return finalUrl.toString();
 }
