@@ -74,12 +74,13 @@ async function tryConnect(urlStr) {
 async function resolveBestUrl() {
     console.log("🛠️  Resolvendo melhor URL de banco...");
     
-    // 1. Se for Supabase Pooler, PRIORIZAR 5432 (Session Mode) por ser mais estvel no Render
+    // 1. Se for Supabase Pooler, PRIORIZAR 6543 (Transaction Mode) - provado alcanável em testes
     if (isSupabasePooler) {
-        console.log("💎 Supabase Pooler detectado. Tentando porta 5432 (Session Mode) primeiro.");
-        const sessionUrl = new URL(urlObj.toString());
-        sessionUrl.port = '5432';
-        return sessionUrl.toString();
+        console.log("💎 Supabase Pooler detectado. Usando porta 6543 (Transaction Mode).");
+        const transactionUrl = new URL(urlObj.toString());
+        transactionUrl.port = '6543';
+        transactionUrl.searchParams.set('pgbouncer', 'true');
+        return transactionUrl.toString();
     }
 
     // 2. Tentar a URL original (geralmente 5432)
