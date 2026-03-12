@@ -113,12 +113,20 @@ router.get("/apply-recovery-v3", async (req, res) => {
 
             const sql = fs.readFileSync(sqlPath, "utf8");
 
-            // Split SQL into blocks if needed, but for now execute as one block
-            // executeRawUnsafe handles the connection
-            await prisma.$executeRawUnsafe(sql);
+            // Split by semicolon and filter out empty statements
+            const statements = sql
+                .split(";")
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+
+            console.log(`Executing ${statements.length} SQL statements...`);
+            
+            for (const statement of statements) {
+                await prisma.$executeRawUnsafe(statement);
+            }
 
             return res.json({ 
-                message: "Recovery V3 applied successfully via ExecuteRaw",
+                message: "Recovery V3 applied successfully statement by statement",
                 attempts: i + 1,
                 timestamp: new Date().toISOString()
             });
