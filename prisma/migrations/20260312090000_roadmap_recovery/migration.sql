@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS "BadgeRequest" (
     CONSTRAINT "BadgeRequest_pkey" PRIMARY KEY ("id")
 );
 
--- Community, Quizzes, Routes
+-- Community, Quizzes, Routes, Conversations, Messages
 CREATE TABLE IF NOT EXISTS "CommunityPost" (
     "id" TEXT NOT NULL,
     "content" TEXT NOT NULL,
@@ -254,6 +254,68 @@ CREATE TABLE IF NOT EXISTS "RouteStop" (
     CONSTRAINT "RouteStop_pkey" PRIMARY KEY ("id")
 );
 
+CREATE TABLE IF NOT EXISTS "Conversation" (
+    "id" TEXT NOT NULL,
+    "producerId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'OPEN',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "Conversation_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "Message" (
+    "id" TEXT NOT NULL,
+    "conversationId" TEXT NOT NULL,
+    "senderId" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Message_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "WorkSubmission" (
+    "id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "imageUrl" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "userId" TEXT NOT NULL,
+    "spaceId" TEXT,
+    "reviewedBy" TEXT,
+    "reviewedAt" TIMESTAMP(3),
+    "tenantId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "WorkSubmission_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "FamilyProfile" (
+    "id" TEXT NOT NULL,
+    "familyName" TEXT NOT NULL,
+    "description" TEXT,
+    "coverImageUrl" TEXT,
+    "audioUrl" TEXT,
+    "spaceId" TEXT,
+    "tenantId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "FamilyProfile_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "FamilyEvent" (
+    "id" TEXT NOT NULL,
+    "familyProfileId" TEXT NOT NULL,
+    "year" INTEGER NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "imageUrl" TEXT,
+    "type" TEXT NOT NULL DEFAULT 'OTHER',
+    "people" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "FamilyEvent_pkey" PRIMARY KEY ("id")
+);
+
 -- Alter Tables (Add columns)
 DO $$ BEGIN
     ALTER TABLE "VisitorRPG" ADD COLUMN "selectedCharacterId" TEXT;
@@ -311,3 +373,32 @@ ALTER TABLE "AccessibilityExecution" ADD CONSTRAINT "AccessibilityExecution_proj
 
 ALTER TABLE "AccessibilityExecution" DROP CONSTRAINT IF EXISTS "AccessibilityExecution_tenantId_fkey";
 ALTER TABLE "AccessibilityExecution" ADD CONSTRAINT "AccessibilityExecution_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Conversations & Messages FKs
+ALTER TABLE "Conversation" DROP CONSTRAINT IF EXISTS "Conversation_producerId_fkey";
+ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_producerId_fkey" FOREIGN KEY ("producerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "Conversation" DROP CONSTRAINT IF EXISTS "Conversation_providerId_fkey";
+ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "AccessibilityProvider"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "Message" DROP CONSTRAINT IF EXISTS "Message_conversationId_fkey";
+ALTER TABLE "Message" ADD CONSTRAINT "Message_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- WorkSubmissions & Family
+ALTER TABLE "WorkSubmission" DROP CONSTRAINT IF EXISTS "WorkSubmission_userId_fkey";
+ALTER TABLE "WorkSubmission" ADD CONSTRAINT "WorkSubmission_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "WorkSubmission" DROP CONSTRAINT IF EXISTS "WorkSubmission_spaceId_fkey";
+ALTER TABLE "WorkSubmission" ADD CONSTRAINT "WorkSubmission_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "Space"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE "WorkSubmission" DROP CONSTRAINT IF EXISTS "WorkSubmission_tenantId_fkey";
+ALTER TABLE "WorkSubmission" ADD CONSTRAINT "WorkSubmission_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "FamilyProfile" DROP CONSTRAINT IF EXISTS "FamilyProfile_spaceId_fkey";
+ALTER TABLE "FamilyProfile" ADD CONSTRAINT "FamilyProfile_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "Space"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE "FamilyProfile" DROP CONSTRAINT IF EXISTS "FamilyProfile_tenantId_fkey";
+ALTER TABLE "FamilyProfile" ADD CONSTRAINT "FamilyProfile_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "FamilyEvent" DROP CONSTRAINT IF EXISTS "FamilyEvent_familyProfileId_fkey";
+ALTER TABLE "FamilyEvent" ADD CONSTRAINT "FamilyEvent_familyProfileId_fkey" FOREIGN KEY ("familyProfileId") REFERENCES "FamilyProfile"("id") ON DELETE CASCADE ON UPDATE CASCADE;
