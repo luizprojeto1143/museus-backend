@@ -150,6 +150,8 @@ model Tenant {
   name String
   slug String     @unique
 
+  deletedAt DateTime?
+
   // Hierarchy - Permite Cidade ter Museus/Espaços filhos
   parentId String? // ID do tenant pai (ex: Secretaria -> Museus)
   parent   Tenant?  @relation("TenantHierarchy", fields: [parentId], references: [id])
@@ -295,6 +297,7 @@ model Tenant {
   accessibilityProviders  AccessibilityProvider[]
   skins                  Skin[]
   badgeRequests          BadgeRequest[]
+  characterBases         CharacterBase[]
 
   @@index([parentId])
 }
@@ -404,6 +407,8 @@ model Work {
   artist String?
   year   String?
 
+  deletedAt DateTime?
+
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id])
 
@@ -457,6 +462,8 @@ model Trail {
   description String?
   duration    Int? // minutos
   workIds     String[] // lista de IDs de obras na ordem
+
+  deletedAt DateTime?
 
   // Media
   imageUrl String?
@@ -523,6 +530,8 @@ model Event {
   id          String  @id @default(uuid())
   title       String
   description String?
+
+  deletedAt DateTime?
 
   // Type & Workshop Logic
   type       EventType @default(OTHER)
@@ -2292,6 +2301,24 @@ model GroupTicket {
   @@index([tenantId])
 }
 
+// Base characters for visitors to choose from
+model CharacterBase {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  imageUrl    String
+  active      Boolean  @default(true)
+  tenantId    String?  // null = global character
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  visitorRPGs VisitorRPG[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
 // Visitor RPG — simple character evolution
 model VisitorRPG {
   id String @id @default(uuid())
@@ -2309,6 +2336,9 @@ model VisitorRPG {
   totalCards  Int @default(0)
 
   avatarUrl String?
+
+  selectedCharacterId String?
+  selectedCharacter   CharacterBase? @relation(fields: [selectedCharacterId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

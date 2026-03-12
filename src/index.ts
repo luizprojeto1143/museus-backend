@@ -92,6 +92,7 @@ import communityRoutes from "./routes/community.js";
 import quizRoutes from "./routes/quiz.js";
 import extraRoutes from "./routes/roadmap-extra.js";
 import familyRoutes from "./routes/roadmap-family.js";
+import charactersRoutes from "./routes/characters.js";
 import webhooksRoutes from "./routes/webhooks.js";
 import { validateEnv } from "./config/validateEnv.js";
 
@@ -260,6 +261,7 @@ app.use("/community", communityRoutes);
 app.use("/quiz", quizRoutes);
 app.use("/roadmap-extra", extraRoutes);
 app.use("/roadmap-family", familyRoutes);
+app.use("/characters", charactersRoutes);
 app.use("/webhooks", webhooksRoutes);
 
 const PORT = process.env.PORT || 3000;

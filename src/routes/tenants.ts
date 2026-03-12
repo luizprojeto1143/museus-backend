@@ -15,6 +15,7 @@ const router = Router();
 router.get("/public", limiter, async (req, res) => {
   try {
     const tenants = await prisma.tenant.findMany({
+      where: { deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -51,8 +52,8 @@ router.get("/:id/settings", softAuthMiddleware, async (req, res) => {
     // Determine if requester is authorized for all fields (Master or Admin of this tenant)
     const isAuthorized = user && (user.role === Role.MASTER || (user.role === Role.ADMIN && user.tenantId === id));
 
-    const tenant = await prisma.tenant.findUnique({
-      where: { id }
+    const tenant = await prisma.tenant.findFirst({
+      where: { id, deletedAt: null }
     });
 
     if (!tenant) {
@@ -182,6 +183,8 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
         where.parentId = String(parentId);
       }
     }
+
+    where.deletedAt = null;
 
     const tenants = await prisma.tenant.findMany({
       where,
@@ -528,32 +531,65 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
   }
 });
 
-// Delete Tenant (MASTER OR ADMIN)
-// Se for admin, só pode deletar o próprio tenant
-router.delete("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+// Delete Tenant (MASTER ONLY strictly protected)
+router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const { hard, confirm } = req.query; // ?hard=true&confirm=SLUG
     const user = req.user!;
 
-    if (user.role === Role.ADMIN && user.tenantId !== id) {
-      return res.status(403).json({ message: "Sem permissão" });
+    const tenant = await prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) return res.status(404).json({ message: "Tenant não encontrado" });
+
+    const shouldHardDelete = hard === "true";
+
+    if (shouldHardDelete) {
+      // STRICT CONFIRMATION: Must provide slug to hard delete
+      if (confirm !== tenant.slug) {
+        return res.status(400).json({ 
+          message: "Para exclusão PERMANENTE, você deve confirmar enviando o slug do museu no parâmetro ?confirm=SLUG",
+          requiredSlug: tenant.slug
+        });
+      }
+
+      // Check for impact
+      const [workCount, userCount, eventCount] = await Promise.all([
+        prisma.work.count({ where: { tenantId: id } }),
+        prisma.user.count({ where: { tenantId: id, role: { not: Role.MASTER } } }),
+        prisma.event.count({ where: { tenantId: id } })
+      ]);
+
+      if ((workCount > 0 || userCount > 0 || eventCount > 0)) {
+        console.warn(`[Tenant] Hard deleting tenant ${id} with active data: Works=${workCount}, Users=${userCount}, Events=${eventCount}`);
+      }
+
+      // 1. Delete from storage (Assets)
+      const { deleteFromStorage } = await import("./upload.js");
+      if (tenant.logoUrl) deleteFromStorage(tenant.logoUrl).catch(console.error);
+      if (tenant.coverImageUrl) deleteFromStorage(tenant.coverImageUrl).catch(console.error);
+      if (tenant.bannerUrl) deleteFromStorage(tenant.bannerUrl).catch(console.error);
+
+      // 2. Cascade delete will be handled by DB (onDelete: Cascade)
+      await prisma.tenant.delete({ where: { id } });
+      
+      console.log(`[Tenant] Hard deleted tenant ${id} and all its data by MASTER`);
+    } else {
+      // Soft Delete
+      await prisma.tenant.update({
+        where: { id },
+        data: { deletedAt: new Date() }
+      });
+      console.log(`[Tenant] Soft deleted tenant ${id}`);
     }
 
-    const oldTenant = await prisma.tenant.findUnique({ where: { id } });
-
-    // Cascate delete is handled by Database (Prisma schema)
-    await prisma.tenant.delete({
-      where: { id }
-    });
-
     await createAuditLog(
-      'DELETE',
+      shouldHardDelete ? 'HARD_DELETE' : 'SOFT_DELETE',
       'Tenant',
       id,
-      req.user!.id,
-      req.user!.email,
+      user.id,
+      user.email,
       id,
-      oldTenant,
+      tenant,
       null,
       req
     );

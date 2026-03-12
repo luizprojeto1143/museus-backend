@@ -46,16 +46,33 @@ router.get('/me', authMiddleware, async (req, res) => {
 
         if (!rpg) {
             rpg = await prisma.visitorRPG.create({
-                data: { visitorId, characterName: req.user!.name || 'Explorador', characterClass: newClass, level: newLevel, currentXp, nextLevelXp, totalVisits, totalWorks }
+                data: { 
+                  visitorId, 
+                  characterName: req.user!.name || 'Explorador', 
+                  characterClass: newClass, 
+                  level: newLevel, 
+                  currentXp, 
+                  nextLevelXp, 
+                  totalVisits, 
+                  totalWorks 
+                },
+                include: { selectedCharacter: true }
             });
         } else {
             rpg = await prisma.visitorRPG.update({
                 where: { visitorId },
-                data: { characterClass: newClass, level: newLevel, currentXp, nextLevelXp, totalVisits, totalWorks }
+                data: { characterClass: newClass, level: newLevel, currentXp, nextLevelXp, totalVisits, totalWorks },
+                include: { selectedCharacter: true }
             });
         }
 
-        res.json(rpg);
+        // Get equipped skin
+        const equippedSkin = await prisma.visitorSkin.findFirst({
+          where: { visitorId, equipped: true },
+          include: { skin: true }
+        });
+
+        res.json({ ...rpg, equippedSkin });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erro ao buscar RPG' });
@@ -131,6 +148,36 @@ router.put('/customize', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erro' });
+    }
+});
+
+router.put('/select-character', authMiddleware, async (req, res) => {
+    try {
+        const userEmail = req.user!.email;
+        const tenantId = req.user!.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+        const visitorId = visitor.id;
+
+        const { characterId } = req.body;
+        if (!characterId) return res.status(400).json({ message: 'characterId obrigatório' });
+
+        const rpg = await prisma.visitorRPG.findUnique({ where: { visitorId } });
+        if (rpg?.selectedCharacterId) {
+          return res.status(400).json({ message: 'Personagem já foi selecionado anteriormente' });
+        }
+
+        const updated = await prisma.visitorRPG.update({
+            where: { visitorId },
+            data: { selectedCharacterId: characterId },
+            include: { selectedCharacter: true }
+        });
+
+        res.json(updated);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Erro ao selecionar personagem' });
     }
 });
 

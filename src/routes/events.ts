@@ -4,6 +4,7 @@ import { authMiddleware, softAuthMiddleware, requireRole } from "../middleware/a
 import { Role } from "@prisma/client";
 import { sendCertificateEmail, generateCertificateBuffer } from "../services/email.js";
 import { z } from "zod";
+import { createAuditLog } from "./audit.js";
 import { validate } from "../middleware/validate.js";
 import { createEventSchema, updateEventSchema } from "../schemas/event.schema.js";
 
@@ -21,7 +22,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER) && user.tenantId === tenantId;
     const hasPrivilege = isMaster || isTenantAdmin;
 
-    let whereClause: import("@prisma/client").Prisma.EventWhereInput = {};
+    let whereClause: import("@prisma/client").Prisma.EventWhereInput = { deletedAt: null };
 
     // 1. Discovery Mode (Global Public Events) - ALWAYS STRICT
     if (discovery === 'true') {
@@ -94,8 +95,8 @@ router.get("/", softAuthMiddleware, async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const event = await prisma.event.findUnique({
-      where: { id },
+    const event = await prisma.event.findFirst({
+      where: { id, deletedAt: null },
       include: {
         tenant: {
           select: {
@@ -314,6 +315,12 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       }
     }
 
+    // Storage Cleanup: Delete old files if they were replaced
+    const { deleteFromStorage } = await import("./upload.js");
+    if (coverImageUrl && coverImageUrl !== existingEvent.coverImageUrl && existingEvent.coverImageUrl) deleteFromStorage(existingEvent.coverImageUrl).catch(console.error);
+    if (audioUrl && audioUrl !== existingEvent.audioUrl && existingEvent.audioUrl) deleteFromStorage(existingEvent.audioUrl).catch(console.error);
+    if (videoUrl && videoUrl !== existingEvent.videoUrl && existingEvent.videoUrl) deleteFromStorage(existingEvent.videoUrl).catch(console.error);
+
     const event = await prisma.event.update({
       where: { id },
       data: {
@@ -356,6 +363,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const { hard } = req.query;
     const user = req.user!;
 
     // IDOR Protection: Verify resource belongs to user's tenant
@@ -367,7 +375,51 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
       return res.status(404).json({ message: "Evento não encontrado" });
     }
 
-    await prisma.event.delete({ where: { id } });
+    const isMaster = user.role === Role.MASTER;
+    const shouldHardDelete = isMaster && hard === "true";
+
+    // C-01: Check for impact before deletion
+    const ticketCount = await prisma.ticket.count({ where: { eventId: id } });
+    const registrationCount = await prisma.registration.count({ where: { eventId: id } });
+
+    if (registrationCount > 0 && !shouldHardDelete) {
+      return res.status(400).json({ 
+        message: `Não é possível excluir este evento pois existem ${registrationCount} inscrições. Considere arquivar o evento em vez de excluí-lo.` 
+      });
+    }
+
+    if (shouldHardDelete) {
+      // Permanent Delete (Hard)
+      await prisma.event.delete({ where: { id } });
+
+      // Cleanup files from R2
+      const { deleteFromStorage } = await import("./upload.js");
+      if (existing.coverImageUrl) deleteFromStorage(existing.coverImageUrl).catch(console.error);
+      if (existing.audioUrl) deleteFromStorage(existing.audioUrl).catch(console.error);
+      if (existing.videoUrl) deleteFromStorage(existing.videoUrl).catch(console.error);
+      
+      console.log(`[Event] Hard deleted event ${id} by MASTER`);
+    } else {
+      // Soft Delete
+      await prisma.event.update({
+        where: { id },
+        data: { deletedAt: new Date(), status: 'CANCELED' }
+      });
+      console.log(`[Event] Soft deleted event ${id}`);
+    }
+
+    await createAuditLog(
+      shouldHardDelete ? 'HARD_DELETE' : 'SOFT_DELETE',
+      'Event',
+      id,
+      user.id,
+      user.email,
+      existing.tenantId,
+      existing,
+      null,
+      req
+    );
+
     return res.status(204).send();
   } catch (err) {
     console.error("Erro excluir evento", err);

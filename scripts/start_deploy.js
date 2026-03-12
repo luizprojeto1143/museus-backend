@@ -158,16 +158,13 @@ function runWithRetry(command, retries = 3, delayMs = 5000) {
 }
 
 async function startMigrations() {
+    console.log("📦 Prisma: Iniciando npx prisma migrate deploy...");
     if (!runWithRetry('npx prisma migrate deploy', 2, 8000)) {
-        console.log("⚠️ Deploy falhou, tentando db push...");
-        try {
-            execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit', env: process.env });
-            console.log("✅ Sincronizado via push.");
-        } catch (e) {
-            console.error("❌ Erro fatal no banco.");
-        }
+        console.error("❌ ERRO CRÍTICO: As migrações falharam após múltiplas tentativas.");
+        console.error("⚠️  A aplicação continuará a subir, mas pode haver inconsistências no banco.");
+        console.error("💡 Verifique os logs e tente executar as migrações manualmente.");
     } else {
-        console.log("✅ Migrações OK.");
+        console.log("✅ Migrações aplicadas com sucesso.");
     }
 }
 

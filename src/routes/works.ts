@@ -6,6 +6,7 @@ import { z } from "zod";
 import { validate } from "../middleware/validate.js";
 import { createWorkSchema, updateWorkSchema } from "../schemas/work.schema.js";
 import { WorkService } from "../services/work.js";
+import { createAuditLog } from "./audit.js";
 
 const router = Router();
 
@@ -23,8 +24,8 @@ router.get("/", softAuthMiddleware, async (req, res) => {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
 
-    // Default filter: Published only
-    let whereClause: any = { tenantId, published: true };
+    // Default filter: Published and not deleted
+    let whereClause: any = { tenantId, published: true, deletedAt: null };
 
     // If authenticated and authorized, allow seeing unpublished works
     if (req.user) {
@@ -68,7 +69,9 @@ router.get("/", softAuthMiddleware, async (req, res) => {
 router.get("/:id", softAuthMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const work = await prisma.work.findUnique({ where: { id } });
+    const work = await prisma.work.findFirst({ 
+      where: { id, deletedAt: null } 
+    });
 
     if (!work) {
       return res.status(404).json({ message: "Obra não encontrada" });
@@ -311,6 +314,13 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     if (data.latitude) updateData.latitude = parseFloat(data.latitude);
     if (data.longitude) updateData.longitude = parseFloat(data.longitude);
 
+    // Storage Cleanup: Delete old files if they were replaced
+    const { deleteFromStorage } = await import("./upload.js");
+    if (data.imageUrl && data.imageUrl !== existing.imageUrl && existing.imageUrl) deleteFromStorage(existing.imageUrl).catch(console.error);
+    if (data.audioUrl && data.audioUrl !== existing.audioUrl && existing.audioUrl) deleteFromStorage(existing.audioUrl).catch(console.error);
+    if (data.librasUrl && data.librasUrl !== existing.librasUrl && existing.librasUrl) deleteFromStorage(existing.librasUrl).catch(console.error);
+    if (data.videoUrl && data.videoUrl !== existing.videoUrl && existing.videoUrl) deleteFromStorage(existing.videoUrl).catch(console.error);
+
     const work = await prisma.work.update({
       where: { id },
       data: updateData
@@ -331,6 +341,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const { hard } = req.query; // ?hard=true for MASTER permanent delete
     const user = req.user!;
 
     // IDOR Protection: Verify resource belongs to user's tenant
@@ -339,21 +350,49 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
       : { id, tenantId: user.tenantId as string };
     const work = await prisma.work.findFirst({ where: whereClause });
 
-    if (work) {
-      // Delete associated QR code first
+    if (!work) return res.status(404).json({ message: "Obra não encontrada" });
+
+    const isMaster = user.role === Role.MASTER;
+    const shouldHardDelete = isMaster && hard === "true";
+
+    if (shouldHardDelete) {
+      // Permanent Delete (Hard)
+      // 1. Delete associated QR code
       await prisma.qRCode.deleteMany({
         where: { referenceId: id, type: QRType.WORK }
       });
 
+      // 2. Delete from DB
       await prisma.work.delete({ where: { id } });
 
-      // Cleanup files in background (don't block response)
+      // 3. Cleanup files from R2
       const { deleteFromStorage } = await import("./upload.js");
-      if (work.imageUrl) deleteFromStorage(work.imageUrl);
-      if (work.audioUrl) deleteFromStorage(work.audioUrl);
-      if (work.librasUrl) deleteFromStorage(work.librasUrl);
-      if (work.videoUrl) deleteFromStorage(work.videoUrl);
+      if (work.imageUrl) deleteFromStorage(work.imageUrl).catch(console.error);
+      if (work.audioUrl) deleteFromStorage(work.audioUrl).catch(console.error);
+      if (work.librasUrl) deleteFromStorage(work.librasUrl).catch(console.error);
+      if (work.videoUrl) deleteFromStorage(work.videoUrl).catch(console.error);
+      
+      console.log(`[Work] Hard deleted work ${id} by MASTER`);
+    } else {
+      // Soft Delete
+      await prisma.work.update({
+        where: { id },
+        data: { deletedAt: new Date(), published: false }
+      });
+      console.log(`[Work] Soft deleted work ${id}`);
     }
+
+    await createAuditLog(
+      shouldHardDelete ? 'HARD_DELETE' : 'SOFT_DELETE',
+      'Work',
+      id,
+      user.id,
+      user.email,
+      work.tenantId,
+      work,
+      null,
+      req
+    );
 
     return res.status(204).send();
   } catch (err) {

@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
+import { createAuditLog } from "./audit.js";
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.get("/", async (req, res) => {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
     const trails = await prisma.trail.findMany({
-      where: { tenantId },
+      where: { tenantId, deletedAt: null },
       orderBy: { createdAt: "desc" }
     });
     return res.json(trails);
@@ -28,7 +29,9 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const trail = await prisma.trail.findUnique({ where: { id } });
+    const trail = await prisma.trail.findFirst({ 
+      where: { id, deletedAt: null } 
+    });
     if (!trail) {
       return res.status(404).json({ message: "Trilha não encontrada" });
     }
@@ -201,6 +204,12 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
       videoUrl?: string;
       active?: boolean;
     };
+    // Storage Cleanup: Delete old files if they were replaced
+    const { deleteFromStorage } = await import("./upload.js");
+    if (imageUrl && imageUrl !== existing.imageUrl && existing.imageUrl) deleteFromStorage(existing.imageUrl).catch(console.error);
+    if (audioUrl && audioUrl !== existing.audioUrl && existing.audioUrl) deleteFromStorage(existing.audioUrl).catch(console.error);
+    if (videoUrl && videoUrl !== existing.videoUrl && existing.videoUrl) deleteFromStorage(existing.videoUrl).catch(console.error);
+
     const trail = await prisma.trail.update({
       where: { id },
       data: {
@@ -224,6 +233,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
     const { id } = req.params;
+    const { hard } = req.query;
     const user = req.user!;
 
     // IDOR Protection: Verify resource belongs to user's tenant
@@ -235,7 +245,51 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), as
       return res.status(404).json({ message: "Trilha não encontrada" });
     }
 
-    await prisma.trail.delete({ where: { id } });
+    const isMaster = user.role === Role.MASTER;
+    const shouldHardDelete = isMaster && hard === "true";
+
+    // C-02: Check for impact before deletion
+    const visitCount = await prisma.visitorVisit.count({ where: { trailId: id } });
+    const favoriteCount = await prisma.favorite.count({ where: { trailId: id } });
+
+    if ((visitCount > 0 || favoriteCount > 0) && !shouldHardDelete) {
+      return res.status(400).json({ 
+        message: `Não é possível excluir esta trilha pois ela já possui ${visitCount} visitas registradas e foi favoritada por ${favoriteCount} pessoas. Considere desativá-la em vez de excluí-la.` 
+      });
+    }
+
+    if (shouldHardDelete) {
+      // Permanent Delete (Hard)
+      await prisma.trail.delete({ where: { id } });
+
+      // Cleanup files from R2
+      const { deleteFromStorage } = await import("./upload.js");
+      if (existing.imageUrl) deleteFromStorage(existing.imageUrl).catch(console.error);
+      if (existing.audioUrl) deleteFromStorage(existing.audioUrl).catch(console.error);
+      if (existing.videoUrl) deleteFromStorage(existing.videoUrl).catch(console.error);
+      
+      console.log(`[Trail] Hard deleted trail ${id} by MASTER`);
+    } else {
+      // Soft Delete
+      await prisma.trail.update({
+        where: { id },
+        data: { deletedAt: new Date(), active: false }
+      });
+      console.log(`[Trail] Soft deleted trail ${id}`);
+    }
+
+    await createAuditLog(
+      shouldHardDelete ? 'HARD_DELETE' : 'SOFT_DELETE',
+      'Trail',
+      id,
+      user.id,
+      user.email,
+      existing.tenantId,
+      existing,
+      null,
+      req
+    );
+
     return res.status(204).send();
   } catch (err) {
     console.error("Erro excluir trilha", err);
