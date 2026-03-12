@@ -126,8 +126,7 @@ async function main() {
     const migrationSuccess = await startMigrations();
     
     if (!migrationSuccess) {
-        console.error("❌ ERRO CRÍTICO: Não foi possível aplicar as migrações. Abortando inicialização.");
-        process.exit(1);
+        console.warn("⚠️ AVISO: Falha nas migrações, mas continuando inicialização para permitir recuperação manual.");
     }
 
     console.log("🚀 [Render-Boost] Iniciando Aplicação...");
