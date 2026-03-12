@@ -56,28 +56,20 @@ if (!hasConnLimit) {
 // -------------------------------------------------------------------------
 const isSupabasePooler = urlObj.hostname.includes('pooler.supabase.com');
 
-async function tryConnect(urlStr) {
-    const testUrl = new URL(urlStr);
-    const host = testUrl.hostname;
-    const port = parseInt(testUrl.port || '5432');
-    
-    console.log(`📡 Testando conexo TCP com ${host}:${port}...`);
-    const success = await testConnectivity(host, port);
-    
-    if (success) {
-        console.log(`✅ Conexo TCP confirmada para ${host}:${port}`);
-        return true;
-    }
-    return false;
-}
-
 async function resolveBestUrl() {
-    console.log("🛠️ Estabilizando conexo via Porta 6543 (PgBouncer Mode)...");
-    const finalUrl = new URL(urlObj.toString());
-    finalUrl.port = '6543';
-    finalUrl.searchParams.set('pgbouncer', 'true');
+    console.log("🛠️ Analisando DATABASE_URL do ambiente...");
+    console.log(`📡 Original (masked): ${maskUrl(DB_URL)}`);
+    
+    const finalUrl = new URL(DB_URL);
+    
+    // Forar porta 5432 que  a que funciona localmente
+    console.log("🛠️ Forçando Porta 5432 (Session Mode) e timeouts longos...");
+    finalUrl.port = '5432';
     finalUrl.searchParams.set('sslmode', 'require');
     finalUrl.searchParams.set('connect_timeout', '60');
+    finalUrl.searchParams.set('pool_timeout', '60');
+    finalUrl.searchParams.delete('pgbouncer'); // Session mode no aceita pgbouncer param
+    
     return finalUrl.toString();
 }
 
