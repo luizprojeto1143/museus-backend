@@ -122,19 +122,15 @@ async function main() {
     process.env.DATABASE_URL = finalUrl;
     console.log(`🔍 URL Final Preparada: ${maskUrl(finalUrl)}`);
 
-    console.log("🛠️ Verificando esquema do banco (Síncrono)...");
-    const migrationSuccess = await startMigrations();
-    
-    if (!migrationSuccess) {
-        console.warn("⚠️ AVISO: Falha nas migrações, mas continuando inicialização para permitir recuperação manual.");
-    }
-
     console.log("🚀 [Render-Boost] Iniciando Aplicação...");
     
     const appProcess = spawn('node', ['dist/index.js'], {
         stdio: 'inherit',
         env: process.env
     });
+
+    console.log("🛠️ Verificando esquema do banco em background...");
+    startMigrations(); // Floating promise - non-blocking
 
     appProcess.on('close', (code) => {
         console.log(`Aplicação encerrada com código ${code}`);
