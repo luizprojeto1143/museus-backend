@@ -9,8 +9,8 @@ const getDatabaseUrl = () => {
       const urlObj = new URL(url.replace("postgres://", "http://").replace("postgresql://", "http://"));
       
       urlObj.searchParams.set("pgbouncer", "true");
-      urlObj.searchParams.set("connection_limit", "30");
-      urlObj.searchParams.set("pool_timeout", "60");
+      urlObj.searchParams.set("connection_limit", "50");
+      urlObj.searchParams.set("pool_timeout", "90");
 
       const finalUrl = urlObj.toString()
         .replace("http://", url.startsWith("postgresql://") ? "postgresql://" : "postgres://");
