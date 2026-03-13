@@ -23,7 +23,7 @@ const getDatabaseUrl = () => {
       // Fallback para append simples se falhar
       if (!url.includes("pgbouncer=true")) {
         const sep = url.includes("?") ? "&" : "?";
-        url += `${sep}pgbouncer=true&connection_limit=30&pool_timeout=60`;
+        url += `${sep}pgbouncer=true&connection_limit=50&pool_timeout=90`;
       }
     }
   }

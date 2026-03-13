@@ -13,7 +13,7 @@ const router = Router();
  */
 
 // List all cultural equipments (un-authenticated)
-router.get("/public", limiter, async (req, res) => {
+router.get("/public", async (req, res) => {
   try {
     const { tenantId, tipo, search } = req.query;
 

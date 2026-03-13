@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 // Global limiter: generous for general browsing
 export const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    limit: 200, // allows high-throughput for event check-ins, etc.
+    limit: 500, // allows high-throughput for event check-ins, etc.
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: {
