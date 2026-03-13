@@ -23,7 +23,7 @@ const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 const generateTokens = async (userId: string, email: string, role: Role, tenantId: string | null, tenantType: any, name?: string) => {
   // 1. Gera Access Token (JWT)
   const accessToken = jwt.sign(
-    { email, role, tenantId, type: tenantType, name },
+    { id: userId, email, role, tenantId, type: tenantType, name },
     JWT_SECRET as jwt.Secret,
     { subject: userId, expiresIn: ACCESS_TOKEN_EXPIRES_IN }
   );
@@ -88,13 +88,24 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       throw new Error(`Token generation failed: ${tokenErr.message}`);
     }
 
-    console.log(`[AUTH] Login successful for: ${email}`);
+    // Buscar o equipamento cultural do tenant (ou o primeiro do tenant)
+    let equipamentoId = null;
+    if (user.tenantId) {
+      const equip = await prisma.equipamentoCultural.findFirst({
+        where: { tenantId: user.tenantId, ativo: true },
+        orderBy: { createdAt: 'asc' }
+      });
+      equipamentoId = equip?.id || null;
+    }
+
+    console.log(`[AUTH] Login successful for: ${email}. EquipamentoId: ${equipamentoId}`);
 
     return res.json({
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       role: user.role,
       tenantId: user.tenantId,
+      equipamentoId,
       tenantType: user.tenant?.type,
       hasProviderProfile: !!user.providerProfile,
       user: {
@@ -103,6 +114,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         name: user.name,
         role: user.role,
         tenantId: user.tenantId,
+        equipamentoId,
         tenantType: user.tenant?.type,
         hasProviderProfile: !!user.providerProfile
       }
@@ -376,17 +388,25 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
 
     const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, targetTenantId, tenant.type, user.name);
 
+    // Buscar equipamentoId do novo tenant
+    const equip = await prisma.equipamentoCultural.findFirst({
+      where: { tenantId: targetTenantId, ativo: true },
+      orderBy: { createdAt: 'asc' }
+    });
+
     return res.json({
       accessToken,
       refreshToken,
       role: user.role,
       tenantId: targetTenantId,
+      equipamentoId: equip?.id || null,
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
-        tenantId: targetTenantId
+        tenantId: targetTenantId,
+        equipamentoId: equip?.id || null
       }
     });
 

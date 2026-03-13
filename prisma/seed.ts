@@ -26,6 +26,27 @@ async function main() {
         console.log("✓ Tenant já existe.");
     }
 
+    // 1.1 Criar EquipamentoCultural para o Museu Demo
+    let defaultEquipamento = await prisma.equipamentoCultural.findFirst({
+        where: { tenantId: tenant.id }
+    });
+
+    if (!defaultEquipamento) {
+        console.log("🏛️ Criando Equipamento Cultural: Galeria Principal...");
+        defaultEquipamento = await prisma.equipamentoCultural.create({
+            data: {
+                tenantId: tenant.id,
+                nome: "Galeria Principal",
+                slug: "galeria-principal",
+                tipo: "museu",
+                endereco: "Rua do Museu, 123",
+                cidade: "Cidade das Artes",
+                estado: "MG",
+                ativo: true
+            }
+        });
+    }
+
     // 2. Criar Usuário Master se não existir
     const email = "admin@museu.com";
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -331,6 +352,7 @@ async function main() {
                 data: {
                     ...work,
                     tenantId: tenant.id,
+                    equipamentoId: defaultEquipamento.id,
                     published: true
                 }
             });
@@ -339,7 +361,10 @@ async function main() {
             // UPDATE IMAGE URL even if exists
             await prisma.work.update({
                 where: { id: existingWork.id },
-                data: { imageUrl: work.imageUrl }
+                data: { 
+                    imageUrl: work.imageUrl,
+                    equipamentoId: defaultEquipamento.id 
+                }
             });
             console.log(`   ↻ [ATUALIZADO] ${work.title}`);
         }
@@ -409,6 +434,19 @@ async function main() {
             }
         });
         console.log("   ✓ Criado: Museu Municipal de Betim (filho da cidade)");
+
+        // Criar equipamento para o museu
+        await prisma.equipamentoCultural.create({
+            data: {
+                tenantId: childMuseum.id,
+                nome: "Sede Museu Betim",
+                slug: "sede-museu-betim",
+                tipo: "museu",
+                endereco: "Centro, Betim",
+                cidade: "Betim",
+                estado: "MG"
+            }
+        });
     }
 
     // Criar Centro Cultural filho
@@ -432,6 +470,19 @@ async function main() {
             }
         });
         console.log("   ✓ Criado: Centro Cultural de Betim (filho da cidade)");
+
+        // Criar equipamento para o centro cultural
+        await prisma.equipamentoCultural.create({
+            data: {
+                tenantId: childCultural.id,
+                nome: "Teatro Municipal",
+                slug: "teatro-municipal-betim",
+                tipo: "teatro",
+                endereco: "Praça Central, Betim",
+                cidade: "Betim",
+                estado: "MG"
+            }
+        });
     }
 
     // Criar admin para a cidade

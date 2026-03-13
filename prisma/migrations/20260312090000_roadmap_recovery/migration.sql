@@ -316,6 +316,24 @@ CREATE TABLE IF NOT EXISTS "FamilyEvent" (
     CONSTRAINT "FamilyEvent_pkey" PRIMARY KEY ("id")
 );
 
+-- Create VisitorRPG if not exists
+CREATE TABLE IF NOT EXISTS "VisitorRPG" (
+    "id" TEXT NOT NULL,
+    "visitorId" TEXT NOT NULL,
+    "characterName" TEXT NOT NULL DEFAULT 'Explorador',
+    "characterClass" TEXT NOT NULL DEFAULT 'NOVATO',
+    "level" INTEGER NOT NULL DEFAULT 1,
+    "currentXp" INTEGER NOT NULL DEFAULT 0,
+    "nextLevelXp" INTEGER NOT NULL DEFAULT 100,
+    "totalVisits" INTEGER NOT NULL DEFAULT 0,
+    "totalWorks" INTEGER NOT NULL DEFAULT 0,
+    "totalCards" INTEGER NOT NULL DEFAULT 0,
+    "avatarUrl" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "VisitorRPG_pkey" PRIMARY KEY ("id")
+);
+
 -- Alter Tables (Add columns)
 DO $$ BEGIN
     ALTER TABLE "VisitorRPG" ADD COLUMN "selectedCharacterId" TEXT;
