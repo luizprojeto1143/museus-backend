@@ -209,11 +209,12 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
-    // Fetch visitor ids first to avoid Prisma relation-in-groupBy limitations
-    const visitors = await prisma.visitor.findMany({ where: { tenantId }, select: { id: true } });
-    const visitorsInTenant = visitors.map(v => v.id);
+    // Optimized strategy: Filter directly by tenantId via relation
+    // instead of fetching all IDs first.
 
-    if (visitorsInTenant.length === 0) {
+    const whereTenant = { visitor: { tenantId } };
+
+    if (tenantId === "NOT_FOUND") { // Safety fallback
       return res.json({
         visitorsThisMonth: 0,
         topWorks: [],
@@ -248,40 +249,40 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       upcomingBookings
     ] = await Promise.all([
       prisma.visitorVisit.count({
-        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: startOfCurrentMonth } }
+        where: { ...whereTenant, createdAt: { gte: startOfCurrentMonth } }
       }),
       prisma.visitorVisit.count({
-        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: startOfPrevMonth, lt: startOfCurrentMonth } }
+        where: { ...whereTenant, createdAt: { gte: startOfPrevMonth, lt: startOfCurrentMonth } }
       }),
       prisma.visitorVisit.count({
-        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: sevenDaysAgo } }
+        where: { ...whereTenant, createdAt: { gte: sevenDaysAgo } }
       }),
       prisma.visitorVisit.count({
-        where: { visitorId: { in: visitorsInTenant }, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } }
+        where: { ...whereTenant, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } }
       }),
       prisma.visitorVisit.groupBy({
         by: ["workId"],
-        where: { workId: { not: null }, visitorId: { in: visitorsInTenant } },
+        where: { workId: { not: null }, ...whereTenant },
         _count: { workId: true },
         orderBy: { _count: { workId: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.groupBy({
         by: ["trailId"],
-        where: { trailId: { not: null }, visitorId: { in: visitorsInTenant } },
-        _count: { trailId: true },
-        orderBy: { _count: { trailId: "desc" } },
+        where: { trailId: { not: null }, ...whereTenant },
+        _count: { id: true }, // Count visit records instead of the field itself
+        orderBy: { _count: { id: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.groupBy({
         by: ["eventId"],
-        where: { eventId: { not: null }, visitorId: { in: visitorsInTenant } },
-        _count: { eventId: true },
-        orderBy: { _count: { eventId: "desc" } },
+        where: { eventId: { not: null }, ...whereTenant },
+        _count: { id: true },
+        orderBy: { _count: { id: "desc" } },
         take: 5
       }),
       prisma.visitorVisit.count({
-        where: { visitorId: { in: visitorsInTenant }, source: "QR" }
+        where: { ...whereTenant, source: "QR" }
       }),
       prisma.visitor.aggregate({
         where: { tenantId },
@@ -299,7 +300,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       // Source Distribution
       prisma.visitorVisit.groupBy({
         by: ["source"],
-        where: { visitorId: { in: visitorsInTenant } },
+        where: { ...whereTenant },
         _count: { id: true }
       }),
       // Optimized 7-day query using raw SQL for Postgres

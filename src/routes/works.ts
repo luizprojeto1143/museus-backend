@@ -42,6 +42,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     const [works, total] = await Promise.all([
       prisma.work.findMany({
         where: whereClause,
+        include: { category: true },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit
