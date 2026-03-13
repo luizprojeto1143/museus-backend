@@ -3,21 +3,29 @@ import { PrismaClient } from "@prisma/client";
 const getDatabaseUrl = () => {
   let url = process.env.DATABASE_URL || "";
   
-  // Se for Supabase Pooler, garante configurações otimizadas
   if (url.includes("pooler.supabase.com")) {
-    const urlObj = new URL(url);
-    
-    // Forçar pgbouncer=true se estiver usando o pooler
-    urlObj.searchParams.set("pgbouncer", "true");
-    
-    // Forçar um limite de conexões maior para evitar o timeout de 9 conexões (padrão do Prisma em ambiente com poucas vCPUs)
-    // Supabase costuma aceitar 20+ no pooler.
-    urlObj.searchParams.set("connection_limit", "20");
-    
-    // Aumentar o timeout do pool para 60 segundos (padrão é menor)
-    urlObj.searchParams.set("pool_timeout", "60");
+    try {
+      // Usar uma abordagem mais robusta para garantir os parâmetros
+      const urlObj = new URL(url.replace("postgres://", "http://").replace("postgresql://", "http://"));
+      
+      urlObj.searchParams.set("pgbouncer", "true");
+      urlObj.searchParams.set("connection_limit", "30");
+      urlObj.searchParams.set("pool_timeout", "60");
 
-    url = urlObj.toString();
+      const finalUrl = urlObj.toString()
+        .replace("http://", url.startsWith("postgresql://") ? "postgresql://" : "postgres://");
+      
+      const maskedUrl = finalUrl.replace(/:[^:@]+@/, ":****@");
+      console.log(`[PRISMA] Usando URL otimizada para Supabase: ${maskedUrl}`);
+      return finalUrl;
+    } catch (e) {
+      console.error("[PRISMA] Erro ao processar URL do banco:", e);
+      // Fallback para append simples se falhar
+      if (!url.includes("pgbouncer=true")) {
+        const sep = url.includes("?") ? "&" : "?";
+        url += `${sep}pgbouncer=true&connection_limit=30&pool_timeout=60`;
+      }
+    }
   }
   
   return url;
@@ -29,5 +37,7 @@ export const prisma = new PrismaClient({
       url: getDatabaseUrl(),
     },
   },
-  log: ['query', 'info', 'warn', 'error'],
+  log: ['error', 'warn'],
 });
+
+console.log("[PRISMA] PrismaClient inicializado.");
