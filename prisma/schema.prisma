@@ -364,6 +364,8 @@ model EquipamentoCultural {
   events           Event[]
   checkins         EquipamentoCheckin[]
   plantaUrl        String?   // imagem da planta baixa
+
+  @@index([tenantId])
 }
 
 model EquipamentoCheckin {
