@@ -14,7 +14,7 @@ const router = Router();
 router.get("/", softAuthMiddleware, async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
-    const { visibility, discovery, status } = req.query; // discovery=true ignores tenantId
+    const { visibility, discovery, status, equipamentoId } = req.query; // discovery=true ignores tenantId
 
     // Check authentication for role-based filtering
     const user = req.user;
@@ -29,6 +29,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
       whereClause.visibility = 'PUBLIC';
       whereClause.status = 'PUBLISHED';
       whereClause.startDate = { gte: new Date() }; // Upcoming only by default
+      if (equipamentoId) whereClause.equipamentoId = equipamentoId as string;
     }
     // 2. Tenant Scoped
     else {
@@ -36,6 +37,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
         return res.status(400).json({ message: "tenantId é obrigatório (ou use ?discovery=true)" });
       }
       whereClause.tenantId = tenantId;
+      if (equipamentoId) whereClause.equipamentoId = equipamentoId as string;
 
       // PRIVILEGED ACCESS (Admin/Producer seeing their own tenant)
       if (hasPrivilege) {
@@ -169,7 +171,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       // Media - Audio Guide
       audioUrl, videoUrl,
       // Space Link
-      spaceId
+      spaceId,
+      // Equipment Link
+      equipamentoId
     } = req.body;
 
     // Validate categoryId if provided
@@ -249,6 +253,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         videoUrl,
 
         spaceId: spaceId || null,
+        equipamentoId: equipamentoId || null,
 
         tenant: { connect: { id: tenantId } }
       }
@@ -291,7 +296,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       // Media - Audio Guide
       audioUrl, videoUrl,
       // Space Link
-      spaceId
+      spaceId,
+      // Equipment Link
+      equipamentoId
     } = req.body;
 
     // Validate Space and Conflicts if changed
@@ -349,7 +356,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         audioUrl,
         videoUrl,
 
-        spaceId: spaceId || undefined
+        spaceId: spaceId || undefined,
+        equipamentoId: equipamentoId !== undefined ? equipamentoId : undefined
       }
     });
 

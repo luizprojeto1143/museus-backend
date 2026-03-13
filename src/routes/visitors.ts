@@ -452,6 +452,26 @@ router.post("/visit-from-qr", async (req, res) => {
     if (qr.type === "TRAIL") trailId = qr.referenceId;
     if (qr.type === "EVENT") eventId = qr.referenceId;
 
+    // Handle Cultural Equipment Check-in
+    if (qr.type === "EQUIPAMENTO" && qr.referenceId) {
+       await prisma.equipamentoCheckin.create({
+         data: {
+           equipamentoId: qr.referenceId,
+           visitorId: visitor.id,
+           method: "qr_entrada",
+           xpGanho: qr.xpReward || 20
+         }
+       });
+       
+       return res.status(201).json({
+         message: "Check-in realizado com sucesso no equipamento!",
+         xpGained: qr.xpReward || 20,
+         type: qr.type,
+         referenceId: qr.referenceId,
+         visitorName: visitor.name
+       });
+    }
+
     // ANTI-CHEAT / XP FARMING PREVENTION 🛡️
     // Check if user visited this item in the last 10 minutes
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);

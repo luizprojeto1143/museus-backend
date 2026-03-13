@@ -10,12 +10,15 @@ const router = Router();
 // Lista trilhas por tenant
 router.get("/", async (req, res) => {
   try {
-    const tenantId = req.query.tenantId as string | undefined;
+    const { tenantId, equipamentoId } = req.query as { tenantId?: string, equipamentoId?: string };
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
+    const where: any = { tenantId, deletedAt: null };
+    if (equipamentoId) where.equipamentoId = equipamentoId;
+
     const trails = await prisma.trail.findMany({
-      where: { tenantId, deletedAt: null },
+      where,
       orderBy: { createdAt: "desc" }
     });
     return res.json(trails);
@@ -139,6 +142,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string) : user.tenantId;
+    const { equipamentoId } = req.body;
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
@@ -167,7 +171,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
         audioUrl: data.audioUrl,
         videoUrl: data.videoUrl,
         active: data.active,
-        tenantId
+        tenantId,
+        equipamentoId: equipamentoId || null
       }
     });
     return res.status(201).json(trail);

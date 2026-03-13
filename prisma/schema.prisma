@@ -20,6 +20,7 @@ enum QRType {
   EVENT
   SPACE
   TENANT // QR Code para um Museu ou Ponto Histórico
+  EQUIPAMENTO // NOVO: QR Code de entrada do equipamento cultural
   CUSTOM
 }
 
@@ -298,8 +299,87 @@ model Tenant {
   skins                  Skin[]
   badgeRequests          BadgeRequest[]
   characterBases         CharacterBase[]
+  equipamentos           EquipamentoCultural[]
 
   @@index([parentId])
+}
+
+model EquipamentoCultural {
+  id               String    @id @default(cuid())
+  tenantId         String
+ 
+  // Identidade
+  nome             String
+  slug             String    @unique  // ex: 'casa-da-cultura-betim'
+  tipo             String    // museu|teatro|biblioteca|centro_cultural|galeria|arquivo|outdoor
+  descricao        String?   @db.Text
+  missao           String?   @db.Text  // 'Sobre este espaco'
+ 
+  // Localizacao fisica
+  endereco         String
+  cidade           String
+  estado           String    @default("MG")
+  lat              Float?    // coordenadas GPS
+  lng              Float?
+  raioCheckinMetros Int      @default(50)  // raio valido para check-in GPS
+ 
+  // Identidade visual
+  fotoCapaUrl      String?
+  fotoGaleriaUrls  String[]  // ate 8 fotos do espaco
+  corPrimaria      String?   // hex — white label por espaco
+  logoUrl          String?
+ 
+  // Acesso fisico e digital
+  qrCodeEntrada    String    @unique @default(cuid())
+  qrCodeUrl        String?   // URL da imagem do QR para impressao
+  urlPublica       String?   // ex: culturaviva.betim.mg.gov.br/casa-da-cultura
+ 
+  // Funcionamento
+  horarios         Json?     // { seg:'9-17', ter:'9-17', sab:'9-13', dom:null }
+  telefone         String?
+  email            String?
+  site             String?
+ 
+  // Acessibilidade
+  acessivelCadeira Boolean  @default(false)
+  acessivelLibras  Boolean  @default(false)
+  acessivelAudio   Boolean  @default(false)
+ 
+  // Plano e limites (por equipamento)
+  planId           String?
+  maxWorks         Int       @default(50)
+  maxTrails        Int       @default(10)
+  maxEvents        Int       @default(20)
+  ativo            Boolean   @default(true)
+ 
+  // Timestamps
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+ 
+  // Relacoes
+  tenant           Tenant    @relation(fields:[tenantId], references:[id])
+  spaces           Space[]
+  works            Work[]
+  trails           Trail[]
+  events           Event[]
+  checkins         EquipamentoCheckin[]
+  plantaUrl        String?   // imagem da planta baixa
+}
+
+model EquipamentoCheckin {
+  id               String    @id @default(cuid())
+  equipamentoId    String
+  visitorId        String
+  method           String    // 'qr_entrada' | 'gps' | 'manual'
+  lat              Float?
+  lng              Float?
+  xpGanho          Int       @default(20)
+  createdAt        DateTime  @default(now())
+ 
+  equipamento      EquipamentoCultural @relation(fields: [equipamentoId], references: [id])
+  visitor          Visitor             @relation(fields: [visitorId], references: [id])
+ 
+  @@unique([equipamentoId, visitorId, createdAt])  // permite revisitas
 }
 
 model User {
@@ -436,6 +516,10 @@ model Work {
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  equipamentoId String?
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
+  sealImageUrl  String? // Imagem do carimbo/selo para o passaporte
+
   metadata Json? // Usado para traduções e outros metadados flexíveis
 
   createdAt DateTime @default(now())
@@ -477,6 +561,10 @@ model Trail {
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  equipamentoId String?
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
+  tipoPercurso  String              @default("indoor") // indoor | outdoor | hibrido
 
   visits    VisitorVisit[]
   favorites Favorite[]
@@ -597,6 +685,9 @@ model Event {
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  equipamentoId String?
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
 
   visits                    VisitorVisit[]
   attendances               EventAttendance[]
@@ -759,6 +850,7 @@ model Visitor {
   coupons                VisitorCoupon[]
   skins                  VisitorSkin[]
   badgeRequests          BadgeRequest[]
+  equipamentoCheckins    EquipamentoCheckin[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -901,6 +993,9 @@ model Space {
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  equipamentoId String?
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
 
   bookings Booking[]
   events   Event[]

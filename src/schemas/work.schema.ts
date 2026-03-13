@@ -25,7 +25,8 @@ export const createWorkSchema = z.object({
         isAccessible: z.boolean().optional(),
         order: z.number().int().optional(),
         radius: z.number().int().optional(),
-        metadata: z.any().optional()
+        metadata: z.any().optional(),
+        equipamentoId: z.string().optional().nullable()
     })
 });
 
@@ -42,6 +43,7 @@ export const searchWorksSchema = z.object({
         search: z.string().optional(),
         categoryId: z.string().uuid().optional(),
         isHighlight: z.enum(["true", "false"]).optional(),
+        equipamentoId: z.string().optional(),
         page: z.string().regex(/^\d+$/).optional(),
         limit: z.string().regex(/^\d+$/).optional()
     })

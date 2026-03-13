@@ -16,6 +16,7 @@ import { softAuthMiddleware } from "../middleware/auth.js";
 router.get("/", softAuthMiddleware, async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
+    const equipamentoId = req.query.equipamentoId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const skip = (page - 1) * limit;
@@ -26,6 +27,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
 
     // Default filter: Published and not deleted
     let whereClause: any = { tenantId, published: true, deletedAt: null };
+    if (equipamentoId) whereClause.equipamentoId = equipamentoId;
 
     // If authenticated and authorized, allow seeing unpublished works
     if (req.user) {
@@ -137,7 +139,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       imageUrl, audioUrl, librasUrl, videoUrl,
       latitude, longitude, radius,
       technique, period, medium, dimensions,
-      code // Dialer code from frontend
+      code, // Dialer code from frontend
+      equipamentoId
     } = req.body;
 
     // Check Plan Limits
@@ -180,6 +183,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         longitude: longitude ? Number(longitude) : null,
         radius: radius ? Number(radius) : 5,
         tenantId,
+        equipamentoId: equipamentoId || null,
       }
     });
 
@@ -323,7 +327,10 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 
     const work = await prisma.work.update({
       where: { id },
-      data: updateData
+      data: {
+        ...updateData,
+        equipamentoId: data.equipamentoId !== undefined ? data.equipamentoId : undefined
+      }
     });
     return res.json(work);
   } catch (err: any) {

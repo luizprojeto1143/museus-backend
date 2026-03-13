@@ -53,7 +53,7 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
       prisma.tenant.findMany({
         include: {
           _count: {
-            select: { works: true, trails: true, events: true, visitors: true }
+            select: { works: true, trails: true, events: true, visitors: true, equipamentos: true }
           }
         }
       }),
@@ -98,6 +98,7 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
       trails: t._count.trails,
       events: t._count.events,
       visitors: t._count.visitors,
+      equipamentos: t._count.equipamentos,
       visits: visitMap.get(t.id) || 0
     }));
 
@@ -121,7 +122,7 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
         where: { id: tenantId },
         include: {
           _count: {
-            select: { works: true, trails: true, events: true, visitors: true }
+            select: { works: true, trails: true, events: true, visitors: true, equipamentos: true }
           }
         }
       }),
@@ -141,6 +142,7 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
       trails: tenant._count.trails,
       events: tenant._count.events,
       visitors: tenant._count.visitors,
+      equipamentos: tenant._count.equipamentos,
       visits: visitsCount
     });
   } catch (err) {

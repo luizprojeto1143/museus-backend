@@ -16,7 +16,8 @@ const spaceSchema = z.object({
         type: z.string().optional(),
         resources: z.array(z.string()).optional(), // Array of strings
         isBookable: z.boolean().optional(),
-        imageUrl: z.string().url().optional().nullable()
+        imageUrl: z.string().url().optional().nullable(),
+        equipamentoId: z.string().optional().nullable()
     })
 });
 
@@ -24,8 +25,13 @@ const spaceSchema = z.object({
 router.get("/", authMiddleware, async (req, res) => {
     try {
         const user = req.user!;
+        const { equipamentoId } = req.query;
+
+        const where: any = { tenantId: user.tenantId as string };
+        if (equipamentoId) where.equipamentoId = equipamentoId as string;
+
         const spaces = await prisma.space.findMany({
-            where: { tenantId: user.tenantId as string },
+            where,
             orderBy: { name: "asc" }
         });
         return res.json(spaces);
@@ -69,7 +75,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
                 resources: resources ?? Prisma.DbNull,
                 isBookable: isBookable ?? true,
                 imageUrl: imageUrl ?? undefined,
-                tenantId: user.tenantId as string
+                tenantId: user.tenantId as string,
+                equipamentoId: req.body.equipamentoId || null
             }
         });
 
@@ -100,7 +107,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
                 type,
                 resources: resources ?? undefined,
                 isBookable,
-                imageUrl: imageUrl ?? undefined
+                imageUrl: imageUrl ?? undefined,
+                equipamentoId: req.body.equipamentoId !== undefined ? req.body.equipamentoId : undefined
             }
         });
 

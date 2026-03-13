@@ -63,6 +63,7 @@ import noticesRoutes from "./routes/notices.js";
 import projectsRoutes from "./routes/projects.js";
 import accessibilityExecutionRoutes from "./routes/accessibility-execution.js";
 import providersRoutes from "./routes/providers.js";
+import equipamentalRoutes from "./routes/equipamentos.js";
 
 // Governance Routes
 import plansRoutes from "./routes/plans.js";
@@ -217,6 +218,7 @@ app.use("/notices", noticesRoutes);
 app.use("/projects", projectsRoutes);
 app.use("/accessibility-execution", accessibilityExecutionRoutes);
 app.use("/providers", providersRoutes);
+app.use("/equipamentos", equipamentalRoutes);
 
 import spacesRoutes from "./routes/spaces.js";
 app.use("/spaces", spacesRoutes);

@@ -51,7 +51,8 @@ export const createEventSchema = z.object({
         minMinutesForCertificate: z.number().optional().nullable(),
         certificateRequiresSurvey: z.boolean().optional(),
         customFormSchema: z.any().optional(),
-        galleryUrls: z.any().optional()
+        galleryUrls: z.any().optional(),
+        equipamentoId: z.string().uuid().optional().nullable()
     })
 });
 
