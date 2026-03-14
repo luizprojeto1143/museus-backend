@@ -86,9 +86,9 @@ async function resolveBestUrl() {
     }
 
     finalUrl.searchParams.set('sslmode', 'require');
-    finalUrl.searchParams.set('connect_timeout', '30');
-    finalUrl.searchParams.set('pool_timeout', '90'); // 90 seconds to avoid timeouts under load
-    finalUrl.searchParams.set('connection_limit', '10');
+    finalUrl.searchParams.set('connect_timeout', '20');
+    finalUrl.searchParams.set('pool_timeout', '60');
+    finalUrl.searchParams.set('connection_limit', '1'); // Standard practice for Prisma + Transaction Pooler
     
     const preparedUrl = finalUrl.toString();
     const masked = preparedUrl.replace(/:[^:@]+@/, ":****@");
