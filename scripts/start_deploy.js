@@ -68,10 +68,16 @@ async function resolveBestUrl() {
 
     const finalUrl = new URL(urlToProcess);
     
-    // PORTA 6543  A ÚNICA QUE RESPONDE NO RENDER (via Pooler IPv4)
-    console.log("🛠️ Usando Porta 6543 (PgBouncer Mode) - Host IPv4 Resilient.");
-    finalUrl.port = '6543';
-    finalUrl.searchParams.set('pgbouncer', 'true');
+    // Use port from URL if present, otherwise default to 5432 (standard Postgres)
+    if (!finalUrl.port) {
+        finalUrl.port = '5432';
+    }
+    
+    // Configure PgBouncer if it's a Supabase pooler
+    if (urlToProcess.includes('pooler.supabase.com')) {
+        finalUrl.searchParams.set('pgbouncer', 'true');
+    }
+
     finalUrl.searchParams.set('sslmode', 'require');
     finalUrl.searchParams.set('connect_timeout', '60');
     finalUrl.searchParams.set('pool_timeout', '60');
