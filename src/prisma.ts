@@ -3,29 +3,29 @@ import { PrismaClient } from "@prisma/client";
 const getDatabaseUrl = () => {
   let url = process.env.DATABASE_URL || "";
   
-  if (url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com")) {
+  // Check if it's Supabase (direct or pooler)
+  const isSupabase = url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com");
+  
+  if (isSupabase) {
     try {
-      // Usar uma abordagem mais robusta para garantir os parâmetros
       const urlObj = new URL(url.replace("postgres://", "http://").replace("postgresql://", "http://"));
       
-      urlObj.port = "6543"; // Force Pooler Port
+      // 1. Force Port 6543 for Transaction Pooler
+      urlObj.port = "6543";
+      
+      // 2. Performance & stability params
       urlObj.searchParams.set("pgbouncer", "true");
-      urlObj.searchParams.set("connection_limit", "10");
+      urlObj.searchParams.set("connection_limit", "10"); 
       urlObj.searchParams.set("pool_timeout", "90");
+      urlObj.searchParams.set("sslmode", "require");
 
-      const finalUrl = urlObj.toString()
-        .replace("http://", url.startsWith("postgresql://") ? "postgresql://" : "postgres://");
+      const finalUrl = urlObj.toString().replace("http://", url.startsWith("postgresql://") ? "postgresql://" : "postgres://");
       
       const maskedUrl = finalUrl.replace(/:[^:@]+@/, ":****@");
-      console.log(`[PRISMA] Usando URL otimizada para Supabase: ${maskedUrl}`);
+      console.log(`🔌 [PRISMA] Using optimized Supabase Pooler (Port 6543): ${maskedUrl}`);
       return finalUrl;
     } catch (e) {
-      console.error("[PRISMA] Erro ao processar URL do banco:", e);
-      // Fallback para append simples se falhar
-      if (!url.includes("pgbouncer=true")) {
-        const sep = url.includes("?") ? "&" : "?";
-        url += `${sep}pgbouncer=true&connection_limit=50&pool_timeout=90`;
-      }
+      console.error("❌ [PRISMA] URL parsing failed, using fallback:", e);
     }
   }
   

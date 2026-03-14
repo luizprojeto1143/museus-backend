@@ -1,0 +1,33 @@
+import { Role } from "@prisma/client";
+import bcrypt from "bcrypt";
+import { createPrismaClient } from "./prisma_helper.js";
+
+const prisma = createPrismaClient();
+
+async function main() {
+    console.log("🛠️ Ensuring demo user accounts...");
+    const hashedPassword = await bcrypt.hash("123456", 10);
+    const tenant = await prisma.tenant.findFirst({ where: { slug: "museu-demo" } });
+    
+    if (!tenant) {
+        console.error("❌ Tenant 'museu-demo' not found. Please run seed first.");
+        return;
+    }
+
+    const demoEmail = "demo@museu.com";
+    await prisma.user.upsert({
+        where: { email: demoEmail },
+        update: { password: hashedPassword, role: Role.ADMIN, tenantId: tenant.id },
+        create: {
+            email: demoEmail,
+            name: "Admin Demo",
+            password: hashedPassword,
+            role: Role.ADMIN,
+            tenantId: tenant.id
+        }
+    });
+
+    console.log(`✅ User ${demoEmail} is ready.`);
+}
+
+main().catch(console.error).finally(() => prisma.$disconnect());

@@ -1,7 +1,27 @@
 import { PrismaClient, Role, CategoryType } from "@prisma/client";
 import bcrypt from "bcrypt";
 
-const prisma = new PrismaClient();
+const getOptimizedUrl = () => {
+    let url = process.env.DATABASE_URL || "";
+    if (url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com")) {
+        try {
+            const urlObj = new URL(url.replace("postgres://", "http://").replace("postgresql://", "http://"));
+            urlObj.port = "6543";
+            urlObj.searchParams.set("pgbouncer", "true");
+            urlObj.searchParams.set("connection_limit", "10");
+            urlObj.searchParams.set("pool_timeout", "90");
+            urlObj.searchParams.set("sslmode", "require");
+            return urlObj.toString().replace("http://", url.startsWith("postgresql://") ? "postgresql://" : "postgres://");
+        } catch (e) {
+            return url;
+        }
+    }
+    return url;
+};
+
+const prisma = new PrismaClient({
+    datasources: { db: { url: getOptimizedUrl() } }
+});
 
 async function main() {
     console.log("🌱 Iniciando seed...");
