@@ -7,6 +7,48 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 
 const router = Router();
+import { Socket } from "net";
+
+router.get("/test-dashboard", async (req, res) => {
+  const tenantId = '8cc9b546-7f7d-4908-a6cf-acdd7b86982b';
+  try {
+    const [count1, count2] = await Promise.all([
+      prisma.visitorVisit.count({ where: { visitor: { tenantId } } }),
+      prisma.work.count({ where: { tenantId } })
+    ]);
+    res.json({ success: true, count1, count2 });
+  } catch (e: any) {
+    res.status(500).json({ 
+      success: false, 
+      message: e.message, 
+      stack: e.stack,
+      url: (process.env.DATABASE_URL || "").replace(/:[^:@]+@/, ":****@")
+    });
+  }
+});
+
+router.get("/error-logs", async (req, res) => {
+  try {
+    const logs = await prisma.auditLog.findMany({
+      where: { action: "SERVER_ERROR" },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    res.json(logs);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/debug-env", (req, res) => {
+    res.json({
+      node_env: process.env.NODE_ENV,
+      has_db_url: !!process.env.DATABASE_URL,
+      has_jwt_secret: !!process.env.JWT_SECRET,
+      timestamp: new Date().toISOString(),
+      v: "1.2.5"
+    });
+  });
 
 // Endpoint mágico para rodar migrações em produção
 // Protegido por MASTER role para evitar abuso, mas pode ser aberto temporariamente se necessário

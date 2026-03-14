@@ -145,38 +145,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Public diagnostic routes (TEMPORARY FOR DEBUGGING)
-app.get("/ops/debug-env", (req, res) => {
-  res.json({
-    node_env: process.env.NODE_ENV,
-    cors_origin: corsOrigin,
-    has_db_url: !!process.env.DATABASE_URL,
-    has_jwt_secret: !!process.env.JWT_SECRET,
-    port: PORT,
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get("/ops/test-dashboard-queries", async (req, res) => {
-  const tenantId = '8cc9b546-7f7d-4908-a6cf-acdd7b86982b';
-  try {
-    const [count1, count2] = await Promise.all([
-      prisma.visitorVisit.count({ where: { visitor: { tenantId } } }),
-      prisma.work.count({ where: { tenantId } })
-    ]);
-    res.json({ success: true, count1, count2 });
-  } catch (e: any) {
-    res.status(500).json({ 
-      success: false, 
-      message: e.message, 
-      stack: e.stack,
-      url: process.env.DATABASE_URL?.replace(/:[^:@]+@/, ":****@")
-    });
-  }
-});
-
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.2.2" });
+  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.2.5" });
 });
 
 app.use("/auth", authRoutes);
