@@ -86,11 +86,15 @@ async function resolveBestUrl() {
     }
 
     finalUrl.searchParams.set('sslmode', 'require');
-    finalUrl.searchParams.set('connect_timeout', '60');
-    finalUrl.searchParams.set('pool_timeout', '60');
+    finalUrl.searchParams.set('connect_timeout', '30');
+    finalUrl.searchParams.set('pool_timeout', '90'); // 90 seconds to avoid timeouts under load
     finalUrl.searchParams.set('connection_limit', '10');
     
-    return finalUrl.toString();
+    const preparedUrl = finalUrl.toString();
+    const masked = preparedUrl.replace(/:[^:@]+@/, ":****@");
+    console.log(`🚀 URL Preparada: ${masked}`);
+    
+    return preparedUrl;
 }
 
 import { Socket } from 'net';
