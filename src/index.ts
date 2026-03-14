@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { prisma } from "./prisma.js";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -290,6 +291,27 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     body: sanitizedBody,
     headers: _req.headers
   });
+  
+  // Persist error to AuditLog for remote debugging
+  prisma.auditLog.create({
+    data: {
+      action: "SERVER_ERROR",
+      entity: "SYSTEM",
+      entityId: _req.path,
+      userId: (err as any).userId || null,
+      userEmail: sanitizedBody.email || null,
+      tenantId: (_req as any).tenantId || "GLOBAL",
+      oldData: { path: _req.path, method: _req.method },
+      newData: { 
+        message: err.message, 
+        stack: err.stack?.substring(0, 1000), 
+        code: err.code,
+        body: sanitizedBody
+      },
+      ipAddress: String(_req.headers['x-forwarded-for'] || _req.socket.remoteAddress || ""),
+      userAgent: _req.headers['user-agent']
+    }
+  }).catch((e: any) => console.error("Failed to log error to DB:", e));
   
   res.status(500).json({
     error: "Internal Server Error",
