@@ -8,32 +8,35 @@ import 'dotenv/config';
 export function getOptimizedDatabaseUrl(url) {
     if (!url) return url;
     
-    // Check if it's a Supabase hosted database
     if (url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com")) {
-        try {
-            // Using a safe protocol replacement for URL parsing
-            const urlObj = new URL(url.replace("postgres://", "http://").replace("postgresql://", "http://"));
-            
-            // 1. Force Transaction Pooler Port
-            urlObj.port = "6543";
-            
-            // 2. Set mandatory parameters for transaction mode
-            urlObj.searchParams.set("pgbouncer", "true");
-            urlObj.searchParams.set("connection_limit", "10"); // Keep it lean
-            urlObj.searchParams.set("pool_timeout", "90");
-            urlObj.searchParams.set("sslmode", "require");
-            
-            // Revert back to original protocol
-            const protocol = url.startsWith("postgresql://") ? "postgresql://" : "postgres://";
-            return urlObj.toString().replace("http://", protocol);
-        } catch (e) {
-            console.error("⚠️ Error optimizing DB URL:", e.message);
-            // Minimal fallback: just append if not already there
-            if (!url.includes("pgbouncer=true")) {
-                const sep = url.includes("?") ? "&" : "?";
-                return `${url}${sep}pgbouncer=true&connection_limit=10`;
+        // 1. Force Port 6543 (transactional pooler)
+        if (url.includes("@")) {
+            const parts = url.split("@");
+            const hostPart = parts[1];
+            if (hostPart.includes(":")) {
+                parts[1] = hostPart.replace(/:(\d+)/, ":6543");
+            } else {
+                const hostEnd = hostPart.indexOf("/") !== -1 ? hostPart.indexOf("/") : (hostPart.indexOf("?") !== -1 ? hostPart.indexOf("?") : hostPart.length);
+                parts[1] = hostPart.slice(0, hostEnd) + ":6543" + hostPart.slice(hostEnd);
             }
+            url = parts.join("@");
         }
+
+        // 2. Ensure mandatory query parameters
+        if (!url.includes("pgbouncer=true")) {
+            const sep = url.includes("?") ? "&" : "?";
+            url += `${sep}pgbouncer=true`;
+        }
+        if (!url.includes("connection_limit=")) {
+            url += "&connection_limit=10";
+        }
+        if (!url.includes("sslmode=")) {
+            url += "&sslmode=require";
+        }
+        if (!url.includes("pool_timeout=")) {
+            url += "&pool_timeout=90";
+        }
+        return url;
     }
     return url;
 }

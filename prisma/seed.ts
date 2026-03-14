@@ -4,16 +4,29 @@ import bcrypt from "bcrypt";
 const getOptimizedUrl = () => {
     let url = process.env.DATABASE_URL || "";
     if (url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com")) {
-        try {
-            const urlObj = new URL(url.replace("postgres://", "http://").replace("postgresql://", "http://"));
-            urlObj.port = "6543";
-            urlObj.searchParams.set("pgbouncer", "true");
-            urlObj.searchParams.set("connection_limit", "10");
-            urlObj.searchParams.set("pool_timeout", "90");
-            urlObj.searchParams.set("sslmode", "require");
-            return urlObj.toString().replace("http://", url.startsWith("postgresql://") ? "postgresql://" : "postgres://");
-        } catch (e) {
-            return url;
+        if (url.includes("@")) {
+            const parts = url.split("@");
+            const hostPart = parts[1];
+            if (hostPart.includes(":")) {
+                parts[1] = hostPart.replace(/:(\d+)/, ":6543");
+            } else {
+                const hostEnd = hostPart.indexOf("/") !== -1 ? hostPart.indexOf("/") : (hostPart.indexOf("?") !== -1 ? hostPart.indexOf("?") : hostPart.length);
+                parts[1] = hostPart.slice(0, hostEnd) + ":6543" + hostPart.slice(hostEnd);
+            }
+            url = parts.join("@");
+        }
+        if (!url.includes("pgbouncer=true")) {
+            const sep = url.includes("?") ? "&" : "?";
+            url += `${sep}pgbouncer=true`;
+        }
+        if (!url.includes("connection_limit=")) {
+            url += "&connection_limit=10";
+        }
+        if (!url.includes("sslmode=")) {
+            url += "&sslmode=require";
+        }
+        if (!url.includes("pool_timeout=")) {
+            url += "&pool_timeout=90";
         }
     }
     return url;
