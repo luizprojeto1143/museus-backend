@@ -68,19 +68,20 @@ async function resolveBestUrl() {
 
     const finalUrl = new URL(urlToProcess);
     
-    // Use port from URL if present, otherwise default to 5432 (standard Postgres)
-    if (!finalUrl.port) {
-        finalUrl.port = '5432';
-    }
-    
-    // Configure PgBouncer if it's a Supabase pooler
+    // Forçar porta 6543 se for o pooler da Supabase (Modo Transactional)
+    // Isso evita o erro 'MaxClientsInSessionMode'
     if (urlToProcess.includes('pooler.supabase.com')) {
+        console.log("🛋️  Configurando Supabase Pooler (Porta 6543, pgbouncer=true)");
+        finalUrl.port = '6543';
         finalUrl.searchParams.set('pgbouncer', 'true');
+    } else if (!finalUrl.port) {
+        finalUrl.port = '5432';
     }
 
     finalUrl.searchParams.set('sslmode', 'require');
     finalUrl.searchParams.set('connect_timeout', '60');
     finalUrl.searchParams.set('pool_timeout', '60');
+    finalUrl.searchParams.set('connection_limit', '10'); // Reduzindo limite para estresse no DB
     
     return finalUrl.toString();
 }
