@@ -81,19 +81,24 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       user.tenant?.type,
       user.name
     );
+    console.log("-> Tokens generated successfully.");
 
     console.log("-> Finding equipamento...");
     let equipamentoId = null;
-    if (user.tenantId) {
-      const equip = await prisma.equipamentoCultural.findFirst({
-        where: { tenantId: user.tenantId, ativo: true },
-        orderBy: { createdAt: 'asc' }
-      });
-      equipamentoId = equip?.id || null;
+    try {
+      if (user.tenantId) {
+        const equip = await prisma.equipamentoCultural.findFirst({
+          where: { tenantId: user.tenantId, ativo: true },
+          orderBy: { createdAt: 'asc' }
+        });
+        equipamentoId = equip?.id || null;
+        console.log(`-> Equipamento ID found: ${equipamentoId}`);
+      }
+    } catch (e: any) {
+      console.error("-> Error finding equipamento (non-fatal):", e.message);
     }
 
-    console.log(`[AUTH] Login success for: ${email}`);
-    return res.json({
+    const responseData = {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       role: user.role,
@@ -111,7 +116,9 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         tenantType: user.tenant?.type,
         hasProviderProfile: !!user.providerProfile
       }
-    });
+    };
+    console.log("-> Success! Sending response JSON...");
+    return res.json(responseData);
   } catch (err: any) {
     console.error("[AUTH] Fatal error during login:", err);
     return res.status(500).json({ 

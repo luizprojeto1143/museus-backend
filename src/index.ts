@@ -277,11 +277,18 @@ const PORT = process.env.PORT || 3000;
 // Global Error Handler
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const sanitizedBody = { ..._req.body };
+  if (sanitizedBody.password) sanitizedBody.password = "****";
+
   console.error("❌ Global Error Detail:", {
     message: err.message,
     stack: err.stack,
     name: err.name,
-    code: err.code // Prisma error codes
+    code: err.code,
+    path: _req.path,
+    method: _req.method,
+    body: sanitizedBody,
+    headers: _req.headers
   });
   
   res.status(500).json({
