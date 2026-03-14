@@ -170,7 +170,7 @@ app.get("/ops/error-logs", async (req, res) => {
 });
 
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.2.0" });
+  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.2.2" });
 });
 
 app.use("/auth", authRoutes);
