@@ -4,9 +4,10 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 
 const router = Router();
+import { Request, Response, NextFunction } from "express";
 
 // Resumo simplificado para componentes como TCE Export, etc.
-router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res: any, next: any) => {
   try {
     const user = req.user!;
     const tenantId = (req.query.tenantId as string) || user.tenantId;
@@ -38,16 +39,12 @@ router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Rol
       totalRevenue: Number(totalRevenue._sum.pricePaid || 0)
     });
   } catch (err) {
-    console.error("Erro analytics summary:", err);
-    return res.status(500).json({ 
-      message: "Erro ao carregar resumo",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    next(err);
   }
 });
 
 // Resumo geral para MASTER
-router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async (_req, res) => {
+router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async (_req: any, res: any, next: any) => {
   try {
     const [tenants, visitCounts] = await Promise.all([
       prisma.tenant.findMany({
@@ -104,16 +101,12 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
 
     return res.json(data);
   } catch (err) {
-    console.error("Erro analytics tenants:", err);
-    return res.status(500).json({ 
-      message: "Erro ao carregar analytics",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    next(err);
   }
 });
 
 // Resumo por tenant (ADMIN ou MASTER)
-router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res: any, next: any) => {
   try {
     const { tenantId } = req.params;
 
@@ -146,11 +139,7 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
       visits: visitsCount
     });
   } catch (err) {
-    console.error("Erro analytics tenant:", err);
-    return res.status(500).json({ 
-      message: "Erro ao carregar analytics",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    next(err);
   }
 });
 
@@ -195,7 +184,7 @@ router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, 
 });
 
 // Dashboard completo para Admin
-router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res: any, next: any) => {
   try {
     const { tenantId } = req.params;
     const startOfMonth = new Date();
@@ -420,11 +409,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     });
 
   } catch (err) {
-    console.error("Erro dashboard analytics:", err);
-    return res.status(500).json({ 
-      message: "Erro ao carregar dashboard",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    next(err);
   }
 });
 

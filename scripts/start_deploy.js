@@ -86,9 +86,9 @@ async function resolveBestUrl() {
     }
 
     finalUrl.searchParams.set('sslmode', 'require');
-    finalUrl.searchParams.set('connect_timeout', '20');
-    finalUrl.searchParams.set('pool_timeout', '60');
-    finalUrl.searchParams.set('connection_limit', '3'); // Slightly increased for stability under small concurrent loads
+    finalUrl.searchParams.set('connect_timeout', '30');
+    finalUrl.searchParams.set('pool_timeout', '90');
+    finalUrl.searchParams.set('connection_limit', '15'); // Increased for pooler support
     
     const preparedUrl = finalUrl.toString();
     const masked = preparedUrl.replace(/:[^:@]+@/, ":****@");
