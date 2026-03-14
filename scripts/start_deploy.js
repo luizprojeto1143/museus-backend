@@ -57,31 +57,38 @@ if (!hasConnLimit) {
 const isSupabasePooler = urlObj.hostname.includes('pooler.supabase.com');
 
 async function resolveBestUrl() {
-    console.log("🛠️ Analisando DATABASE_URL do ambiente...");
+    console.log("🛠️ Analisando DATABASE_URL e testando conectividade...");
     
     let urlToProcess = DB_URL;
-    // Auto-fix: Se a senha contiver '+' e no estiver encoded, o Prisma vai falhar
     if (urlToProcess.includes('+') && !urlToProcess.includes('%2B')) {
-        console.log("⚠️  Detectado '+' na senha sem encoding. Corrigindo...");
         urlToProcess = urlToProcess.replace(/\+/, '%2B');
     }
 
     const finalUrl = new URL(urlToProcess);
+    const host = finalUrl.hostname;
+    const originalPort = finalUrl.port || '5432';
+
+    // Testar se a porta 6543 está aberta (Pooler)
+    console.log(`📡 Testando porta 6543 em ${host}...`);
+    const is6543Open = await testConnectivity(host, 6543);
     
-    // Forçar porta 6543 se for o pooler da Supabase (Modo Transactional)
-    // Isso evita o erro 'MaxClientsInSessionMode'
-    if (urlToProcess.includes('pooler.supabase.com')) {
-        console.log("🛋️  Configurando Supabase Pooler (Porta 6543, pgbouncer=true)");
+    if (is6543Open) {
+        console.log("✅ Porta 6543 (Pooler) está acessível. Usando Modo Transactional.");
         finalUrl.port = '6543';
         finalUrl.searchParams.set('pgbouncer', 'true');
-    } else if (!finalUrl.port) {
+    } else {
+        console.log("⚠️  Porta 6543 bloqueada ou inacessível. Tentando porta 5432...");
         finalUrl.port = '5432';
+        // Se a porta 6543 falhou mas o host é "pooler.supabase.com", talvez ele responda na 5432 com pgbouncer=true
+        if (host.includes('pooler.supabase.com')) {
+            finalUrl.searchParams.set('pgbouncer', 'true');
+        }
     }
 
     finalUrl.searchParams.set('sslmode', 'require');
     finalUrl.searchParams.set('connect_timeout', '60');
     finalUrl.searchParams.set('pool_timeout', '60');
-    finalUrl.searchParams.set('connection_limit', '10'); // Reduzindo limite para estresse no DB
+    finalUrl.searchParams.set('connection_limit', '10');
     
     return finalUrl.toString();
 }

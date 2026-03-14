@@ -9,20 +9,8 @@ export function getOptimizedDatabaseUrl(url) {
     if (!url) return url;
     
     if (url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com")) {
-        // 1. Force Port 6543 (transactional pooler)
-        if (url.includes("@")) {
-            const parts = url.split("@");
-            const hostPart = parts[1];
-            if (hostPart.includes(":")) {
-                parts[1] = hostPart.replace(/:(\d+)/, ":6543");
-            } else {
-                const hostEnd = hostPart.indexOf("/") !== -1 ? hostPart.indexOf("/") : (hostPart.indexOf("?") !== -1 ? hostPart.indexOf("?") : hostPart.length);
-                parts[1] = hostPart.slice(0, hostEnd) + ":6543" + hostPart.slice(hostEnd);
-            }
-            url = parts.join("@");
-        }
-
-        // 2. Ensure mandatory query parameters
+        // Just ensure mandatory parameters, don't force port here
+        // as start_deploy.js handles the port testing
         if (!url.includes("pgbouncer=true")) {
             const sep = url.includes("?") ? "&" : "?";
             url += `${sep}pgbouncer=true`;

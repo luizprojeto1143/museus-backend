@@ -4,17 +4,7 @@ import bcrypt from "bcrypt";
 const getOptimizedUrl = () => {
     let url = process.env.DATABASE_URL || "";
     if (url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com")) {
-        if (url.includes("@")) {
-            const parts = url.split("@");
-            const hostPart = parts[1];
-            if (hostPart.includes(":")) {
-                parts[1] = hostPart.replace(/:(\d+)/, ":6543");
-            } else {
-                const hostEnd = hostPart.indexOf("/") !== -1 ? hostPart.indexOf("/") : (hostPart.indexOf("?") !== -1 ? hostPart.indexOf("?") : hostPart.length);
-                parts[1] = hostPart.slice(0, hostEnd) + ":6543" + hostPart.slice(hostEnd);
-            }
-            url = parts.join("@");
-        }
+        // Just ensure mandatory parameters
         if (!url.includes("pgbouncer=true")) {
             const sep = url.includes("?") ? "&" : "?";
             url += `${sep}pgbouncer=true`;
