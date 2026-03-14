@@ -3,11 +3,12 @@ import { PrismaClient } from "@prisma/client";
 const getDatabaseUrl = () => {
   let url = process.env.DATABASE_URL || "";
   
-  if (url.includes("pooler.supabase.com")) {
+  if (url.includes("supabase.com") || url.includes("supabase.co") || url.includes("pooler.supabase.com")) {
     try {
       // Usar uma abordagem mais robusta para garantir os parâmetros
       const urlObj = new URL(url.replace("postgres://", "http://").replace("postgresql://", "http://"));
       
+      urlObj.port = "6543"; // Force Pooler Port
       urlObj.searchParams.set("pgbouncer", "true");
       urlObj.searchParams.set("connection_limit", "10");
       urlObj.searchParams.set("pool_timeout", "90");

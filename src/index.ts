@@ -134,11 +134,12 @@ app.use(helmet({
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Log middleware (disabled for production)
-// app.use((req, res, next) => {
-//   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-//   next();
-// });
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === "production" && req.method === "OPTIONS") {
+    console.log(`[CORS DEBUG] Preflight from Origin: ${req.headers.origin} for ${req.url}`);
+  }
+  next();
+});
 
 // Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
