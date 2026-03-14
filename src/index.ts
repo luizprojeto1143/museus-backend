@@ -156,14 +156,30 @@ app.get("/ops/debug-env", (req, res) => {
   });
 });
 
-app.get("/ops/error-logs", async (req, res) => {
+app.get("/ops/test-db-port", async (req, res) => {
+  const url = process.env.DATABASE_URL || "";
   try {
-    const logs = await prisma.auditLog.findMany({
-      where: { action: "SERVER_ERROR" },
-      orderBy: { createdAt: 'desc' },
-      take: 50
-    });
-    res.json(logs);
+    const urlObj = new URL(url);
+    const host = urlObj.hostname;
+    
+    const results: Record<number, string> = {};
+    for (const port of [5432, 6543]) {
+      const start = Date.now();
+      try {
+        const socket = new (await import('net')).Socket();
+        const promise = new Promise<string>((resolve) => {
+          socket.setTimeout(2000);
+          socket.on('connect', () => { socket.destroy(); resolve('OPEN'); });
+          socket.on('timeout', () => { socket.destroy(); resolve('TIMEOUT'); });
+          socket.on('error', (e) => { socket.destroy(); resolve(`ERROR: ${e.message}`); });
+          socket.connect(port, host);
+        });
+        results[port] = await promise;
+      } catch (e: any) {
+        results[port] = `CRASH: ${e.message}`;
+      }
+    }
+    res.json({ host, results });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
