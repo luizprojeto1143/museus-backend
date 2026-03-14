@@ -157,31 +157,21 @@ app.get("/ops/debug-env", (req, res) => {
   });
 });
 
-app.get("/ops/test-db-port", async (req, res) => {
-  const url = process.env.DATABASE_URL || "";
+app.get("/ops/test-dashboard-queries", async (req, res) => {
+  const tenantId = '8cc9b546-7f7d-4908-a6cf-acdd7b86982b';
   try {
-    const urlObj = new URL(url);
-    const host = urlObj.hostname;
-    
-    const results: Record<number, string> = {};
-    for (const port of [5432, 6543]) {
-      try {
-        const socket = new Socket();
-        const promise = new Promise<string>((resolve) => {
-          socket.setTimeout(2000);
-          socket.on('connect', () => { socket.destroy(); resolve('OPEN'); });
-          socket.on('timeout', () => { socket.destroy(); resolve('TIMEOUT'); });
-          socket.on('error', (e) => { socket.destroy(); resolve(`ERROR: ${e.message}`); });
-          socket.connect(port, host);
-        });
-        results[port] = await promise;
-      } catch (e: any) {
-        results[port] = `CRASH: ${e.message}`;
-      }
-    }
-    res.json({ host, results });
+    const [count1, count2] = await Promise.all([
+      prisma.visitorVisit.count({ where: { visitor: { tenantId } } }),
+      prisma.work.count({ where: { tenantId } })
+    ]);
+    res.json({ success: true, count1, count2 });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ 
+      success: false, 
+      message: e.message, 
+      stack: e.stack,
+      url: process.env.DATABASE_URL?.replace(/:[^:@]+@/, ":****@")
+    });
   }
 });
 
