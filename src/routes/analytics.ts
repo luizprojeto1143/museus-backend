@@ -233,21 +233,11 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       });
     }
 
-    const [
-      visitorsThisMonth,
-      visitorsPrevMonth,
-      visitsLast7Days,
-      visitsPrev7Days,
-      topWorksRaw,
-      topTrailsRaw,
-      topEventsRaw,
-      totalQRScans,
-      totalXP,
-      xpByCategoryRaw,
-      sourceStatsRaw,
-      rawIntervals,
-      upcomingBookings
-    ] = await Promise.all([
+    console.log(`📊 Iniciando Dashboard para Tenant: ${tenantId}`);
+    
+    // Run queries one by one or in smaller groups to catch the specific failure
+    console.log("-> Buscando contagens de visitantes...");
+    const [visitorsThisMonth, visitorsPrevMonth, visitsLast7Days, visitsPrev7Days] = await Promise.all([
       prisma.visitorVisit.count({
         where: { ...whereTenant, createdAt: { gte: startOfCurrentMonth } }
       }),
@@ -260,6 +250,10 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       prisma.visitorVisit.count({
         where: { ...whereTenant, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } }
       }),
+    ]);
+
+    console.log("-> Buscando Top Works/Trails/Events...");
+    const [topWorksRaw, topTrailsRaw, topEventsRaw] = await Promise.all([
       prisma.visitorVisit.groupBy({
         by: ["workId"],
         where: { workId: { not: null }, ...whereTenant },
@@ -270,7 +264,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
       prisma.visitorVisit.groupBy({
         by: ["trailId"],
         where: { trailId: { not: null }, ...whereTenant },
-        _count: { id: true }, // Count visit records instead of the field itself
+        _count: { id: true },
         orderBy: { _count: { id: "desc" } },
         take: 5
       }),
@@ -281,6 +275,10 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
         orderBy: { _count: { id: "desc" } },
         take: 5
       }),
+    ]);
+
+    console.log("-> Buscando QR Scans, XP e Categorias...");
+    const [totalQRScans, totalXP, xpByCategoryRaw] = await Promise.all([
       prisma.visitorVisit.count({
         where: { ...whereTenant, source: "QR" }
       }),
@@ -288,7 +286,6 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
         where: { tenantId },
         _sum: { xp: true }
       }),
-      // XP by Category (Work Category)
       prisma.$queryRaw`
         SELECT c.name as category, SUM(vv."xpGained") as xp
         FROM "VisitorVisit" vv
@@ -297,6 +294,10 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
         WHERE w."tenantId" = ${tenantId}
         GROUP BY c.name
       ` as Promise<{ category: string, xp: bigint | null }[]>,
+    ]);
+
+    console.log("-> Buscando SourceStats, Intervalos e Bookings...");
+    const [sourceStatsRaw, rawIntervals, upcomingBookings] = await Promise.all([
       // Source Distribution
       prisma.visitorVisit.groupBy({
         by: ["source"],
@@ -328,6 +329,8 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
         take: 5
       })
     ]);
+
+    console.log("-> Processando enriquecimento de dados...");
 
     // Enrich Top Works
     const workIds = topWorksRaw.map(p => p.workId).filter((id): id is string => !!id);
