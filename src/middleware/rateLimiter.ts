@@ -14,7 +14,7 @@ export const limiter = rateLimit({
 // Strict limiter for authentication (brute-force protection)
 export const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 15, // 15 login attempts per 15 minutes
+    limit: 100, // Loosened for debugging
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: {

@@ -13,9 +13,16 @@ async function main() {
         tenantSlug: u.tenant?.slug 
     })), null, 2));
 
-    const tenants = await p.tenant.findMany();
-    console.log("\nAll Tenants:");
-    console.log(JSON.stringify(tenants.map(t => ({ id: t.id, slug: t.slug, name: t.name })), null, 2));
+    // Check active connections
+    const connections = await p.$queryRaw`SELECT count(*) FROM pg_stat_activity`;
+    console.log("Current active connections:", Number(connections[0].count));
+
+    // Check specific connections for this app
+    const appConnections = await p.$queryRaw`SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE '%prisma%'`;
+    console.log("Prisma connections:", Number(appConnections[0].count));
+
+    const tenants = await p.tenant.findMany({ select: { id: true, slug: true, name: true } });
+    console.log("All Tenants:", JSON.stringify(tenants, null, 2));
 }
 
 main().catch(console.error).finally(() => p.$disconnect());

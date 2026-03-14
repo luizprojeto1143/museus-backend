@@ -135,23 +135,28 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use((req, res, next) => {
-  if (process.env.NODE_ENV === "production" && req.method === "OPTIONS") {
-    console.log(`[CORS DEBUG] Preflight from Origin: ${req.headers.origin} for ${req.url}`);
-  }
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[REQ] ${req.method} ${req.url} ${res.statusCode} - ${duration}ms | Origin: ${req.headers.origin || 'none'}`);
+  });
   next();
 });
 
-// Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
-
-import { limiter } from "./middleware/rateLimiter.js";
-app.use(limiter);
-
-const uploadDir = process.env.UPLOAD_DIR || "uploads";
-app.use("/uploads", express.static(path.join(process.cwd(), uploadDir)));
+// Diagnostic route
+app.get("/ops/debug-env", (req, res) => {
+  res.json({
+    node_env: process.env.NODE_ENV,
+    cors_origin: corsOrigin,
+    has_db_url: !!process.env.DATABASE_URL,
+    has_jwt_secret: !!process.env.JWT_SECRET,
+    port: PORT,
+    timestamp: new Date().toISOString()
+  });
+});
 
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", env: process.env.NODE_ENV || "dev" });
+  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.2.0" });
 });
 
 app.use("/auth", authRoutes);
