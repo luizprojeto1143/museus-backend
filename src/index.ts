@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { prisma } from "./prisma.js";
 import express from "express";
+import { Socket } from "net";
 import cors from "cors";
 import helmet from "helmet";
 import path from "path";
@@ -164,9 +165,8 @@ app.get("/ops/test-db-port", async (req, res) => {
     
     const results: Record<number, string> = {};
     for (const port of [5432, 6543]) {
-      const start = Date.now();
       try {
-        const socket = new (await import('net')).Socket();
+        const socket = new Socket();
         const promise = new Promise<string>((resolve) => {
           socket.setTimeout(2000);
           socket.on('connect', () => { socket.destroy(); resolve('OPEN'); });
