@@ -144,7 +144,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Diagnostic route
+// Public diagnostic routes (TEMPORARY FOR DEBUGGING)
 app.get("/ops/debug-env", (req, res) => {
   res.json({
     node_env: process.env.NODE_ENV,
@@ -154,6 +154,19 @@ app.get("/ops/debug-env", (req, res) => {
     port: PORT,
     timestamp: new Date().toISOString()
   });
+});
+
+app.get("/ops/error-logs", async (req, res) => {
+  try {
+    const logs = await prisma.auditLog.findMany({
+      where: { action: "SERVER_ERROR" },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    res.json(logs);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get("/", (_req, res) => {
