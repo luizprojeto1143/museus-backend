@@ -407,12 +407,16 @@ router.post('/checkin', authMiddleware, requireRole(['ADMIN', 'MASTER']), async 
         // Automated Certificate Trigger
         if (!registration.event.certificateRequiresSurvey) {
             try {
+                const eventWithTenant = await prisma.event.findUnique({
+                    where: { id: registration.eventId },
+                    include: { tenant: { select: { name: true } } }
+                });
                 await sendCertificateEmail(
                     result.updated.guestEmail,
                     result.updated.guestName,
                     registration.event.title,
                     registration.event.startDate.toLocaleDateString("pt-BR"),
-                    "Museus Enterprise", // Or fetch tenant name
+                    eventWithTenant?.tenant.name || "Cultura Viva", 
                     result.updated.id.split("-")[0].toUpperCase(),
                     null, null, null
                 );

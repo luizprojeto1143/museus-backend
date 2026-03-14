@@ -570,6 +570,9 @@ model Trail {
 
   visits    VisitorVisit[]
   favorites Favorite[]
+  
+  ownerId   String?
+  owner     Visitor? @relation(fields: [ownerId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -853,6 +856,7 @@ model Visitor {
   skins                  VisitorSkin[]
   badgeRequests          BadgeRequest[]
   equipamentoCheckins    EquipamentoCheckin[]
+  trails                 Trail[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

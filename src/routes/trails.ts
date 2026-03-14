@@ -10,12 +10,20 @@ const router = Router();
 // Lista trilhas por tenant
 router.get("/", async (req, res) => {
   try {
-    const { tenantId, equipamentoId } = req.query as { tenantId?: string, equipamentoId?: string };
+    const { tenantId, equipamentoId, ownerId } = req.query as { tenantId?: string, equipamentoId?: string, ownerId?: string };
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
     const where: any = { tenantId, deletedAt: null };
     if (equipamentoId) where.equipamentoId = equipamentoId;
+    
+    // Se ownerId for passado, filtramos apenas as trilhas daquele dono (privadas)
+    // Caso contrário, mostramos as trilhas públicas (ownerId: null)
+    if (ownerId) {
+      where.ownerId = ownerId;
+    } else {
+      where.ownerId = null;
+    }
 
     const trails = await prisma.trail.findMany({
       where,
@@ -109,6 +117,9 @@ router.post("/save", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Roteiro deve ter obras." });
     }
 
+    // Link to visitor if they are the one saving
+    const ownerId = user.role === Role.VISITOR ? user.id : null;
+
     // Create the trail
     const trail = await prisma.trail.create({
       data: {
@@ -117,17 +128,10 @@ router.post("/save", authMiddleware, async (req, res) => {
         duration: Number(duration) || 0,
         workIds: workIds,
         tenantId: tenantId,
+        ownerId,
         categoryId: null, // Custom category or null
-        // We might want to mark this as "Private" or "User Generated" in the future
-        // For now, it's just a trail that shows up in their list (logic to be handled by frontend filtering or a new 'ownerId' field if necessary)
       }
     });
-
-    // Optimization: In a real app, we might associate this trail with the User so only they see it.
-    // For now, assuming it's a shared persistent route or we rely on frontend local storage for "my trails" referencing this ID.
-    // Ideally schema should have `ownerId`. 
-
-    // TODO: Future Persistence - Add ownerId to Trail model for private routes.
 
     return res.status(201).json(trail);
 
