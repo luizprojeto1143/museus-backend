@@ -41,12 +41,13 @@ router.get("/error-logs", async (req, res) => {
 });
 
 router.get("/debug-env", (req, res) => {
+    // Get the origin from the app's closure if possible, or just re-calculate
     res.json({
       node_env: process.env.NODE_ENV,
       has_db_url: !!process.env.DATABASE_URL,
       has_jwt_secret: !!process.env.JWT_SECRET,
       timestamp: new Date().toISOString(),
-      v: "1.2.5"
+      v: "1.2.6"
     });
   });
 
