@@ -8,17 +8,33 @@ const router = Router();
 
 // Schemas
 const ticketSchema = z.object({
-    name: z.string().min(1),
-    description: z.string().optional(),
-    type: z.enum(['FREE', 'PAID']),
-    price: z.number().min(0),
-    quantity: z.number().int().min(1),
-    absorbFee: z.boolean().optional(),
-    minBuy: z.number().int().min(1).optional(),
-    maxBuy: z.number().int().min(1).optional(),
-    salesStartDate: z.string().optional().nullable(),
-    salesEndDate: z.string().optional().nullable(),
-    status: z.enum(['ACTIVE', 'PAUSED', 'SOLD_OUT', 'EXPIRED']).optional()
+  name: z.string().min(1, "Nome é obrigatório"),
+  description: z.string().optional(),
+  type: z.enum(['FREE', 'PAID']),
+  price: z.any().transform(v => {
+    if (v === null || v === "" || v === undefined) return 0;
+    const n = Number(v);
+    return isNaN(n) ? 0 : n;
+  }).refine(v => v >= 0, "Preço deve ser positivo"),
+  quantity: z.any().transform(v => {
+    if (v === null || v === "" || v === undefined) return 1;
+    const n = Math.floor(Number(v));
+    return isNaN(n) ? 1 : n;
+  }).refine(v => v >= 1, "Quantidade mínima de 1"),
+  absorbFee: z.boolean().optional(),
+  minBuy: z.any().optional().transform(v => {
+    if (v === null || v === "" || v === undefined) return undefined;
+    const n = Math.floor(Number(v));
+    return isNaN(n) ? undefined : n;
+  }),
+  maxBuy: z.any().optional().transform(v => {
+    if (v === null || v === "" || v === undefined) return undefined;
+    const n = Math.floor(Number(v));
+    return isNaN(n) ? undefined : n;
+  }),
+  salesStartDate: z.string().optional().nullable(),
+  salesEndDate: z.string().optional().nullable(),
+  status: z.enum(['ACTIVE', 'PAUSED', 'SOLD_OUT', 'EXPIRED']).optional()
 });
 
 // GET /tickets - List all tickets for the authenticated user's tenant

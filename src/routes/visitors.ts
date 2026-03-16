@@ -263,7 +263,11 @@ router.post("/register", async (req, res) => {
       tenantId: z.string().min(1, "Tenant ID é obrigatório"),
       name: z.string().optional(),
       email: z.string().email("Email inválido").optional(),
-      age: z.number().int().positive().optional(),
+      age: z.any().optional().transform(v => {
+        if (v === null || v === "" || v === undefined) return undefined;
+        const n = Math.floor(Number(v));
+        return (isNaN(n) || n <= 0) ? undefined : n;
+      }),
       photoUrl: z.string().optional()
     });
 

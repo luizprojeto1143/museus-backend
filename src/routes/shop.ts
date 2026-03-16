@@ -9,14 +9,22 @@ import { Role } from '@prisma/client';
 const router = Router();
 
 const productSchema = z.object({
-    name: z.string().min(1),
-    description: z.string().optional(),
-    price: z.number().positive(),
-    imageUrl: z.string().optional(),
-    category: z.string().optional(),
-    sku: z.string().optional(),
-    stock: z.number().int().min(0).default(0),
-    active: z.boolean().default(true)
+  name: z.string().min(1, "Nome é obrigatório"),
+  description: z.string().optional(),
+  price: z.any().transform(v => {
+    if (v === null || v === "" || v === undefined) return 0;
+    const n = Number(v);
+    return isNaN(n) ? 0 : n;
+  }).refine(v => v >= 0, "Preço não pode ser negativo"),
+  imageUrl: z.string().optional(),
+  category: z.string().optional(),
+  sku: z.string().optional(),
+  stock: z.any().transform(v => {
+    if (v === null || v === "" || v === undefined) return 0;
+    const n = Math.floor(Number(v));
+    return isNaN(n) ? 0 : n;
+  }).refine(v => v >= 0, "Estoque não pode ser negativo"),
+  active: z.boolean().default(true)
 });
 
 // ============ PRODUCTS ============
@@ -68,50 +76,64 @@ router.get('/products/:id', async (req, res) => {
 
 // POST /shop/products - Create product (Admin)
 router.post('/products', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
-    try {
-        const { tenantId } = req.body;
-        const data = productSchema.parse(req.body);
-
-        const product = await prisma.product.create({
-            data: {
-                ...data,
-                tenantId
-            }
-        });
-
-        res.status(201).json(product);
-    } catch (error) {
-        console.error('Error creating product:', error);
-        res.status(500).json({ message: 'Erro ao criar produto' });
+  try {
+    const { tenantId } = req.body;
+    const result = productSchema.safeParse(req.body);
+    
+    if (!result.success) {
+      return res.status(400).json({ 
+        message: 'Erro de validação', 
+        errors: result.error.errors 
+      });
     }
+
+    const product = await prisma.product.create({
+      data: {
+        ...result.data,
+        tenantId
+      }
+    });
+
+    res.status(201).json(product);
+  } catch (error) {
+    console.error('Error creating product:', error);
+    res.status(500).json({ message: 'Erro ao criar produto' });
+  }
 });
 
 // PUT /shop/products/:id - Update product (Admin)
 router.put('/products/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
-    try {
-        const { id } = req.params;
-        const user = req.user!;
-        const data = productSchema.partial().parse(req.body);
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+    const result = productSchema.partial().safeParse(req.body);
 
-        // SECURITY: Verify product belongs to user's tenant (unless MASTER)
-        const existing = await prisma.product.findUnique({ where: { id } });
-        if (!existing) {
-            return res.status(404).json({ message: 'Produto não encontrado' });
-        }
-        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
-            return res.status(403).json({ message: 'Sem permissão para alterar este produto' });
-        }
-
-        const product = await prisma.product.update({
-            where: { id },
-            data
-        });
-
-        res.json(product);
-    } catch (error) {
-        console.error('Error updating product:', error);
-        res.status(500).json({ message: 'Erro ao atualizar produto' });
+    if (!result.success) {
+      return res.status(400).json({ 
+        message: 'Erro de validação', 
+        errors: result.error.errors 
+      });
     }
+
+    // SECURITY: Verify product belongs to user's tenant (unless MASTER)
+    const existing = await prisma.product.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+    if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+      return res.status(403).json({ message: 'Sem permissão para alterar este produto' });
+    }
+
+    const product = await prisma.product.update({
+      where: { id },
+      data: result.data
+    });
+
+    res.json(product);
+  } catch (error) {
+    console.error('Error updating product:', error);
+    res.status(500).json({ message: 'Erro ao atualizar produto' });
+  }
 });
 
 // DELETE /shop/products/:id - Delete product (Admin)
