@@ -45,9 +45,10 @@ router.get("/debug-env", (req, res) => {
     res.json({
       node_env: process.env.NODE_ENV,
       has_db_url: !!process.env.DATABASE_URL,
+      db_url: (process.env.DATABASE_URL || "").replace(/:[^:@]+@/, ":****@"),
       has_jwt_secret: !!process.env.JWT_SECRET,
       timestamp: new Date().toISOString(),
-      v: "1.2.7"
+      v: "1.2.8"
     });
   });
 
