@@ -30,7 +30,6 @@ router.get("/test-dashboard", async (req, res) => {
 router.get("/error-logs", async (req, res) => {
   try {
     const logs = await prisma.auditLog.findMany({
-      where: { action: "SERVER_ERROR" },
       orderBy: { createdAt: 'desc' },
       take: 50
     });

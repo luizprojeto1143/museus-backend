@@ -15,7 +15,7 @@ const getDatabaseUrl = () => {
       url += `${sep}pgbouncer=true`;
     }
     if (!url.includes("connection_limit=")) {
-      url += "&connection_limit=15";
+      url += "&connection_limit=2";
     }
     if (!url.includes("sslmode=")) {
       url += "&sslmode=require";
