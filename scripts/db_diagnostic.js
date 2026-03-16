@@ -13,13 +13,13 @@ async function main() {
         tenantSlug: u.tenant?.slug 
     })), null, 2));
 
-    // Check active connections
-    const connections = await p.$queryRaw`SELECT count(*) FROM pg_stat_activity`;
-    console.log("Current active connections:", Number(connections[0].count));
-
-    // Check specific connections for this app
-    const appConnections = await p.$queryRaw`SELECT count(*) FROM pg_stat_activity WHERE application_name LIKE '%prisma%'`;
-    console.log("Prisma connections:", Number(appConnections[0].count));
+    // Check RefreshToken table existence
+    try {
+        const rtCount = await p.refreshToken.count();
+        console.log("RefreshToken count:", rtCount);
+    } catch (e) {
+        console.error("❌ ERROR: RefreshToken table might be missing!", e.message);
+    }
 
     const tenants = await p.tenant.findMany({ select: { id: true, slug: true, name: true } });
     console.log("All Tenants:", JSON.stringify(tenants, null, 2));
