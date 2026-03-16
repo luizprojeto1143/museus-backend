@@ -381,10 +381,10 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
 
 // Atualiza configurações do tenant (ADMIN ou MASTER)
 router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const user = req.user!;
+  const { id } = req.params;
+  const user = req.user!;
 
+  try {
     // Se for ADMIN, só pode alterar seu próprio tenant
     if (user.role === Role.ADMIN && user.tenantId !== id) {
       return res.status(403).json({ message: "Sem permissão para alterar outro museu" });
@@ -475,6 +475,7 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
     
     // Log do erro para auditoria
     await createAuditLog(
+      'SETTINGS_UPDATE_ERROR',
       'Tenant',
       id,
       user.id,
