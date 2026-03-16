@@ -227,18 +227,30 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
     // Run queries one by one or in smaller groups to catch the specific failure
     console.log("-> Buscando contagens de visitantes...");
     const [visitorsThisMonth, visitorsPrevMonth, visitsLast7Days, visitsPrev7Days] = await Promise.all([
-      prisma.visitorVisit.count({
-        where: { ...whereTenant, createdAt: { gte: startOfCurrentMonth } }
-      }),
-      prisma.visitorVisit.count({
-        where: { ...whereTenant, createdAt: { gte: startOfPrevMonth, lt: startOfCurrentMonth } }
-      }),
-      prisma.visitorVisit.count({
-        where: { ...whereTenant, createdAt: { gte: sevenDaysAgo } }
-      }),
-      prisma.visitorVisit.count({
-        where: { ...whereTenant, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } }
-      }),
+      // Stage 1: Current Month
+      prisma.$queryRaw`
+        SELECT COUNT(*)::int as count FROM "VisitorVisit" vv
+        JOIN "Visitor" v ON vv."visitorId" = v.id
+        WHERE v."tenantId" = ${tenantId} AND vv."createdAt" >= ${startOfCurrentMonth}
+      `.then((r: any) => r[0].count),
+      // Stage 2: Prev Month
+      prisma.$queryRaw`
+        SELECT COUNT(*)::int as count FROM "VisitorVisit" vv
+        JOIN "Visitor" v ON vv."visitorId" = v.id
+        WHERE v."tenantId" = ${tenantId} AND vv."createdAt" >= ${startOfPrevMonth} AND vv."createdAt" < ${startOfCurrentMonth}
+      `.then((r: any) => r[0].count),
+      // Stage 3: Last 7 Days
+      prisma.$queryRaw`
+        SELECT COUNT(*)::int as count FROM "VisitorVisit" vv
+        JOIN "Visitor" v ON vv."visitorId" = v.id
+        WHERE v."tenantId" = ${tenantId} AND vv."createdAt" >= ${sevenDaysAgo}
+      `.then((r: any) => r[0].count),
+      // Stage 4: Prev 7 Days
+      prisma.$queryRaw`
+        SELECT COUNT(*)::int as count FROM "VisitorVisit" vv
+        JOIN "Visitor" v ON vv."visitorId" = v.id
+        WHERE v."tenantId" = ${tenantId} AND vv."createdAt" >= ${fourteenDaysAgo} AND vv."createdAt" < ${sevenDaysAgo}
+      `.then((r: any) => r[0].count),
     ]);
 
     console.log("-> Buscando Top Works/Trails/Events...");

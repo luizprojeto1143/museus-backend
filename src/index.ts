@@ -146,7 +146,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.2.5" });
+  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.3.0" });
 });
 
 app.use("/auth", authRoutes);
@@ -289,7 +289,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
       entityId: _req.path,
       userId: (err as any).userId || null,
       userEmail: sanitizedBody.email || null,
-      tenantId: (_req as any).tenantId || "GLOBAL",
+      tenantId: (_req.params.tenantId || _req.query.tenantId || (_req as any).tenantId || "8cc9b546-7f7d-4908-a6cf-acdd7b86982b"),
       oldData: { path: _req.path, method: _req.method },
       newData: { 
         message: err.message, 
