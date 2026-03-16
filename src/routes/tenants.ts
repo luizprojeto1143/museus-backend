@@ -421,7 +421,14 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       privacyPolicy: z.string().optional()
     });
 
-    const data = settingsSchema.parse(req.body);
+    const result = settingsSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ 
+        message: "Dados de configuração inválidos", 
+        errors: result.error.errors 
+      });
+    }
+    const data = result.data;
 
     const tenant = await prisma.tenant.update({
       where: { id },
@@ -457,9 +464,23 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
     return res.json(tenant);
   } catch (err) {
     console.error("Erro ao atualizar configurações:", err);
+    
+    // Log do erro para auditoria
+    await createAuditLog(
+      'Tenant',
+      id,
+      user.id,
+      user.email,
+      id,
+      null,
+      { error: err instanceof Error ? err.message : String(err), data: req.body },
+      req
+    ).catch(e => console.error("Falha ao logar erro de settings:", e));
+
     return res.status(500).json({ 
       message: "Erro ao atualizar configurações",
-      error: err instanceof Error ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
+      stack: process.env.NODE_ENV === 'development' ? (err instanceof Error ? err.stack : undefined) : undefined
     });
   }
 });
