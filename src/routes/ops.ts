@@ -58,8 +58,7 @@ router.get("/debug-env", (req, res) => {
       db_url: (process.env.DATABASE_URL || "").replace(/:[^:@]+@/, ":****@"),
       has_jwt_secret: !!process.env.JWT_SECRET,
       timestamp: new Date().toISOString(),
-      v: "1.3.0",
-      frontend_url: process.env.FRONTEND_URL
+      v: "1.3.0"
     });
   });
 
