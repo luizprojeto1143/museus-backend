@@ -404,8 +404,16 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       signatureUrl: z.string().optional(),
       certificateBackgroundUrl: z.string().optional(),
       mapImageUrl: z.string().optional(),
-      latitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : undefined),
-      longitude: z.string().or(z.number()).optional().transform(v => v ? Number(v) : undefined),
+      latitude: z.any().optional().transform(v => {
+        if (v === null || v === "" || v === undefined) return null;
+        const n = Number(v);
+        return isNaN(n) ? null : n;
+      }),
+      longitude: z.any().optional().transform(v => {
+        if (v === null || v === "" || v === undefined) return null;
+        const n = Number(v);
+        return isNaN(n) ? null : n;
+      }),
       primaryColor: z.string().optional(),
       secondaryColor: z.string().optional(),
       theme: z.string().optional(),
