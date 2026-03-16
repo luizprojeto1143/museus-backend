@@ -9,6 +9,9 @@ import { Role } from "@prisma/client";
 const router = Router();
 import { Socket } from "net";
 
+// Protect all /ops routes - MASTER ONLY
+router.use(authMiddleware, requireRole([Role.MASTER]));
+
 router.get("/test-dashboard", async (req, res) => {
   const tenantId = '8cc9b546-7f7d-4908-a6cf-acdd7b86982b';
   try {
