@@ -12,11 +12,22 @@ import { Socket } from "net";
 router.get("/test-dashboard", async (req, res) => {
   const tenantId = '8cc9b546-7f7d-4908-a6cf-acdd7b86982b';
   try {
-    const [count1, count2] = await Promise.all([
+    const results = await Promise.all([
       prisma.visitorVisit.count({ where: { visitor: { tenantId } } }),
       prisma.work.count({ where: { tenantId } })
     ]);
-    res.json({ success: true, count1, count2 });
+    // Test WRITE to AuditLog
+    await prisma.auditLog.create({
+      data: {
+        action: 'DIAGNOSTIC_TEST',
+        entity: 'SYSTEM',
+        entityId: 'test-dashboard',
+        tenantId: '8cc9b546-7f7d-4908-a6cf-acdd7b86982b',
+        newData: { timestamp: new Date().toISOString(), v: '1.3.0' }
+      }
+    });
+
+    res.json({ success: true, count1: results[0], count2: results[1], logged: true });
   } catch (e: any) {
     res.status(500).json({ 
       success: false, 
