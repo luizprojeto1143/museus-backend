@@ -104,6 +104,10 @@ router.get("/:id/settings", softAuthMiddleware, async (req, res) => {
       mission: tenant.mission,
       address: tenant.address,
       openingHours: tenant.openingHours,
+      bannerUrl: tenant.bannerUrl,
+      coverImageUrl: tenant.coverImageUrl,
+      appIconUrl: tenant.appIconUrl,
+      frameUrl: tenant.frameUrl,
       whatsapp: tenant.whatsapp,
       email: tenant.email,
       website: tenant.website
@@ -410,6 +414,7 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       // Welcome Audio/Video
       welcomeAudioUrl: z.string().optional().nullable(),
       welcomeVideoUrl: z.string().optional().nullable(),
+      frameUrl: z.string().optional().nullable(),
 
       // Legal
       termsOfUse: z.string().optional(),
@@ -443,6 +448,7 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         name: data.name,
         welcomeAudioUrl: data.welcomeAudioUrl,
         welcomeVideoUrl: data.welcomeVideoUrl,
+        frameUrl: data.frameUrl,
         termsOfUse: data.termsOfUse,
         privacyPolicy: data.privacyPolicy
       }

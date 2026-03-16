@@ -181,6 +181,7 @@ model Tenant {
   bannerUrl                String?
   signatureUrl             String? // Assinatura do responsável para certificados
   certificateBackgroundUrl String? // Imagem de fundo personalizada para certificados (A4 Paisagem)
+  frameUrl                 String? // Moldura personalizada para as telas do tenant
 
   mapImageUrl String?
   latitude    Float?
