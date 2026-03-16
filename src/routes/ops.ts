@@ -47,7 +47,7 @@ router.get("/debug-env", (req, res) => {
       has_db_url: !!process.env.DATABASE_URL,
       has_jwt_secret: !!process.env.JWT_SECRET,
       timestamp: new Date().toISOString(),
-      v: "1.2.6"
+      v: "1.2.7"
     });
   });
 

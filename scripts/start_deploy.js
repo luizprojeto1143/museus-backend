@@ -77,9 +77,18 @@ async function resolveBestUrl() {
         finalUrl.port = '6543';
         finalUrl.searchParams.set('pgbouncer', 'true');
     } else {
-        console.log("⚠️  Porta 6543 bloqueada ou inacessível. Tentando porta 5432...");
-        finalUrl.port = '5432';
-        // Se a porta 6543 falhou mas o host é "pooler.supabase.com", talvez ele responda na 5432 com pgbouncer=true
+        console.log("📡 Testando porta 5432 em " + host + "...");
+        const is5432Open = await testConnectivity(host, 5432);
+        
+        if (is5432Open) {
+            console.log("✅ Porta 5432 está acessível.");
+            finalUrl.port = '5432';
+        } else {
+            console.log("⚠️ Ambas as portas (6543, 5432) falharam no teste rápido. Mantendo porta original: " + originalPort);
+            finalUrl.port = originalPort;
+        }
+        
+        // Se o host é um pooler, tentamos pgbouncer independentemente da porta se estivermos forçados a ele
         if (host.includes('pooler.supabase.com')) {
             finalUrl.searchParams.set('pgbouncer', 'true');
         }
@@ -101,7 +110,7 @@ import { Socket } from 'net';
 function testConnectivity(host, port) {
     return new Promise((resolve) => {
         const socket = new Socket();
-        const timeout = 3000; // 3s para teste rpido
+        const timeout = 5000; // Increased to 5s for slower network environments like Render
         socket.setTimeout(timeout);
         socket.on('connect', () => { socket.destroy(); resolve(true); });
         socket.on('timeout', () => { socket.destroy(); resolve(false); });
