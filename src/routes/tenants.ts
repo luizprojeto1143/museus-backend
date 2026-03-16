@@ -391,19 +391,24 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
     }
 
     const settingsSchema = z.object({
-      mission: z.string().optional(),
-      address: z.string().optional(),
-      openingHours: z.string().optional(),
-      whatsapp: z.string().optional(),
-      email: z.string().email().optional().or(z.literal('')),
-      website: z.string().url().optional().or(z.literal('')),
-      logoUrl: z.string().optional(),
-      coverImageUrl: z.string().optional(),
-      appIconUrl: z.string().optional(),
-      bannerUrl: z.string().optional(),
-      signatureUrl: z.string().optional(),
-      certificateBackgroundUrl: z.string().optional(),
-      mapImageUrl: z.string().optional(),
+      mission: z.string().nullable().optional(),
+      address: z.string().nullable().optional(),
+      openingHours: z.string().nullable().optional(),
+      whatsapp: z.string().nullable().optional(),
+      email: z.preprocess(v => (v === "" || v === null) ? null : v, z.string().email().nullable().optional()),
+      website: z.preprocess(v => {
+        if (v === "" || v === null) return null;
+        let s = String(v);
+        if (!s.startsWith('http')) s = `https://${s}`;
+        return s;
+      }, z.string().url().nullable().optional()),
+      logoUrl: z.string().nullable().optional(),
+      coverImageUrl: z.string().nullable().optional(),
+      appIconUrl: z.string().nullable().optional(),
+      bannerUrl: z.string().nullable().optional(),
+      signatureUrl: z.string().nullable().optional(),
+      certificateBackgroundUrl: z.string().nullable().optional(),
+      mapImageUrl: z.string().nullable().optional(),
       latitude: z.any().optional().transform(v => {
         if (v === null || v === "" || v === undefined) return null;
         const n = Number(v);
@@ -417,7 +422,11 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       primaryColor: z.string().optional(),
       secondaryColor: z.string().optional(),
       theme: z.string().optional(),
-      historicalFont: z.boolean().or(z.string().transform(v => v === 'true')).optional(),
+      historicalFont: z.any().optional().transform(v => {
+        if (v === 'true' || v === true) return true;
+        if (v === 'false' || v === false) return false;
+        return false;
+      }),
       name: z.string().optional(),
       // Welcome Audio/Video
       welcomeAudioUrl: z.string().optional().nullable(),
@@ -425,8 +434,8 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
       frameUrl: z.string().optional().nullable(),
 
       // Legal
-      termsOfUse: z.string().optional(),
-      privacyPolicy: z.string().optional()
+      termsOfUse: z.string().nullable().optional(),
+      privacyPolicy: z.string().nullable().optional()
     });
 
     const result = settingsSchema.safeParse(req.body);
