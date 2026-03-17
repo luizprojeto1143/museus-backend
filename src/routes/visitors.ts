@@ -112,7 +112,6 @@ router.get("/me/summary", async (req, res) => {
     });
 
     if (!visitor) {
-      // Retorna 200 com dados zerados em vez de 404 para nao quebrar o front se for novo
       return res.json({
         xp: 0,
         stamps: [],
@@ -124,7 +123,6 @@ router.get("/me/summary", async (req, res) => {
       });
     }
 
-    // Format stamps with work info
     const stamps = visitor.stamps.map(s => ({
       workId: s.work?.id,
       workTitle: s.work?.title || "Obra",
@@ -132,7 +130,6 @@ router.get("/me/summary", async (req, res) => {
       date: s.stampedAt
     }));
 
-    // Format visits with work info
     const visits = visitor.visits
       .filter(v => v.work)
       .map(v => ({
@@ -145,6 +142,17 @@ router.get("/me/summary", async (req, res) => {
         createdAt: v.createdAt,
         xpGained: v.xpGained
       }));
+
+    let currentXp = visitor.xp;
+    let level = 1;
+    let nextLevelXpThreshold = 100;
+    let tempXp = currentXp;
+
+    while (tempXp >= nextLevelXpThreshold) {
+      tempXp -= nextLevelXpThreshold;
+      level += 1;
+      nextLevelXpThreshold = Math.floor(nextLevelXpThreshold * 1.3);
+    }
 
     return res.json({
       id: visitor.id,
@@ -161,8 +169,8 @@ router.get("/me/summary", async (req, res) => {
         unlockedAt: va.unlockedAt
       })),
       visitsCount: visitor.visits.length,
-      level: Math.floor(visitor.xp / 100) + 1,
-      nextLevelXp: (Math.floor(visitor.xp / 100) + 1) * 100
+      level: level,
+      nextLevelXp: nextLevelXpThreshold
     });
   } catch (err) {
     console.error("Erro me summary:", err);
@@ -170,6 +178,40 @@ router.get("/me/summary", async (req, res) => {
       message: "Erro ao buscar resumo",
       error: err instanceof Error ? err.message : String(err)
     });
+  }
+});
+
+// Retorna carimbos do visitante logado
+router.get("/stamps", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = user.tenantId;
+    const email = user.email;
+
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: email.toLowerCase(), tenantId },
+      include: {
+        stamps: {
+          include: { work: { select: { id: true, title: true, imageUrl: true } } },
+          orderBy: { stampedAt: "desc" }
+        }
+      }
+    });
+
+    if (!visitor) return res.json([]);
+
+    const formatted = visitor.stamps.map(s => ({
+      workId: s.work?.id,
+      name: s.work?.title || "Obra",
+      icon: "🏛️", // Default icon for stamps
+      imageUrl: s.work?.imageUrl,
+      date: s.stampedAt
+    }));
+
+    return res.json(formatted);
+  } catch (err) {
+    console.error("Erro GET /stamps:", err);
+    return res.status(500).json([]);
   }
 });
 

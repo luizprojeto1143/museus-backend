@@ -858,6 +858,7 @@ model Visitor {
   badgeRequests          BadgeRequest[]
   equipamentoCheckins    EquipamentoCheckin[]
   trails                 Trail[]
+  rpg                    VisitorRPG?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2426,6 +2427,7 @@ model VisitorRPG {
   id String @id @default(uuid())
 
   visitorId String @unique
+  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
 
   characterName  String @default("Explorador")
   characterClass String @default("NOVATO") // NOVATO, APRENDIZ, MESTRE, LENDA
