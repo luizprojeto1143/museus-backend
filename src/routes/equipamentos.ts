@@ -71,7 +71,10 @@ router.get("/public/:identifier", async (req, res) => {
           select: {
             name: true,
             logoUrl: true,
-            primaryColor: true
+            primaryColor: true,
+            secondaryColor: true,
+            theme: true,
+            historicalFont: true
           }
         }
       }

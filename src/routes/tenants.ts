@@ -110,7 +110,8 @@ router.get("/:id/settings", softAuthMiddleware, async (req, res) => {
       frameUrl: tenant.frameUrl,
       whatsapp: tenant.whatsapp,
       email: tenant.email,
-      website: tenant.website
+      website: tenant.website,
+      theme: tenant.theme
     };
 
     return res.json(publicSettings);
