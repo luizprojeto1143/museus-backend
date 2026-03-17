@@ -138,7 +138,7 @@ async function main() {
     try {
         console.log("🛠️ Sincronizando esquema do banco de dados (Prisma DB Push)...");
         // We use a timeout to prevent hanging the entire deploy if DB push is stuck
-        execSync('npx prisma db push --accept-data-loss', { 
+        execSync('npx prisma db push --accept-data-loss --skip-generate', { 
             stdio: 'inherit',
             timeout: 60000, // 1 minute timeout for db push
             env: { ...process.env, DATABASE_URL: finalDirectUrl }
