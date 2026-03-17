@@ -188,10 +188,13 @@ router.get("/stamps", authMiddleware, async (req, res) => {
     const tenantId = user.tenantId;
     const email = user.email;
 
-    if (!email) return res.json([]);
+    if (!email || !tenantId) return res.json([]);
 
     const visitor = await prisma.visitor.findFirst({
-      where: { email: email.toLowerCase(), tenantId },
+      where: { 
+        email: email.toLowerCase() as string, 
+        tenantId: tenantId as string 
+      },
       include: {
         stamps: {
           include: { work: { select: { id: true, title: true, imageUrl: true } } },
@@ -229,7 +232,10 @@ router.get("/me", authMiddleware, async (req, res) => {
     }
 
     const visitor = await prisma.visitor.findFirst({
-      where: { email: email.toLowerCase() as string, tenantId }
+      where: { 
+        email: email.toLowerCase() as string, 
+        tenantId: tenantId as string 
+      }
     });
 
     if (!visitor) {
