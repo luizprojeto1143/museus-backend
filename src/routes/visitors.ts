@@ -188,6 +188,8 @@ router.get("/stamps", authMiddleware, async (req, res) => {
     const tenantId = user.tenantId;
     const email = user.email;
 
+    if (!email) return res.json([]);
+
     const visitor = await prisma.visitor.findFirst({
       where: { email: email.toLowerCase(), tenantId },
       include: {
@@ -198,9 +200,9 @@ router.get("/stamps", authMiddleware, async (req, res) => {
       }
     });
 
-    if (!visitor) return res.json([]);
+    if (!visitor || !('stamps' in visitor)) return res.json([]);
 
-    const formatted = visitor.stamps.map(s => ({
+    const formatted = (visitor as any).stamps.map((s: any) => ({
       workId: s.work?.id,
       name: s.work?.title || "Obra",
       icon: "🏛️", // Default icon for stamps
@@ -227,7 +229,7 @@ router.get("/me", authMiddleware, async (req, res) => {
     }
 
     const visitor = await prisma.visitor.findFirst({
-      where: { email: email.toLowerCase(), tenantId }
+      where: { email: email.toLowerCase() as string, tenantId }
     });
 
     if (!visitor) {
