@@ -341,6 +341,54 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
 
     const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, user.tenantId, null, user.name);
 
+    // S-07: Grant welcome skin for new visitors
+    try {
+      if (userRole === Role.VISITOR) {
+        // Ensure visitor record exists (usually created by profile logic, but we need it now)
+        let visitor = await prisma.visitor.findFirst({
+          where: { email: user.email.toLowerCase(), tenantId: newTenantId }
+        });
+
+        if (!visitor) {
+          visitor = await prisma.visitor.create({
+            data: { 
+              name: user.name, 
+              email: user.email.toLowerCase(), 
+              tenantId: newTenantId || '', // fallback to empty if null (shouldn't happen for visitor)
+              xp: 0
+            }
+          });
+        }
+
+        const welcomeSkin = await prisma.skin.findFirst({
+          where: {
+            active: true,
+            xpCost: 0,
+            OR: [
+              { tenantId: null },
+              { tenantId: newTenantId }
+            ]
+          }
+        });
+
+        if (welcomeSkin && visitor) {
+          await prisma.visitorSkin.upsert({
+            where: {
+              visitorId_skinId: { visitorId: visitor.id, skinId: welcomeSkin.id }
+            },
+            update: {},
+            create: {
+              visitorId: visitor.id,
+              skinId: welcomeSkin.id,
+              equipped: true // Automatically equip the first skin
+            }
+          });
+        }
+      }
+    } catch (skinErr) {
+      console.error("[AUTH] Failed to grant welcome skin:", skinErr);
+    }
+
     return res.status(201).json({
       accessToken,
       refreshToken,

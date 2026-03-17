@@ -54,4 +54,44 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+// MASTER: Update a base character
+router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, imageUrl, tenantId, active } = req.body;
+
+    const character = await prisma.characterBase.update({
+      where: { id },
+      data: {
+        name,
+        description,
+        imageUrl,
+        tenantId: tenantId || null,
+        active: active !== undefined ? active : true
+      }
+    });
+
+    res.json(character);
+  } catch (err) {
+    console.error("Erro ao atualizar personagem base:", err);
+    res.status(500).json({ message: "Erro ao atualizar personagem base" });
+  }
+});
+
+// MASTER: Delete a base character
+router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await prisma.characterBase.delete({
+      where: { id }
+    });
+
+    res.status(204).send();
+  } catch (err) {
+    console.error("Erro ao excluir personagem base:", err);
+    res.status(500).json({ message: "Erro ao excluir personagem base" });
+  }
+});
+
 export default router;

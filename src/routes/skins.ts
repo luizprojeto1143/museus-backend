@@ -5,7 +5,7 @@ import { authMiddleware as authenticate, requireRole as authorize } from "../mid
 const router = Router();
 
 // Master only: CRUD skins
-router.get("/", authenticate, async (req, res) => {
+router.get("/", authenticate, authorize(["MASTER"]), async (req, res) => {
   const skins = await prisma.skin.findMany({
     include: { _count: { select: { owners: true } } }
   });

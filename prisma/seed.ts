@@ -644,6 +644,23 @@ async function main() {
     }
     if (works.length > 0) console.log(`   ✓ Traduções EN: ${works.length} obras traduzidas`);
 
+    // --- Skins ---
+    console.log("🎭 Criando skins iniciais...");
+    await prisma.skin.upsert({
+        where: { id: 'skin-welcome-default' },
+        update: {},
+        create: {
+            id: 'skin-welcome-default',
+            name: 'Explorador Iniciante',
+            description: 'Seu primeiro visual. Concedido a todos os novos guardiões.',
+            imageUrl: 'https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&q=80&w=200',
+            xpCost: 0,
+            rarity: 'COMMON',
+            active: true,
+            tenantId: null // Global
+        }
+    });
+
     console.log("\n🎉 Seed completo com todas as novas tabelas!");
     console.log("   - Patrimônio Imaterial: 5 registros");
     console.log("   - Cards Colecionáveis: 7 cards");
