@@ -91,7 +91,7 @@ router.get("/me/summary", async (req, res) => {
     }
 
     const visitor = await prisma.visitor.findFirst({
-      where: { email, tenantId },
+      where: { email: email.toLowerCase(), tenantId },
       include: {
         visits: {
           orderBy: { createdAt: "desc" },
@@ -148,10 +148,12 @@ router.get("/me/summary", async (req, res) => {
     let nextLevelXpThreshold = 100;
     let tempXp = currentXp;
 
-    while (tempXp >= nextLevelXpThreshold) {
+    let iterations = 0;
+    while (tempXp >= nextLevelXpThreshold && iterations < 1000) {
       tempXp -= nextLevelXpThreshold;
       level += 1;
-      nextLevelXpThreshold = Math.floor(nextLevelXpThreshold * 1.3);
+      nextLevelXpThreshold = Math.floor(nextLevelXpThreshold * 1.3) || 100;
+      iterations++;
     }
 
     return res.json({

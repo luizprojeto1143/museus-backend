@@ -23,6 +23,7 @@ interface JwtPayload {
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Bearer ")) {
+    console.warn(`[AUTH] Missing or invalid Authorization header from ${req.ip}`);
     return res.status(401).json({ message: "Não autenticado" });
   }
 
@@ -38,14 +39,14 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     };
     return next();
   } catch (err) {
+    const tokenData = jwt.decode(token) as any;
     if (err instanceof jwt.TokenExpiredError) {
-      console.warn("⚠️ Token Expirado:", { sub: (jwt.decode(token) as any)?.sub, expiredAt: err.expiredAt });
+      console.warn(`[AUTH] Token Expired: sub=${tokenData?.sub}, email=${tokenData?.email}, expiredAt=${err.expiredAt}`);
+      return res.status(401).json({ message: "Sessão expirada", code: "TOKEN_EXPIRED" });
     } else {
-      console.error("❌ Erro JWT Verificação:", err instanceof Error ? err.message : err);
+      console.error(`[AUTH] JWT Verification Failed: ${err instanceof Error ? err.message : err}. Token sub: ${tokenData?.sub}`);
+      return res.status(401).json({ message: "Token inválido", code: "INVALID_TOKEN" });
     }
-    return res.status(401).json({ 
-      message: err instanceof jwt.TokenExpiredError ? "Sessão expirada" : "Token inválido"
-    });
   }
 }
 

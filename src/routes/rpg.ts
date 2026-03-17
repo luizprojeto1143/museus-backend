@@ -14,11 +14,24 @@ const classThresholds = [
 // GET /rpg/me — Get visitor's RPG profiles
 router.get('/me', authMiddleware, async (req, res) => {
     try {
-        const userEmail = req.user!.email;
-        const tenantId = req.user!.tenantId;
-        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
-        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
-        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+        if (!req.user?.email || !req.user?.tenantId) {
+            return res.status(401).json({ message: 'Autenticação inválida no token' });
+        }
+
+        const userEmail = req.user.email.toLowerCase();
+        const tenantId = req.user.tenantId;
+        console.log(`[RPG] Fetching profile for ${userEmail} in tenant ${tenantId}`);
+
+        const visitor = await prisma.visitor.findFirst({ 
+            where: { email: userEmail, tenantId },
+            select: { id: true, xp: true, level: true }
+        });
+
+        if (!visitor) {
+            console.warn(`[RPG] Visitor not found for ${userEmail} in tenant ${tenantId}`);
+            return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+        }
+
         const visitorId = visitor.id;
 
         // Get all characters for this visitor
@@ -31,14 +44,18 @@ router.get('/me', authMiddleware, async (req, res) => {
         });
 
         // Sync real stats (XP comes from Visitor model)
-        let currentXp = visitor.xp;
+        let totalXp = Number(visitor.xp) || 0;
+        let currentXp = totalXp;
         let newLevel = 1;
         let nextLevelXp = 100;
 
-        while (currentXp >= nextLevelXp) {
+        // Safety limit to avoid infinite loops if config is broken
+        let iterations = 0;
+        while (currentXp >= nextLevelXp && iterations < 1000) {
             currentXp -= nextLevelXp;
             newLevel += 1;
-            nextLevelXp = Math.floor(nextLevelXp * 1.3);
+            nextLevelXp = Math.floor(nextLevelXp * 1.3) || 100; // avoid 0
+            iterations++;
         }
 
         let newClass = 'NOVATO';
@@ -50,7 +67,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         res.json({
             visitor: {
                 id: visitorId,
-                xp: visitor.xp,
+                xp: totalXp,
                 level: newLevel,
                 nextLevelXp,
                 currentXp,
@@ -63,14 +80,14 @@ router.get('/me', authMiddleware, async (req, res) => {
             }))
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erro ao buscar RPG' });
+        console.error("[RPG] Error in /me:", error);
+        res.status(500).json({ message: 'Erro ao buscar RPG', error: error instanceof Error ? error.message : "Erro desconhecido" });
     }
 });
 
 router.post('/add-xp', authMiddleware, async (req, res) => {
     try {
-        const userEmail = req.user!.email;
+        const userEmail = req.user!.email.toLowerCase();
         const tenantId = req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
@@ -124,7 +141,7 @@ router.post('/add-xp', authMiddleware, async (req, res) => {
 
 router.put('/customize', authMiddleware, async (req, res) => {
     try {
-        const userEmail = req.user!.email;
+        const userEmail = req.user!.email.toLowerCase();
         const tenantId = req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
@@ -140,9 +157,9 @@ router.put('/customize', authMiddleware, async (req, res) => {
             where: { visitorId, isActive: true }
         });
         res.json(updated);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erro' });
+    } catch (error: any) {
+        console.error('[RPG] Customize error:', error);
+        res.status(500).json({ message: 'Erro ao customizar', error: error.message });
     }
 });
 
@@ -150,7 +167,7 @@ router.put('/customize', authMiddleware, async (req, res) => {
 router.post('/select-character', authMiddleware, async (req, res) => {
     try {
         const { characterId } = req.body;
-        const userEmail = req.user!.email;
+        const userEmail = req.user!.email.toLowerCase();
         const tenantId = req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
 
@@ -192,9 +209,9 @@ router.post('/select-character', authMiddleware, async (req, res) => {
         });
 
         res.json(updated);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erro ao selecionar personagem' });
+    } catch (error: any) {
+        console.error('[RPG] Select character error:', error);
+        res.status(500).json({ message: 'Erro ao selecionar personagem', error: error.message });
     }
 });
 
@@ -202,7 +219,7 @@ router.post('/select-character', authMiddleware, async (req, res) => {
 router.put('/equip-skin', authMiddleware, async (req, res) => {
     try {
         const { characterId, skinId } = req.body;
-        const userEmail = req.user!.email;
+        const userEmail = req.user!.email.toLowerCase();
         const tenantId = req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
 
@@ -229,9 +246,9 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
         });
 
         res.json(updatedRPG);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erro ao equipar skin' });
+    } catch (error: any) {
+        console.error('[RPG] Equip skin error:', error);
+        res.status(500).json({ message: 'Erro ao equipar skin', error: error.message });
     }
 });
 

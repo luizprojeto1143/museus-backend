@@ -123,6 +123,21 @@ async function main() {
     const finalUrl = await resolveBestUrl();
     process.env.DATABASE_URL = finalUrl;
     console.log(`🔍 URL Final Preparada: ${maskUrl(finalUrl)}`);
+    
+    // -------------------------------------------------------------------------
+    // SCHEMA SYNC:
+    // -------------------------------------------------------------------------
+    try {
+        console.log("🛠️ Sincronizando schema do banco de dados (Prisma DB Push)...");
+        execSync('npx prisma db push --accept-data-loss', { 
+            stdio: 'inherit',
+            env: { ...process.env, DATABASE_URL: finalUrl }
+        });
+        console.log("✅ Schema sincronizado com sucesso.");
+    } catch (dbErr) {
+        console.error("⚠️ Falha na sincronização do banco (não fatal):", dbErr.message);
+    }
+
     console.log("🚀 [Render-Boost] Boot imediato...");
     
     const appProcess = spawn('node', ['dist/index.js'], {

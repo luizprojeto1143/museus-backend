@@ -315,9 +315,23 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 export { app };
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`✅ Museus backend enterprise running on port ${PORT}`);
-    console.log(`🔧 Environment: ${process.env.NODE_ENV || "dev"}`);
-    console.log(`🌐 Allowed Origin: ${process.env.NODE_ENV === "production" ? (process.env.FRONTEND_URL || "*") : "*"}`);
-  });
+  const start = async () => {
+    try {
+      console.log("⏳ Connecting to database...");
+      await prisma.$connect();
+      console.log("🔌 Connected to database successfully.");
+    } catch (e) {
+      console.error("❌ Failed to connect to database on startup:", e);
+      console.warn("⚠️ Server will CONTINUE to start, but database requests may fail.");
+    }
+
+    app.listen(PORT, () => {
+      console.log(`✅ Museus backend enterprise running on port ${PORT}`);
+      console.log(`🔧 Environment: ${process.env.NODE_ENV || "dev"}`);
+      console.log(`🌐 Allowed Origin: ${process.env.NODE_ENV === "production" ? (process.env.FRONTEND_URL || "*") : "*"}`);
+      console.log(`📝 Audit logging is ${process.env.NODE_ENV === "production" ? "ACTIVE" : "ACTIVE (dev)"}`);
+    });
+  };
+  
+  start();
 }
