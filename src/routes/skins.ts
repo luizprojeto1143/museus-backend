@@ -7,7 +7,10 @@ const router = Router();
 // Master only: CRUD skins
 router.get("/", authenticate, authorize(["MASTER"]), async (req, res) => {
   const skins = await prisma.skin.findMany({
-    include: { _count: { select: { owners: true } } }
+    include: { 
+      _count: { select: { owners: true } },
+      characterBase: true
+    }
   });
   res.json(skins);
 });

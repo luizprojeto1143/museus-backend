@@ -29,13 +29,13 @@ router.post("/", authenticate, async (req, res) => {
 
   const visitor = await prisma.visitor.findUnique({
     where: { id: visitorId },
-    include: { skins: { where: { equipped: true }, include: { skin: true } } } as any
+    include: { vRPGs: { where: { isActive: true }, include: { equippedSkin: true } } }
   });
 
   if (!visitor) return res.status(404).json({ error: "Visitor not found" });
   if (visitor.xp < 100000) return res.status(400).json({ error: "Insufficient XP (min 100k)" });
 
-  const equippedSkin = (visitor as any).skins[0]?.skin?.imageUrl || "default_avatar.png";
+  const equippedSkin = visitor?.vRPGs[0]?.equippedSkin?.imageUrl || "default_avatar.png";
 
   // Calcule o nível do crachá com base no XP atual
   let level = 1; // Bronze

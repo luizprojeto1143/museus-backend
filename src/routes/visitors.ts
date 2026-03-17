@@ -725,42 +725,6 @@ router.get("/:id/skins", authMiddleware, async (req, res) => {
   }
 });
 
-// Equipar uma skin
-router.put("/:id/skin/equip", authMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { skinId } = req.body;
-
-    if (!skinId) {
-      return res.status(400).json({ message: "skinId é obrigatório" });
-    }
-
-    // Verificar se o visitante possui a skin
-    const ownership = await prisma.visitorSkin.findUnique({
-      where: { visitorId_skinId: { visitorId: id, skinId } }
-    });
-
-    if (!ownership) {
-      return res.status(404).json({ message: "Skin não encontrada no seu guarda-roupa" });
-    }
-
-    // Usar transação para garantir que apenas uma skin esteja equipada
-    await prisma.$transaction([
-      prisma.visitorSkin.updateMany({
-        where: { visitorId: id },
-        data: { equipped: false }
-      }),
-      prisma.visitorSkin.update({
-        where: { id: ownership.id },
-        data: { equipped: true }
-      })
-    ]);
-
-    return res.json({ success: true, message: "Skin equipada com sucesso" });
-  } catch (err) {
-    console.error("Erro ao equipar skin:", err);
-    return res.status(500).json({ message: "Erro ao equipar skin" });
-  }
-});
+/* Route moved to rpg.ts */
 
 export default router;

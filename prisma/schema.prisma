@@ -854,11 +854,11 @@ model Visitor {
   huntParticipations     ScavengerHuntParticipation[]
   deviceTokens           DeviceToken[]
   coupons                VisitorCoupon[]
-  skins                  VisitorSkin[]
+  vRPGs                  VisitorRPG[]
+  vSkins                 VisitorSkin[]
   badgeRequests          BadgeRequest[]
   equipamentoCheckins    EquipamentoCheckin[]
   trails                 Trail[]
-  rpg                    VisitorRPG?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2415,6 +2415,7 @@ model CharacterBase {
   tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
   visitorRPGs VisitorRPG[]
+  skins       Skin[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -2426,7 +2427,7 @@ model CharacterBase {
 model VisitorRPG {
   id String @id @default(uuid())
 
-  visitorId String @unique
+  visitorId String
   visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
 
   characterName  String @default("Explorador")
@@ -2440,14 +2441,20 @@ model VisitorRPG {
   totalCards  Int @default(0)
 
   avatarUrl String?
+  isActive  Boolean @default(false)
 
   selectedCharacterId String?
   selectedCharacter   CharacterBase? @relation(fields: [selectedCharacterId], references: [id])
 
+  equippedSkinId String?
+  equippedSkin   Skin? @relation(fields: [equippedSkinId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([visitorId, selectedCharacterId])
   @@index([level])
+  @@index([visitorId])
 }
 
 // ========== ROADMAP MARÇO 2026 ==========
@@ -2635,11 +2642,15 @@ model Skin {
   imageUrl    String
   xpCost      Int
   rarity      SkinRarity @default(COMMON)
+  characterBaseId String?
+  characterBase   CharacterBase? @relation(fields: [characterBaseId], references: [id])
+  
   active      Boolean  @default(true)
   eventOnly   Boolean  @default(false)
   spaceId     String?                      // Vinculada a um espaço específico
   createdAt   DateTime @default(now())
   owners      VisitorSkin[]
+  equipping   VisitorRPG[]
 }
 
 model VisitorSkin {
@@ -2647,7 +2658,6 @@ model VisitorSkin {
   visitorId   String
   skinId      String
   acquiredAt  DateTime @default(now())
-  equipped    Boolean  @default(false)
   visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
   skin        Skin     @relation(fields: [skinId],    references: [id], onDelete: Cascade)
 

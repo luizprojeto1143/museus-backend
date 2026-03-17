@@ -34,10 +34,11 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
 // GET: List available base characters (global + tenant specific)
 router.get("/", authMiddleware, async (req, res) => {
   try {
+    const isMaster = req.user?.role === Role.MASTER;
     const tenantId = req.user?.tenantId;
     
     const characters = await prisma.characterBase.findMany({
-      where: {
+      where: isMaster ? {} : {
         active: true,
         OR: [
           { tenantId: null },

@@ -379,8 +379,7 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
             update: {},
             create: {
               visitorId: visitor.id,
-              skinId: welcomeSkin.id,
-              equipped: true // Automatically equip the first skin
+              skinId: welcomeSkin.id
             }
           });
         }
