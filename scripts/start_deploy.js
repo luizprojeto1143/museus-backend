@@ -120,25 +120,36 @@ function testConnectivity(host, port) {
 }
 
 async function main() {
-    const finalUrl = await resolveBestUrl();
-    process.env.DATABASE_URL = finalUrl;
-    console.log(`🔍 URL Final Preparada: ${maskUrl(finalUrl)}`);
+    const poolerUrl = await resolveBestUrl();
+    const urlObj = new URL(poolerUrl);
+    
+    // Create a DIRECT version for DB Push (Prisma REQUIRES Session Mode/Direct for schema changes)
+    const directUrl = new URL(poolerUrl);
+    directUrl.port = '5432';
+    directUrl.searchParams.delete('pgbouncer');
+    const finalDirectUrl = directUrl.toString();
+
+    console.log(`🔍 App URL: ${maskUrl(poolerUrl)}`);
+    console.log(`🛠️ Migration URL: ${maskUrl(finalDirectUrl)}`);
     
     // -------------------------------------------------------------------------
     // SCHEMA SYNC:
     // -------------------------------------------------------------------------
     try {
-        console.log("🛠️ Sincronizando schema do banco de dados (Prisma DB Push)...");
+        console.log("🛠️ Sincronizando esquema do banco de dados (Prisma DB Push)...");
+        // We use a timeout to prevent hanging the entire deploy if DB push is stuck
         execSync('npx prisma db push --accept-data-loss', { 
             stdio: 'inherit',
-            env: { ...process.env, DATABASE_URL: finalUrl }
+            timeout: 60000, // 1 minute timeout for db push
+            env: { ...process.env, DATABASE_URL: finalDirectUrl }
         });
         console.log("✅ Schema sincronizado com sucesso.");
     } catch (dbErr) {
-        console.error("⚠️ Falha na sincronização do banco (não fatal):", dbErr.message);
+        console.error("⚠️ Sincronização falhou ou timeout. Tentando subir o app mesmo assim...");
     }
 
-    console.log("🚀 [Render-Boost] Boot imediato...");
+    console.log("🚀 [Render-Boost] Iniciando servidor...");
+    process.env.DATABASE_URL = poolerUrl;
     
     const appProcess = spawn('node', ['dist/index.js'], {
         stdio: 'inherit',
