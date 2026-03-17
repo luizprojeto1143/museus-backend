@@ -24,7 +24,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 
         const visitor = await prisma.visitor.findFirst({ 
             where: { email: userEmail, tenantId },
-            select: { id: true, xp: true, level: true }
+            select: { id: true, xp: true }
         });
 
         if (!visitor) {
