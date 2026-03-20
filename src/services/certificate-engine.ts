@@ -76,7 +76,7 @@ export class CertificateEngine {
         // Construct Metadata
         let type: CertificateType = 'CUSTOM';
         let relatedId = null;
-        let title = rule.name;
+        const title = rule.name;
 
         if (rule.triggerType === 'TRAIL_COMPLETED') {
             type = 'TRAIL';

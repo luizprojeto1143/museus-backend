@@ -11,7 +11,7 @@ router.get("/", authMiddleware, async (req, res) => {
     try {
         const user = req.user!;
 
-        let where: any = {};
+        const where: any = {};
 
         // If producer, find where producerId matches
         if (user.role === Role.PRODUCER) {

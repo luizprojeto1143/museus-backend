@@ -96,6 +96,7 @@ import quizRoutes from "./routes/quiz.js";
 import extraRoutes from "./routes/roadmap-extra.js";
 import familyRoutes from "./routes/roadmap-family.js";
 import charactersRoutes from "./routes/characters.js";
+import vestigesRoutes from "./routes/vestiges.js";
 import webhooksRoutes from "./routes/webhooks.js";
 import { validateEnv } from "./config/validateEnv.js";
 
@@ -260,12 +261,13 @@ app.use("/quiz", quizRoutes);
 app.use("/roadmap-extra", extraRoutes);
 app.use("/roadmap-family", familyRoutes);
 app.use("/characters", charactersRoutes);
+app.use("/vestiges", vestigesRoutes);
 app.use("/webhooks", webhooksRoutes);
 
 const PORT = process.env.PORT || 3000;
 
 // Global Error Handler
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const sanitizedBody = { ..._req.body };
   if (sanitizedBody.password) sanitizedBody.password = "****";

@@ -1,8 +1,16 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware } from '../middleware/auth.js';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import https from 'https';
+import http from 'http';
+import { generateCartoonAvatar, applySkinToAvatar, saveBase64ToR2 } from '../services/avatarAI.js';
 
 const router = Router();
+
+const upload = multer({ dest: 'uploads/', limits: { fileSize: 10 * 1024 * 1024 } });
 
 const classThresholds = [
     { level: 1, xp: 0, name: 'NOVATO' },
@@ -44,7 +52,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         });
 
         // Sync real stats (XP comes from Visitor model)
-        let totalXp = Number(visitor.xp) || 0;
+        const totalXp = Number(visitor.xp) || 0;
         let currentXp = totalXp;
         let newLevel = 1;
         let nextLevelXp = 100;
@@ -64,6 +72,42 @@ router.get('/me', authMiddleware, async (req, res) => {
         }
 
         // Return all characters + current visitor stats
+        const formattedCharacters = await Promise.all(characters.map(async c => {
+            // Lógica de qual imagem usar como avatar principal:
+            // 1. Avatar IA com skin equipada (se gerado e cacheado)
+            // 2. Avatar IA base (se gerado)
+            // 3. Skin genérica equipada
+            // 4. Personagem base selecionado
+            // 5. /default_avatar.png
+
+            let displayAvatarUrl = '/default_avatar.png';
+            
+            if (c.avatarStatus === 'READY') {
+                // Tenta achar skin cacheada
+                if (c.equippedSkinId) {
+                    const cache = await prisma.visitorAvatarCache.findUnique({
+                        where: { visitorId_skinId: { visitorId, skinId: c.equippedSkinId } }
+                    });
+                    if (cache?.status === 'READY') {
+                        displayAvatarUrl = cache.imageUrl;
+                    } else {
+                        displayAvatarUrl = c.baseAvatarUrl || c.equippedSkin?.imageUrl || c.selectedCharacter?.imageUrl || displayAvatarUrl;
+                    }
+                } else {
+                    displayAvatarUrl = c.baseAvatarUrl || c.selectedCharacter?.imageUrl || displayAvatarUrl;
+                }
+            } else {
+                displayAvatarUrl = c.equippedSkin?.imageUrl || c.selectedCharacter?.imageUrl || displayAvatarUrl;
+            }
+
+            return {
+                ...c,
+                level: newLevel,
+                characterClass: newClass,
+                displayAvatarUrl
+            };
+        }));
+
         res.json({
             visitor: {
                 id: visitorId,
@@ -73,11 +117,7 @@ router.get('/me', authMiddleware, async (req, res) => {
                 currentXp,
                 class: newClass
             },
-            characters: characters.map(c => ({
-                ...c,
-                level: newLevel,
-                characterClass: newClass
-            }))
+            characters: formattedCharacters
         });
     } catch (error) {
         console.error("[RPG] Error in /me:", error);
@@ -251,5 +291,235 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
         res.status(500).json({ message: 'Erro ao equipar skin', error: error.message });
     }
 });
+
+/**
+ * AI AVATAR SYSTEM ROUTES
+ */
+
+// POST /rpg/selfie — Receber selfie e iniciar geração
+router.post('/selfie', authMiddleware, upload.single('selfie'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ message: 'Selfie obrigatória' });
+        if (!req.user?.email || !req.user?.tenantId) return res.status(401).json({ message: 'Não autorizado' });
+
+        const visitor = await prisma.visitor.findFirst({ 
+            where: { email: req.user.email.toLowerCase(), tenantId: req.user.tenantId } 
+        });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+
+        // Marcar VisitorRPG (o ativo) como GENERATING
+        const activeRPG = await prisma.visitorRPG.findFirst({
+            where: { visitorId: visitor.id, isActive: true }
+        });
+
+        if (!activeRPG) return res.status(400).json({ message: 'Nenhum personagem ativo selecionado' });
+
+        await prisma.visitorRPG.update({
+            where: { id: activeRPG.id },
+            data: { 
+                avatarStatus: 'GENERATING', 
+                selfieUrl: req.file.path 
+            }
+        });
+
+        // Resposta imediata
+        res.json({ status: 'GENERATING', message: 'Avatar sendo gerado em background...' });
+
+        // Background task
+        generateAvatarBackground(visitor.id, activeRPG.id, req.file.path).catch(err => {
+            console.error('[AVATAR_BG] Final error:', err);
+        });
+
+    } catch (err) {
+        console.error('[AVATAR] Error starting generation:', err);
+        res.status(500).json({ message: 'Erro ao processar selfie' });
+    }
+});
+
+// GET /rpg/avatar-status — Polling do status do avatar
+router.get('/avatar-status', authMiddleware, async (req, res) => {
+    try {
+        if (!req.user?.email || !req.user?.tenantId) return res.status(401).json({ message: 'Não autorizado' });
+        const visitor = await prisma.visitor.findFirst({ 
+            where: { email: req.user.email.toLowerCase(), tenantId: req.user.tenantId } 
+        });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+
+        const rpg = await prisma.visitorRPG.findFirst({
+            where: { visitorId: visitor.id, isActive: true }
+        });
+
+        res.json({
+            status: rpg?.avatarStatus || 'NONE',
+            baseAvatarUrl: rpg?.baseAvatarUrl || null
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Erro ao buscar status' });
+    }
+});
+
+// POST /rpg/apply-skin/:skinId — Aplicar skin via IA
+router.post('/apply-skin/:skinId', authMiddleware, async (req, res) => {
+    try {
+        const { skinId } = req.params;
+        if (!req.user?.email || !req.user?.tenantId) return res.status(401).json({ message: 'Não autorizado' });
+
+        const visitor = await prisma.visitor.findFirst({ 
+            where: { email: req.user.email.toLowerCase(), tenantId: req.user.tenantId } 
+        });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+
+        const rpg = await prisma.visitorRPG.findFirst({
+            where: { visitorId: visitor.id, isActive: true }
+        });
+
+        if (!rpg?.baseAvatarUrl) {
+            return res.status(400).json({ message: 'Crie seu avatar personalizado primeiro' });
+        }
+
+        // Verificar cache
+        const existing = await prisma.visitorAvatarCache.findUnique({
+            where: { visitorId_skinId: { visitorId: visitor.id, skinId } }
+        });
+
+        if (existing?.status === 'READY') {
+            return res.json({ status: 'READY', imageUrl: existing.imageUrl });
+        }
+
+        // Verificar posse da skin
+        const ownership = await prisma.visitorSkin.findUnique({
+            where: { visitorId_skinId: { visitorId: visitor.id, skinId } },
+            include: { skin: true }
+        });
+
+        if (!ownership) return res.status(403).json({ message: 'Skin não adquirida' });
+
+        // Criar/Atualizar entrada no cache
+        await prisma.visitorAvatarCache.upsert({
+            where: { visitorId_skinId: { visitorId: visitor.id, skinId } },
+            update: { status: 'GENERATING' },
+            create: { visitorId: visitor.id, skinId, imageUrl: '', status: 'GENERATING' }
+        });
+
+        res.json({ status: 'GENERATING', message: 'Aplicando skin via IA em background...' });
+
+        // Background Task
+        applySkinBackground(visitor.id, skinId, rpg.baseAvatarUrl, ownership.skin).catch(console.error);
+
+    } catch (err) {
+        console.error('[SKIN_IA] Error:', err);
+        res.status(500).json({ message: 'Erro ao processar aplicação de skin' });
+    }
+});
+
+// GET /rpg/skin-status/:skinId — Polling do status da skin
+router.get('/skin-status/:skinId', authMiddleware, async (req, res) => {
+    try {
+        const { skinId } = req.params;
+        if (!req.user?.email || !req.user?.tenantId) return res.status(401).json({ message: 'Não autorizado' });
+
+        const visitor = await prisma.visitor.findFirst({ 
+            where: { email: req.user.email.toLowerCase(), tenantId: req.user.tenantId } 
+        });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+
+        const cache = await prisma.visitorAvatarCache.findUnique({
+            where: { visitorId_skinId: { visitorId: visitor.id, skinId } }
+        });
+
+        res.json({
+            status: cache?.status || 'NOT_STARTED',
+            imageUrl: cache?.status === 'READY' ? cache.imageUrl : null
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Erro ao buscar status da skin' });
+    }
+});
+
+/**
+ * BACKGROUND HELPERS
+ */
+
+async function generateAvatarBackground(visitorId: string, rpgId: string, selfiePath: string) {
+    try {
+        const base64 = await generateCartoonAvatar(selfiePath);
+        const imageUrl = await saveBase64ToR2(base64, `avatars/${visitorId}`, 'base');
+
+        await prisma.visitorRPG.update({
+            where: { id: rpgId },
+            data: {
+                baseAvatarUrl: imageUrl,
+                avatarStatus: 'READY',
+                avatarGeneratedAt: new Date(),
+            }
+        });
+
+        // Salvar cache base
+        await prisma.visitorAvatarCache.upsert({
+            where: { visitorId_skinId: { visitorId, skinId: null as any } },
+            update: { imageUrl, status: 'READY' },
+            create: { visitorId, skinId: null as any, imageUrl, status: 'READY' }
+        });
+
+        // Cleanup local selfie
+        if (fs.existsSync(selfiePath)) fs.unlinkSync(selfiePath);
+        console.log(`[AVATAR] ✅ Sucesso para visitor ${visitorId}`);
+    } catch (err) {
+        console.error(`[AVATAR] ❌ Erro para ${visitorId}:`, err);
+        await prisma.visitorRPG.update({
+            where: { id: rpgId },
+            data: { avatarStatus: 'ERROR' }
+        }).catch(() => {});
+    }
+}
+
+async function applySkinBackground(visitorId: string, skinId: string, baseAvatarUrl: string, skin: any) {
+    const tmpPath = path.join('uploads', `tmp_${visitorId}_${Date.now()}.png`);
+    try {
+        // Baixar base do R2 para processar (OpenAI precisa de stream/buffer local ou URL acessível se compatível)
+        await downloadFile(baseAvatarUrl, tmpPath);
+
+        const base64 = await applySkinToAvatar(tmpPath, skin.imageUrl, skin.name);
+        const imageUrl = await saveBase64ToR2(base64, `avatars/${visitorId}/skins`, skinId);
+
+        await prisma.$transaction([
+            prisma.visitorAvatarCache.update({
+                where: { visitorId_skinId: { visitorId, skinId } },
+                data: { imageUrl, status: 'READY' }
+            }),
+            prisma.visitorSkin.update({
+                where: { visitorId_skinId: { visitorId, skinId } },
+                data: { generatedAvatarUrl: imageUrl }
+            })
+        ]);
+
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        console.log(`[SKIN_IA] ✅ Sucesso para skin ${skinId} em ${visitorId}`);
+    } catch (err) {
+        console.error(`[SKIN_IA] ❌ Erro skin ${skinId} em ${visitorId}:`, err);
+        await prisma.visitorAvatarCache.update({
+            where: { visitorId_skinId: { visitorId, skinId } },
+            data: { status: 'ERROR' }
+        }).catch(() => {});
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    }
+}
+
+function downloadFile(url: string, dest: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(dest);
+        const client = url.startsWith('https') ? https : http;
+        client.get(url, response => {
+            response.pipe(file);
+            file.on('finish', () => {
+                file.close();
+                resolve();
+            });
+        }).on('error', err => {
+            fs.unlink(dest, () => {});
+            reject(err);
+        });
+    });
+}
 
 export default router;

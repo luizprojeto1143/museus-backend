@@ -25,6 +25,13 @@ export const createWorkSchema = z.object({
         isAccessible: z.boolean().optional(),
         order: z.number().int().optional(),
         radius: z.number().int().optional(),
+        lat: z.number().optional().nullable(),
+        lng: z.number().optional().nullable(),
+        captureRadiusM: z.number().optional().nullable(),
+        vestigeActive: z.boolean().optional(),
+        vestigeType: z.enum(["PIONEER", "RARE", "EPIC", "COMMON"]).optional().nullable(),
+        vestigeExpiresAt: z.string().optional().nullable(),
+        vestigeImageUrl: z.string().url().optional().nullable(),
         metadata: z.any().optional(),
         equipamentoId: z.string().optional().nullable()
     })

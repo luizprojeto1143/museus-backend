@@ -301,6 +301,7 @@ model Tenant {
   badgeRequests          BadgeRequest[]
   characterBases         CharacterBase[]
   equipamentos           EquipamentoCultural[]
+  vestigeAlerts          VestigeAlert[]
 
   @@index([parentId])
 }
@@ -521,7 +522,17 @@ model Work {
 
   equipamentoId String?
   equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
-  sealImageUrl  String? // Imagem do carimbo/selo para o passaporte
+  sealImageUrl  String? // Imagem do carimbo/selo para o passaporte (legado)
+
+  // === NOVO: Sistema de Vestígios ===
+  lat              Float?     // coordenada GPS da obra
+  lng              Float?     // coordenada GPS da obra
+  captureRadiusM   Int        @default(15)  // raio de captura em metros
+  vestigeActive    Boolean    @default(true) // false = Relíquia (não capturável)
+  vestigeType      String     @default("WORK") // WORK | STREET_ART | INSTALLATION
+  vestigeExpiresAt DateTime?  // data de encerramento da exposição
+  vestigeTotalCapturas Int    @default(0)   // contador global de capturas
+  vestigeImageUrl  String?    // imagem do carimbo (diferente da imageUrl da obra)
 
   metadata Json? // Usado para traduções e outros metadados flexíveis
 
@@ -859,6 +870,7 @@ model Visitor {
   badgeRequests          BadgeRequest[]
   equipamentoCheckins    EquipamentoCheckin[]
   trails                 Trail[]
+  avatarCaches           VisitorAvatarCache[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -918,13 +930,44 @@ model VisitorAchievement {
 }
 
 model PassportStamp {
-  id        String   @id @default(uuid())
-  visitorId String
-  workId    String
-  stampedAt DateTime @default(now())
+  id               String    @id @default(uuid())
+  visitorId        String
+  workId           String
+  
+  // Metadados da Conquista
+  raridade         String    // PIONEER | RARE | EPIC | LEGENDARY | RELIC
+  numeroCaptura    Int       // qual o numero desta captura global (ex: 42 de 500)
+  xpGanho          Int       @default(50)
+  
+  // Localizacao da Captura (para prova de presenca)
+  latCaptura       Float?
+  lngCaptura       Float?
+  accuracyMetros   Float?
+  
+  // Status de Reliquia
+  isRelic          Boolean   @default(false)
+  convertidoEm     DateTime? // data que virou reliquia (exposicao acabou)
+  
+  stampedAt        DateTime  @default(now())
 
-  visitor Visitor @relation(fields: [visitorId], references: [id])
-  work    Work    @relation(fields: [workId], references: [id])
+  visitor          Visitor   @relation(fields: [visitorId], references: [id])
+  work             Work      @relation(fields: [workId], references: [id])
+
+  @@unique([visitorId, workId]) // um vestigio por obra por visitante
+}
+
+// Alertas urgentes ou novidades globais da cidade/museu
+model VestigeAlert {
+  id               String    @id @default(uuid())
+  tenantId         String
+  titulo           String
+  mensagem         String
+  tipo             String    @default("URGENTE") // URGENTE | NOVIDADE | EXPIRANDO
+  link             String?   // rota interna do pwa (ex: /vestiges/42)
+  expiresAt        DateTime?
+  
+  createdAt        DateTime  @default(now())
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
 }
 
 model QRCode {
@@ -2452,6 +2495,12 @@ model VisitorRPG {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // === NOVO: Sistema de Avatar com IA ===
+  selfieUrl          String?   // URL da selfie original no R2
+  baseAvatarUrl      String?   // URL do avatar cartoon gerado (sem skin)
+  avatarStatus       String    @default("NONE") // NONE, GENERATING, READY, ERROR
+  avatarGeneratedAt  DateTime? // quando o avatar base ficou pronto
+
   @@unique([visitorId, selectedCharacterId])
   @@index([level])
   @@index([visitorId])
@@ -2651,6 +2700,7 @@ model Skin {
   createdAt   DateTime @default(now())
   owners      VisitorSkin[]
   equipping   VisitorRPG[]
+  avatarCaches VisitorAvatarCache[]
 }
 
 model VisitorSkin {
@@ -2660,6 +2710,8 @@ model VisitorSkin {
   acquiredAt  DateTime @default(now())
   visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
   skin        Skin     @relation(fields: [skinId],    references: [id], onDelete: Cascade)
+
+  generatedAvatarUrl String?  // ← NOVO: URL do avatar gerado com esta skin
 
   @@unique([visitorId, skinId])
 }
@@ -2685,5 +2737,22 @@ model BadgeRequest {
   deliveredAt     DateTime?
   visitor         Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
   tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// NOVO: Cache de avatares gerados por IA por combinação visitante + skin
+model VisitorAvatarCache {
+  id          String    @id @default(uuid())
+  visitorId   String
+  skinId      String?   // null = avatar base sem skin
+  imageUrl    String    // URL no R2 da imagem gerada
+  status      String    @default("GENERATING") // GENERATING, READY, ERROR
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  visitor     Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  skin        Skin?     @relation(fields: [skinId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, skinId])
 }
 

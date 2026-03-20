@@ -16,18 +16,24 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ message: "visitorId e workId são obrigatórios" });
     }
 
-    const existing = await prisma.passportStamp.findFirst({
-      where: { visitorId, workId }
+    // 3. Verificar se já capturou
+    const existing = await (prisma.passportStamp as any).findUnique({
+      where: {
+        visitorId_workId: { visitorId, workId }
+      }
     });
 
     if (existing) {
       return res.json({ message: "Carimbo já existe", stamp: existing });
     }
 
-    const stamp = await prisma.passportStamp.create({
+    const stamp = await (prisma.passportStamp as any).create({
       data: {
         visitorId,
-        workId
+        workId,
+        raridade: "COMMON", // Default para carimbos legados/simples
+        numeroCaptura: 0,
+        xpGanho: 50
       },
       include: {
         work: true

@@ -26,7 +26,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     }
 
     // Default filter: Published and not deleted
-    let whereClause: any = { tenantId, published: true, deletedAt: null };
+    const whereClause: any = { tenantId, published: true, deletedAt: null };
     if (equipamentoId) whereClause.equipamentoId = equipamentoId;
 
     // If authenticated and authorized, allow seeing unpublished works
@@ -141,7 +141,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       latitude, longitude, radius,
       technique, period, medium, dimensions,
       code, // Dialer code from frontend
-      equipamentoId
+      equipamentoId,
+      lat, lng, captureRadiusM, vestigeActive, vestigeType, vestigeExpiresAt, vestigeImageUrl
     } = req.body;
 
     // Check Plan Limits
@@ -183,9 +184,16 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         latitude: latitude ? Number(latitude) : null,
         longitude: longitude ? Number(longitude) : null,
         radius: radius ? Number(radius) : 5,
+        lat: lat ? Number(lat) : null,
+        lng: lng ? Number(lng) : null,
+        captureRadiusM: captureRadiusM ? Number(captureRadiusM) : null,
+        vestigeActive: Boolean(vestigeActive),
+        vestigeType: vestigeType || null,
+        vestigeExpiresAt: vestigeExpiresAt ? new Date(vestigeExpiresAt) : null,
+        vestigeImageUrl: vestigeImageUrl || null,
         tenantId,
         equipamentoId: equipamentoId || null,
-      }
+      } as any
     });
 
     // Create entry in QRCode table for the dialer code
@@ -330,8 +338,15 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       where: { id },
       data: {
         ...updateData,
+        lat: data.lat !== undefined ? (data.lat ? Number(data.lat) : null) : undefined,
+        lng: data.lng !== undefined ? (data.lng ? Number(data.lng) : null) : undefined,
+        captureRadiusM: data.captureRadiusM !== undefined ? (data.captureRadiusM ? Number(data.captureRadiusM) : null) : undefined,
+        vestigeActive: data.vestigeActive !== undefined ? Boolean(data.vestigeActive) : undefined,
+        vestigeType: data.vestigeType !== undefined ? (data.vestigeType || null) : undefined,
+        vestigeExpiresAt: data.vestigeExpiresAt !== undefined ? (data.vestigeExpiresAt ? new Date(data.vestigeExpiresAt) : null) : undefined,
+        vestigeImageUrl: data.vestigeImageUrl !== undefined ? (data.vestigeImageUrl || null) : undefined,
         equipamentoId: data.equipamentoId !== undefined ? data.equipamentoId : undefined
-      }
+      } as any
     });
     return res.json(work);
   } catch (err: any) {

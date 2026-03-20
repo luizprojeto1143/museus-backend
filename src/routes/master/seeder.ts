@@ -64,8 +64,15 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
                             createdAt: visitDate
                         }
                     });
-                    await prisma.passportStamp.create({
-                        data: { visitorId: visitor.id, workId: w.id, stampedAt: visitDate }
+                    await (prisma.passportStamp as any).create({
+                        data: { 
+                            visitorId: visitor.id, 
+                            workId: w.id, 
+                            raridade: "COMMON",
+                            numeroCaptura: 0,
+                            xpGanho: 50,
+                            stampedAt: visitDate 
+                        }
                     }).catch(() => { });
                     totalXp += xp;
                 }
@@ -298,10 +305,13 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
 
                 // Create passport stamp (skip if already exists)
                 try {
-                    await prisma.passportStamp.create({
+                    await (prisma.passportStamp as any).create({
                         data: {
                             visitorId: visitor.id,
                             workId: work.id,
+                            raridade: "COMMON",
+                            numeroCaptura: 0,
+                            xpGanho: 50,
                             stampedAt: visitDate
                         }
                     });

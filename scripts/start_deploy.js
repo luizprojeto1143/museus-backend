@@ -25,7 +25,7 @@ function maskUrl(url) {
 }
 
 const urlObj = new URL(DB_URL);
-let modifiedUrl = DB_URL;
+const modifiedUrl = DB_URL;
 
 // RENDER SSL & TIMEOUT FIX:
 const hasSSLParam = urlObj.searchParams.has('sslmode');

@@ -22,7 +22,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER) && user.tenantId === tenantId;
     const hasPrivilege = isMaster || isTenantAdmin;
 
-    let whereClause: import("@prisma/client").Prisma.EventWhereInput = { deletedAt: null };
+    const whereClause: import("@prisma/client").Prisma.EventWhereInput = { deletedAt: null };
 
     // 1. Discovery Mode (Global Public Events) - ALWAYS STRICT
     if (discovery === 'true') {

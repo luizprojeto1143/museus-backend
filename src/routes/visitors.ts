@@ -143,7 +143,7 @@ router.get("/me/summary", async (req, res) => {
         xpGained: v.xpGained
       }));
 
-    let currentXp = visitor.xp;
+    const currentXp = visitor.xp;
     let level = 1;
     let nextLevelXpThreshold = 100;
     let tempXp = currentXp;

@@ -426,7 +426,7 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
       data: { tenantId: targetTenantId }
     });
 
-    let visitor = await prisma.visitor.findFirst({
+    const visitor = await prisma.visitor.findFirst({
       where: { email: user.email, tenantId: targetTenantId }
     });
 
