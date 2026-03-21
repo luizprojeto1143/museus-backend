@@ -42,7 +42,10 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     const [works, total] = await Promise.all([
       prisma.work.findMany({
         where: whereClause,
-        include: { category: true },
+        include: { 
+          category: true,
+          qrCode: true
+        },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit
@@ -76,7 +79,8 @@ router.get("/:id", softAuthMiddleware, async (req, res) => {
       where: { id, deletedAt: null },
       include: { 
         category: true,
-        collectibleCards: true
+        collectibleCards: true,
+        qrCode: true
       }
     });
 
@@ -350,7 +354,11 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         vestigeExpiresAt: data.vestigeExpiresAt !== undefined ? (data.vestigeExpiresAt ? new Date(data.vestigeExpiresAt) : null) : undefined,
         vestigeImageUrl: data.vestigeImageUrl !== undefined ? (data.vestigeImageUrl || null) : undefined,
         equipamentoId: data.equipamentoId !== undefined ? data.equipamentoId : undefined
-      } as any
+      } as any,
+      include: {
+        category: true,
+        qrCode: true
+      }
     });
     return res.json(work);
   } catch (err: any) {
