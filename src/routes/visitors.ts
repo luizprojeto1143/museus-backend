@@ -614,6 +614,34 @@ router.post("/visit-from-qr", async (req, res) => {
         });
       }
 
+      // === NEW: Auto-mint Collectible Card if exists for this work ===
+      if (workId) {
+        const cardMatching = await prisma.collectibleCard.findFirst({
+          where: { workId, tenantId: qr.tenantId }
+        });
+
+        if (cardMatching) {
+          // Check if already owned
+          const alreadyOwned = await prisma.visitorCard.findUnique({
+            where: { cardId_visitorId: { cardId: cardMatching.id, visitorId: visitor.id } }
+          });
+
+          if (!alreadyOwned) {
+            // Check availability (minting limit)
+            const ownedCount = await prisma.visitorCard.count({ where: { cardId: cardMatching.id } });
+            if (ownedCount < cardMatching.totalMinted) {
+              await prisma.visitorCard.create({
+                data: {
+                  cardId: cardMatching.id,
+                  visitorId: visitor.id
+                }
+              });
+              console.log(`[Auto-Mint] Card "${cardMatching.title}" awarded to ${visitor.name}`);
+            }
+          }
+        }
+      }
+
     } catch (e) { console.error("Hook Error", e); }
 
 

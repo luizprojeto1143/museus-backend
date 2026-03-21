@@ -548,6 +548,7 @@ model Work {
   accessibilityRequests AccessibilityRequest[]
   curatorNotes          CuratorNote[]
   sponsorships          WorkSponsorship[]
+  collectibleCards      CollectibleCard[]
 
   @@index([tenantId, categoryId])
   @@index([tenantId, room])
@@ -2288,6 +2289,7 @@ model CollectibleCard {
   rarity      String  @default("COMMON") // COMMON, RARE, EPIC, LEGENDARY
 
   workId String? // Linked to a work (optional)
+  work   Work?   @relation(fields: [workId], references: [id])
 
   totalMinted Int @default(100)
 

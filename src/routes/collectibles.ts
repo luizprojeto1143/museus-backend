@@ -11,7 +11,10 @@ router.get('/', async (req, res) => {
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const cards = await prisma.collectibleCard.findMany({
             where: { tenantId },
-            include: { _count: { select: { owners: true } } },
+            include: { 
+                _count: { select: { owners: true } },
+                work: { select: { imageUrl: true, title: true } }
+            },
             orderBy: { createdAt: 'desc' }
         });
         res.json(cards);
@@ -32,7 +35,11 @@ router.get('/my', authMiddleware, async (req, res) => {
 
         const cards = await prisma.visitorCard.findMany({
             where: { visitorId: visitor.id },
-            include: { card: true },
+            include: { 
+                card: {
+                    include: { work: { select: { imageUrl: true, title: true } } }
+                } 
+            },
             orderBy: { earnedAt: 'desc' }
         });
         res.json(cards);
@@ -77,7 +84,10 @@ router.post('/earn/:cardId', authMiddleware, async (req, res) => {
         // Check if card still available
         const card = await prisma.collectibleCard.findUnique({
             where: { id: cardId },
-            include: { _count: { select: { owners: true } } }
+            include: { 
+                _count: { select: { owners: true } },
+                work: { select: { imageUrl: true, title: true } }
+            }
         });
         if (!card) return res.status(404).json({ message: 'Card não encontrado' });
         if (card._count.owners >= card.totalMinted) return res.status(410).json({ message: 'Este card esgotou!' });
