@@ -278,9 +278,18 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Esta skin não serve para este personagem' });
         }
 
-        // 3. Equip
+        // 3. Equip to active character or specified ID
+        const rpg = await prisma.visitorRPG.findFirst({
+            where: { 
+                visitorId: visitor.id, 
+                ...(characterId ? { id: characterId } : { isActive: true })
+            }
+        });
+
+        if (!rpg) return res.status(404).json({ message: 'Personagem não encontrado' });
+
         const updatedRPG = await prisma.visitorRPG.update({
-            where: { visitorId_selectedCharacterId: { visitorId: visitor.id, selectedCharacterId: characterId } },
+            where: { id: rpg.id },
             data: { equippedSkinId: skinId },
             include: { equippedSkin: true }
         });
@@ -308,11 +317,25 @@ router.post('/selfie', authMiddleware, upload.single('selfie'), async (req, res)
         if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
 
         // Marcar VisitorRPG (o ativo) como GENERATING
-        const activeRPG = await prisma.visitorRPG.findFirst({
+        let activeRPG = await prisma.visitorRPG.findFirst({
             where: { visitorId: visitor.id, isActive: true }
         });
 
-        if (!activeRPG) return res.status(400).json({ message: 'Nenhum personagem ativo selecionado' });
+        // AUTO-CREATE: Se não tem personagem, cria um herói padrão agora
+        if (!activeRPG) {
+            activeRPG = await prisma.visitorRPG.create({
+                data: { 
+                    visitorId: visitor.id, 
+                    characterName: 'Explorador', 
+                    characterClass: 'NOVATO', 
+                    level: 1, 
+                    isActive: true,
+                    currentXp: 0,
+                    nextLevelXp: 100
+                }
+            });
+            console.log(`[RPG] Auto-created hero for visitor ${visitor.id}`);
+        }
 
         await prisma.visitorRPG.update({
             where: { id: activeRPG.id },
@@ -479,7 +502,7 @@ async function applySkinBackground(visitorId: string, skinId: string, baseAvatar
         // Baixar base do R2 para processar (OpenAI precisa de stream/buffer local ou URL acessível se compatível)
         await downloadFile(baseAvatarUrl, tmpPath);
 
-        const base64 = await applySkinToAvatar(tmpPath, skin.imageUrl, skin.name);
+        const base64 = await applySkinToAvatar(tmpPath, (skin as any).imageUrl, (skin as any).name, (skin as any).aiDescription);
         const imageUrl = await saveBase64ToR2(base64, `avatars/${visitorId}/skins`, skinId);
 
         await prisma.$transaction([

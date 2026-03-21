@@ -46,25 +46,68 @@ export async function generateCartoonAvatar(selfiePath: string): Promise<string>
 }
 
 /**
+ * Gera uma descrição detalhada de uma skin usando GPT-4o Vision
+ */
+export async function generateSkinDescription(imagePathOrUrl: string): Promise<string> {
+  if (!openai) throw new Error('OpenAI API Key não configurada');
+
+  let imageUrl = imagePathOrUrl;
+
+  // Se não for uma URL (e.g. caminho local), converte para base64
+  if (!imagePathOrUrl.startsWith('http')) {
+    const imageBuffer = fs.readFileSync(imagePathOrUrl);
+    const base64Image = imageBuffer.toString('base64');
+    imageUrl = `data:image/png;base64,${base64Image}`;
+  }
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Analyze this character outfit/skin image. Provide a highly detailed description of all visual elements: colors, materials (gold, leather, fabric), specific ornaments, accessories, and the overall theme (e.g., 'Cyberpunk Guardian', 'Medieval Royal'). Focus solely on the clothing and equipment. The goal is to use this description as a prompt for an AI image generator." },
+          {
+            type: "image_url",
+            image_url: {
+              url: imageUrl,
+            },
+          },
+        ],
+      },
+    ],
+    max_tokens: 300,
+  });
+
+  const description = response.choices[0]?.message?.content;
+  if (!description) throw new Error('Falha ao gerar descrição da skin');
+  return description;
+}
+
+/**
  * Aplica uma skin a um avatar base
  */
 export async function applySkinToAvatar(
   baseAvatarPath: string,
   skinImagePath: string,
-  skinName: string
+  skinName: string,
+  skinDescription?: string // Novo parâmetro opcional
 ): Promise<string> {
   if (!openai) throw new Error('OpenAI API Key não configurada');
+
+  const fullPrompt = `
+    This is a 2D anime cartoon character. Change ONLY the outfit/clothing.
+    NEVER change: face, hair, skin tone, eyes, expression, body proportions.
+    New outfit name: '${skinName}'.
+    ${skinDescription ? `Outfit Details: ${skinDescription}` : ''}
+    Apply the outfit as described, maintaining the clean 2D anime illustration style.
+    Keep the same background and framing. Only the clothes change.
+  `;
 
   const response = await openai.images.edit({
     model: 'dall-e-2',
     image: fs.createReadStream(baseAvatarPath),
-    prompt: `
-      This is a 2D anime cartoon character. Change ONLY the outfit/clothing.
-      NEVER change: face, hair, skin tone, eyes, expression, body proportions.
-      New outfit name: '${skinName}'.
-      Apply the outfit as shown in the skin design, maintaining the anime 2D style.
-      Keep the same background and framing. Only the clothes change.
-    `,
+    prompt: fullPrompt,
     size: '1024x1024',
     response_format: 'b64_json',
   });

@@ -2694,6 +2694,9 @@ model Skin {
   characterBaseId String?
   characterBase   CharacterBase? @relation(fields: [characterBaseId], references: [id])
   
+  aiDescription String? @db.Text
+  aiPrompt      String? @db.Text
+
   active      Boolean  @default(true)
   eventOnly   Boolean  @default(false)
   spaceId     String?                      // Vinculada a um espaço específico
