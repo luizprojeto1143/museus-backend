@@ -42,10 +42,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     const [works, total] = await Promise.all([
       prisma.work.findMany({
         where: whereClause,
-        include: { 
-          category: true,
-          qrCode: true
-        },
+        include: { category: true },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit
@@ -53,8 +50,19 @@ router.get("/", softAuthMiddleware, async (req, res) => {
       prisma.work.count({ where: whereClause })
     ]);
 
+    // Manual QR Code fetch
+    const workIds = works.map(w => w.id);
+    const qrcodes = await prisma.qRCode.findMany({
+      where: { referenceId: { in: workIds }, type: QRType.WORK }
+    });
+
+    const dataWithQR = works.map(w => ({
+      ...w,
+      qrCode: qrcodes.find(qr => qr.referenceId === w.id)
+    }));
+
     return res.json({
-      data: works,
+      data: dataWithQR,
       pagination: {
         page,
         limit,
@@ -79,14 +87,18 @@ router.get("/:id", softAuthMiddleware, async (req, res) => {
       where: { id, deletedAt: null },
       include: { 
         category: true,
-        collectibleCards: true,
-        qrCode: true
+        collectibleCards: true
       }
     });
 
     if (!work) {
       return res.status(404).json({ message: "Obra não encontrada" });
     }
+
+    // Manual QR Code fetch
+    const qrCode = await prisma.qRCode.findFirst({
+      where: { referenceId: id, type: QRType.WORK }
+    });
 
     // Security Check: Visibility
     // If NOT published AND NOT (Admin/Master/Producer of this tenant), block access.
@@ -99,8 +111,7 @@ router.get("/:id", softAuthMiddleware, async (req, res) => {
         return res.status(404).json({ message: "Obra não encontrada ou indisponível" }); // Return 404 to hide existence
       }
     }
-
-    return res.json(work);
+    return res.json({ ...work, qrCode });
   } catch (err: any) {
     console.error("Erro ao buscar obra:", err);
     return res.status(500).json({
@@ -356,11 +367,15 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         equipamentoId: data.equipamentoId !== undefined ? data.equipamentoId : undefined
       } as any,
       include: {
-        category: true,
-        qrCode: true
+        category: true
       }
     });
-    return res.json(work);
+
+    const qrCode = await prisma.qRCode.findFirst({
+      where: { referenceId: id, type: QRType.WORK }
+    });
+
+    return res.json({ ...work, qrCode });
   } catch (err: any) {
     console.error(`Erro ao atualizar obra ID: ${req.params.id}`, err);
     if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
