@@ -73,7 +73,11 @@ router.get("/:id", softAuthMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const work = await prisma.work.findFirst({ 
-      where: { id, deletedAt: null } 
+      where: { id, deletedAt: null },
+      include: { 
+        category: true,
+        collectibleCards: true
+      }
     });
 
     if (!work) {
