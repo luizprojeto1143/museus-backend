@@ -341,7 +341,19 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
               role: Role.ADMIN
             }
           ]
-        }
+        },
+        equipamentos: (type !== TenantType.CITY && type !== TenantType.SECRETARIA) ? {
+          create: [
+            {
+              nome: `Sede - ${name}`,
+              slug: `${slug}-sede`,
+              tipo: type === TenantType.PRODUCER ? 'produtora' : type === TenantType.CULTURAL_SPACE ? 'espaço' : 'museu',
+              endereco: 'Endereço Principal',
+              cidade: 'Sua Cidade',
+              estado: 'BR'
+            }
+          ]
+        } : undefined
       },
       include: { users: true }
     });
@@ -650,12 +662,13 @@ router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, re
 // Clean Demo Data (MASTER)
 router.delete("/utils/demo", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
   try {
-    // Slugs identificados como demo no sistema ou padrão
-    const demoSlugs = ['museu-a', 'cidade-b', 'demo', 'exemplo'];
-
     const { count } = await prisma.tenant.deleteMany({
       where: {
-        slug: { in: demoSlugs }
+        OR: [
+          { slug: { in: ['museu-a', 'cidade-b', 'demo', 'exemplo'] } },
+          { slug: { contains: 'demo' } },
+          { slug: { contains: 'teste' } }
+        ]
       }
     });
 

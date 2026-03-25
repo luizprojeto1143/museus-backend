@@ -359,7 +359,7 @@ model EquipamentoCultural {
   updatedAt        DateTime  @updatedAt
  
   // Relacoes
-  tenant           Tenant    @relation(fields:[tenantId], references:[id])
+  tenant           Tenant    @relation(fields:[tenantId], references:[id], onDelete: Cascade)
   spaces           Space[]
   works            Work[]
   trails           Trail[]
