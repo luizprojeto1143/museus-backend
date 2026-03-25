@@ -666,9 +666,14 @@ router.delete("/utils/demo", authMiddleware, requireRole([Role.MASTER]), async (
       where: {
         OR: [
           { slug: { in: ['museu-a', 'cidade-b', 'demo', 'exemplo'] } },
-          { slug: { contains: 'demo' } },
-          { slug: { contains: 'teste' } },
-          { slug: { contains: 'exemplo' } }
+          { slug: { contains: 'demo', mode: 'insensitive' } },
+          { slug: { contains: 'teste', mode: 'insensitive' } },
+          { slug: { contains: 'exemplo', mode: 'insensitive' } },
+          { slug: { contains: 'betim', mode: 'insensitive' } },
+          { name: { contains: 'Equipamento Padrão', mode: 'insensitive' } },
+          { name: { contains: 'demo', mode: 'insensitive' } },
+          { name: { contains: 'teste', mode: 'insensitive' } },
+          { name: { contains: 'exemplo', mode: 'insensitive' } }
         ]
       }
     });
