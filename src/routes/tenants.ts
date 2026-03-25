@@ -667,15 +667,20 @@ router.delete("/utils/demo", authMiddleware, requireRole([Role.MASTER]), async (
         OR: [
           { slug: { in: ['museu-a', 'cidade-b', 'demo', 'exemplo'] } },
           { slug: { contains: 'demo' } },
-          { slug: { contains: 'teste' } }
+          { slug: { contains: 'teste' } },
+          { slug: { contains: 'exemplo' } }
         ]
       }
     });
 
+    console.log(`[Cleaner] Master removed ${count} demo/test tenants.`);
     return res.json({ message: `Removidos ${count} tenants de demonstração.` });
   } catch (err) {
-    console.error("Erro limpar demo data", err);
-    return res.status(500).json({ message: "Erro ao limpar dados de demonstração" });
+    console.error("Erro ao limpar dados de demonstração:", err);
+    return res.status(500).json({ 
+      message: "Erro ao limpar dados de demonstração",
+      error: err instanceof Error ? err.message : String(err)
+    });
   }
 });
 

@@ -380,8 +380,8 @@ model EquipamentoCheckin {
   xpGanho          Int       @default(20)
   createdAt        DateTime  @default(now())
  
-  equipamento      EquipamentoCultural @relation(fields: [equipamentoId], references: [id])
-  visitor          Visitor             @relation(fields: [visitorId], references: [id])
+  equipamento      EquipamentoCultural @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  visitor          Visitor             @relation(fields: [visitorId], references: [id], onDelete: Cascade)
  
   @@unique([equipamentoId, visitorId, createdAt])  // permite revisitas
 }
@@ -521,7 +521,7 @@ model Work {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
   sealImageUrl  String? // Imagem do carimbo/selo para o passaporte (legado)
 
   // === NOVO: Sistema de Vestígios ===
@@ -578,14 +578,14 @@ model Trail {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
   tipoPercurso  String              @default("indoor") // indoor | outdoor | hibrido
 
   visits    VisitorVisit[]
   favorites Favorite[]
   
   ownerId   String?
-  owner     Visitor? @relation(fields: [ownerId], references: [id])
+  owner     Visitor? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -599,7 +599,7 @@ model Clue {
   active Boolean @default(true)
 
   workId String?
-  work   Work?   @relation(fields: [workId], references: [id]) // Pista pode levar a uma obra
+  work   Work?   @relation(fields: [workId], references: [id], onDelete: Cascade) // Pista pode levar a uma obra
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -705,7 +705,7 @@ model Event {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
 
   visits                    VisitorVisit[]
   attendances               EventAttendance[]
@@ -889,10 +889,10 @@ model VisitorVisit {
   source    String? // "QR" | "APP"
   xpGained  Int     @default(0)
 
-  visitor Visitor @relation(fields: [visitorId], references: [id])
-  work    Work?   @relation(fields: [workId], references: [id])
-  trail   Trail?  @relation(fields: [trailId], references: [id])
-  event   Event?  @relation(fields: [eventId], references: [id])
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  work    Work?   @relation(fields: [workId], references: [id], onDelete: Cascade)
+  trail   Trail?  @relation(fields: [trailId], references: [id], onDelete: Cascade)
+  event   Event?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -926,8 +926,8 @@ model VisitorAchievement {
   achievementId String
   unlockedAt    DateTime @default(now())
 
-  visitor     Visitor     @relation(fields: [visitorId], references: [id])
-  achievement Achievement @relation(fields: [achievementId], references: [id])
+  visitor     Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
 }
 
 model PassportStamp {
@@ -951,8 +951,8 @@ model PassportStamp {
   
   stampedAt        DateTime  @default(now())
 
-  visitor          Visitor   @relation(fields: [visitorId], references: [id])
-  work             Work      @relation(fields: [workId], references: [id])
+  visitor          Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  work             Work      @relation(fields: [workId], references: [id], onDelete: Cascade)
 
   @@unique([visitorId, workId]) // um vestigio por obra por visitante
 }
@@ -1004,14 +1004,14 @@ model ChatPersona {
 model Booking {
   id       String   @id @default(uuid())
   userId   String
-  user     User     @relation(fields: [userId], references: [id])
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenantId String
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   date     DateTime
 
   // Space Management
   spaceId   String?
-  space     Space?    @relation(fields: [spaceId], references: [id])
+  space     Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   startTime DateTime?
   endTime   DateTime?
   purpose   String?
@@ -1025,7 +1025,7 @@ model Booking {
   inPersonService   InPersonService? @relation(fields: [inPersonServiceId], references: [id])
   participants      Int?
   eventId           String?
-  event             Event?           @relation(fields: [eventId], references: [id])
+  event             Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, date])
   @@index([spaceId, date])
@@ -1047,7 +1047,7 @@ model Space {
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id])
+  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
 
   bookings Booking[]
   events   Event[]
