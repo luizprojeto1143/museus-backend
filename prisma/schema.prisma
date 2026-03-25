@@ -968,7 +968,7 @@ model VestigeAlert {
   expiresAt        DateTime?
   
   createdAt        DateTime  @default(now())
-  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model QRCode {
@@ -1764,7 +1764,7 @@ model AccessibilityProvider {
   verifiedAt    DateTime?
 
   tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   executions    AccessibilityExecution[]
   conversations Conversation[]
