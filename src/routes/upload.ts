@@ -8,6 +8,7 @@ import { prisma } from "../prisma.js";
 import { Role } from "@prisma/client";
 import https from "https";
 import http from "http";
+import { MediaService } from "../services/mediaService.js";
 
 const router = Router();
 
@@ -91,6 +92,29 @@ async function handleUpload(req: Request, res: Response, type: string) {
   if (!user.tenantId) return res.status(400).json({ message: "TenantId não identificado" });
 
   try {
+    // 0. Compression
+    if (type === "image") {
+      await MediaService.compressImage(file.path);
+    } else if (type === "video") {
+      const newPath = await MediaService.compressVideo(file.path);
+      if (newPath !== file.path) {
+        file.path = newPath;
+        file.filename = path.basename(newPath);
+        file.mimetype = "video/mp4";
+      }
+    } else if (type === "audio") {
+      const newPath = await MediaService.compressAudio(file.path);
+      if (newPath !== file.path) {
+        file.path = newPath;
+        file.filename = path.basename(newPath);
+        file.mimetype = "audio/mpeg";
+      }
+    }
+
+    // Refresh file stats for accurate metadata in DB
+    const stats = fs.statSync(file.path);
+    const fileSize = stats.size;
+
     let url = "";
 
     // 1. Upload to Storage
@@ -122,7 +146,7 @@ async function handleUpload(req: Request, res: Response, type: string) {
         url,
         type,
         mimeType: file.mimetype,
-        size: file.size,
+        size: fileSize,
         tenantId: user.tenantId,
         uploadedBy: user.id
       }
