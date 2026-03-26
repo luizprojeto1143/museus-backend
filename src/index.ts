@@ -147,7 +147,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.4.1" });
+  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.4.2" });
 });
 
 app.use("/auth", authRoutes);
