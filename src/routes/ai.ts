@@ -3,6 +3,11 @@ import { prisma } from "../prisma.js";
 import OpenAI from "openai";
 import { authMiddleware } from "../middleware/auth.js";
 import { aiLimiter } from "../middleware/rateLimiter.js";
+import multer from "multer";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdf = require("pdf-parse");
+import fs from "fs";
 
 const router = Router();
 
@@ -11,6 +16,12 @@ const openai = process.env.OPENAI_API_KEY
   : null;
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+// Configuração do multer para extração de PDF (temporário)
+const upload = multer({ dest: "uploads/temp/" });
+if (!fs.existsSync("uploads/temp/")) {
+  fs.mkdirSync("uploads/temp/", { recursive: true });
+}
 
 // Chat simples usando persona do tenant
 // SECURITY: Rate Limiting applied (CRIT-008)
@@ -483,6 +494,86 @@ Descrição: ${description || ""}`;
   } catch (err) {
     console.error("Erro IA translate", err);
     return res.status(500).json({ message: "Erro ao gerar tradução" });
+  }
+});
+
+// Rota para extração de dados de PDF
+router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
+    }
+
+    const { type } = req.body; // 'work' ou 'trail'
+    if (!req.file) {
+      return res.status(400).json({ message: "Arquivo PDF é obrigatório" });
+    }
+
+    const dataBuffer = fs.readFileSync(req.file.path);
+    const data = await pdf(dataBuffer);
+    const text = data.text;
+
+    // Remove o arquivo temporário
+    fs.unlinkSync(req.file.path);
+
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ message: "Não foi possível extrair texto do PDF. O arquivo pode estar vazio ou ser apenas imagem." });
+    }
+
+    const systemPromptFallback = type === 'work' 
+      ? "Você é um assistente de museu especializado em catalogação de obras de arte."
+      : "Você é um assistente de museu especializado em criação de roteiros e trilhas.";
+
+    const schema = type === 'work' 
+      ? `{
+          "title": "título da obra",
+          "artist": "nome do artista",
+          "year": "ano de criação (apenas o ano)",
+          "description": "uma descrição detalhada e atraente da obra",
+          "technique": "técnica utilizada",
+          "period": "período ou estilo artístico",
+          "medium": "suporte ou material",
+          "dimensions": "dimensões da obra",
+          "room": "sala sugerida",
+          "floor": "andar sugerido"
+        }`
+      : `{
+          "title": "título da trilha",
+          "description": "uma descrição atraente que convide o visitante a seguir este roteiro"
+        }`;
+
+    const userPrompt = `Abaixo está o texto extraído de um PDF:
+    
+    ---
+    ${text.substring(0, 15000)}
+    ---
+    
+    Por favor, extraia as informações relevantes para cadastrar uma ${type === 'work' ? 'obra' : 'trilha'} de museu.
+    Retorne APENAS um JSON válido com a seguinte estrutura:
+    ${schema}
+    
+    Se alguma informação não for encontrada, deixe o campo como uma string vazia.
+    Responda em Português do Brasil.`;
+
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPromptFallback },
+        { role: "user", content: userPrompt }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+    });
+
+    const content = completion.choices[0]?.message?.content || "{}";
+    const extractedData = JSON.parse(content);
+
+    return res.json(extractedData);
+
+  } catch (err) {
+    console.error("Erro na extração de PDF:", err);
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    return res.status(500).json({ message: "Erro ao extrair informações do PDF" });
   }
 });
 
