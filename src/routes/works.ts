@@ -161,6 +161,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       technique, period, medium, dimensions,
       code, // Dialer code from frontend
       equipamentoId,
+      metadata, // [FIX] Include metadata
       lat, lng, captureRadiusM, vestigeActive, vestigeType, vestigeExpiresAt, vestigeImageUrl
     } = req.body;
 
@@ -212,6 +213,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         vestigeImageUrl: vestigeImageUrl || null,
         tenantId,
         equipamentoId: equipamentoId || null,
+        metadata: metadata || null, // [FIX] Save metadata
       } as any
     });
 

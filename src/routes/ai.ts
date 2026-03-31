@@ -571,9 +571,13 @@ router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, r
     return res.json(extractedData);
 
   } catch (err) {
-    console.error("Erro na extração de PDF:", err);
+    console.error("❌ Erro na extração de PDF:", err);
+    if (err instanceof Error) console.error("Stack:", err.stack);
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    return res.status(500).json({ message: "Erro ao extrair informações do PDF" });
+    return res.status(500).json({ 
+      message: "Erro ao extrair informações do PDF", 
+      error: err instanceof Error ? err.message : String(err) 
+    });
   }
 });
 
