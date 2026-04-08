@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { uploadLimiter } from "../middleware/rateLimiter.js";
 import { prisma } from "../prisma.js";
 import { Role } from "@prisma/client";
 import https from "https";
@@ -162,10 +163,27 @@ async function handleUpload(req: Request, res: Response, type: string) {
 }
 
 // ROUTES
-router.post("/image", authMiddleware, uploadImage.single("file"), (req, res) => handleUpload(req, res, "image"));
-router.post("/audio", authMiddleware, uploadAudio.single("file"), (req, res) => handleUpload(req, res, "audio"));
-router.post("/video", authMiddleware, uploadVideo.single("file"), (req, res) => handleUpload(req, res, "video"));
-router.post("/document", authMiddleware, uploadDocument.single("file"), (req, res) => handleUpload(req, res, "document"));
+router.post("/image",    authMiddleware, uploadLimiter, uploadImage.single("file"),    (req, res) => handleUpload(req, res, "image"));
+router.post("/audio",    authMiddleware, uploadLimiter, uploadAudio.single("file"),    (req, res) => handleUpload(req, res, "audio"));
+router.post("/video",    authMiddleware, uploadLimiter, uploadVideo.single("file"),    (req, res) => handleUpload(req, res, "video"));
+router.post("/document", authMiddleware, uploadLimiter, uploadDocument.single("file"), (req, res) => handleUpload(req, res, "document"));
+
+// Generic upload (used by AdminUploads.tsx – validates MIME server-side)
+router.post("/", authMiddleware, uploadLimiter, uploadImage.single("file"), async (req, res) => {
+  // Try all categories
+  const file = req.file;
+  if (!file) return res.status(400).json({ message: "Arquivo é obrigatório" });
+  const allAllowed = Object.values(ALLOWED_MIME_TYPES).flat();
+  if (!allAllowed.includes(file.mimetype)) {
+    if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    return res.status(400).json({ message: `Tipo não permitido: ${file.mimetype}` });
+  }
+  const type = file.mimetype.startsWith("image") ? "image"
+    : file.mimetype.startsWith("audio") ? "audio"
+    : file.mimetype.startsWith("video") ? "video"
+    : "document";
+  return handleUpload(req, res, type);
+});
 
 // LIST FILES (SECURE)
 router.get("/", authMiddleware, async (req, res) => {

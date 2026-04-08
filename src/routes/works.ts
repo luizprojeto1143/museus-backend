@@ -20,6 +20,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const skip = (page - 1) * limit;
+    const search = (req.query.search as string | undefined)?.trim();
 
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
@@ -28,6 +29,15 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     // Default filter: Published and not deleted
     const whereClause: any = { tenantId, published: true, deletedAt: null };
     if (equipamentoId) whereClause.equipamentoId = equipamentoId;
+
+    // Text search across title, artist, description
+    if (search) {
+      whereClause.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { artist: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
     // If authenticated and authorized, allow seeing unpublished works
     if (req.user) {
@@ -72,10 +82,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error("Erro ao buscar obras:", err);
-    return res.status(500).json({
-      message: "Erro ao buscar obras",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    return res.status(500).json({ message: "Erro ao buscar obras" });
   }
 });
 
@@ -114,10 +121,7 @@ router.get("/:id", softAuthMiddleware, async (req, res) => {
     return res.json({ ...work, qrCode });
   } catch (err: any) {
     console.error("Erro ao buscar obra:", err);
-    return res.status(500).json({
-      message: "Erro ao buscar obra",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    return res.status(500).json({ message: "Erro ao buscar obra" });
   }
 });
 
@@ -239,10 +243,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
     if (err.code === 'P2003') {
       return res.status(400).json({ message: "Categoria fornecida é inválida ou não existe." });
     }
-    return res.status(500).json({ 
-      message: "Erro ao criar obra",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    return res.status(500).json({ message: "Erro ao criar obra" });
   }
 });
 
@@ -383,10 +384,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
       return res.status(400).json({ message: "Este código já está em uso." });
     }
-    return res.status(500).json({
-      message: "Erro ao atualizar obra",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    return res.status(500).json({ message: "Erro ao atualizar obra" });
   }
 });
 
@@ -449,10 +447,7 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
     return res.status(204).send();
   } catch (err) {
     console.error("Erro ao excluir obra:", err);
-    return res.status(500).json({ 
-      message: "Erro ao excluir obra",
-      error: err instanceof Error ? err.message : String(err)
-    });
+    return res.status(500).json({ message: "Erro ao excluir obra" });
   }
 });
 

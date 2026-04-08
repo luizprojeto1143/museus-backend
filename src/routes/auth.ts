@@ -4,9 +4,9 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../prisma.js";
 import { Role } from "@prisma/client";
 import { validate } from "../middleware/validate.js";
-import { loginSchema, registerSchema, switchTenantSchema } from "../schemas/auth.schema.js";
+import { loginSchema, registerSchema, switchTenantSchema, recoverPasswordSchema, resetPasswordSchema } from "../schemas/auth.schema.js";
 import { authMiddleware } from "../middleware/auth.js";
-import { authLimiter } from "../middleware/rateLimiter.js";
+import { authLimiter, passwordRecoveryLimiter } from "../middleware/rateLimiter.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -122,12 +122,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
   } catch (err: any) {
     console.error("[AUTH] Fatal error during login:", err);
     return res.status(500).json({ 
-      message: "Erro interno no servidor de autenticação", 
-      error: err.message,
-      // Temporarily include stack trace in prod for debugging
-      stack: err.stack,
-      path: req.path,
-      timestamp: new Date().toISOString()
+      message: "Erro interno no servidor de autenticação"
     });
   }
 });
@@ -201,7 +196,7 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
 });
 
 // Password Recovery (Request Link)
-router.post("/recover-password", authLimiter, async (req: Request, res: Response): Promise<any> => {
+router.post("/recover-password", passwordRecoveryLimiter, validate(recoverPasswordSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email } = req.body;
 
@@ -251,7 +246,7 @@ router.post("/recover-password", authLimiter, async (req: Request, res: Response
   }
 });
 
-router.post("/reset-password", authLimiter, async (req: Request, res: Response): Promise<any> => {
+router.post("/reset-password", passwordRecoveryLimiter, validate(resetPasswordSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { token, newPassword } = req.body;
 

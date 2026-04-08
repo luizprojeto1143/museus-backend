@@ -40,6 +40,7 @@ router.get("/clues", async (req, res) => {
 
 import jwt from "jsonwebtoken";
 import { authMiddleware } from "../middleware/auth.js";
+import { gamificationLimiter } from "../middleware/rateLimiter.js";
 
 const GAME_SECRET = process.env.GAME_SECRET || (() => {
     console.warn("⚠️  WARNING: GAME_SECRET not set. Using insecure default. Set GAME_SECRET in production!");
@@ -47,7 +48,7 @@ const GAME_SECRET = process.env.GAME_SECRET || (() => {
 })();
 
 // 3. Start Game Session (Anti-Cheat handshake)
-router.post("/session/start", authMiddleware, async (req, res) => {
+router.post("/session/start", authMiddleware, gamificationLimiter, async (req, res) => {
     try {
         const user = req.user!;
         // Return a signed session token
@@ -64,7 +65,7 @@ router.post("/session/start", authMiddleware, async (req, res) => {
 });
 
 // 4. End Game Session (Validate & Save)
-router.post("/session/end", authMiddleware, async (req, res) => {
+router.post("/session/end", authMiddleware, gamificationLimiter, async (req, res) => {
     try {
         const user = req.user!;
         const { gameToken, score, coins } = req.body;

@@ -134,8 +134,8 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -269,6 +269,9 @@ const PORT = process.env.PORT || 3000;
 // Global Error Handler
  
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const isProd = process.env.NODE_ENV === "production";
+
+  // Always log full detail server-side
   const sanitizedBody = { ..._req.body };
   if (sanitizedBody.password) sanitizedBody.password = "****";
 
@@ -304,12 +307,11 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     }
   }).catch((e: any) => console.error("Failed to log error to DB:", e));
   
+  // Never expose internals to client in production
   res.status(500).json({
     error: "Internal Server Error",
-    message: err.message,
-    code: err.code,
-    // Helping debug in prod temporarily
-    path: _req.path,
+    message: isProd ? "Ocorreu um erro interno. Tente novamente." : err.message,
+    ...(isProd ? {} : { code: err.code, path: _req.path }),
     timestamp: new Date().toISOString()
   });
 });
