@@ -13,7 +13,9 @@ export class EmailService {
         this.transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || "smtp.gmail.com",
             port: Number(process.env.SMTP_PORT) || 587,
-            secure: process.env.SMTP_SECURE === "true", // true for 465, false for other ports
+            secure: process.env.SMTP_SECURE === "true",
+            connectionTimeout: 10000, // 10s timeout to prevent hanging
+            greetingTimeout: 5000,
             auth: {
                 user: process.env.SMTP_USER,
                 pass: process.env.SMTP_PASS,
@@ -21,10 +23,12 @@ export class EmailService {
         });
     }
 
+    /**
+     * Send email blocking (awaits response)
+     */
     async sendEmail({ to, subject, html }: EmailOptions): Promise<void> {
         if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
             console.warn("⚠️ SMTP credentials not set. Email would be sent to:", to);
-            console.log("Subject:", subject);
             return;
         }
 
@@ -35,11 +39,21 @@ export class EmailService {
                 subject,
                 html,
             });
-            console.log("✅ Email sent:", info.messageId);
+            console.log(`✅ Email sent to ${to}: ${info.messageId}`);
         } catch (error) {
-            console.error("❌ Error sending email:", error);
+            console.error(`❌ Error sending email to ${to}:`, error);
             throw new Error("Falha ao enviar e-mail");
         }
+    }
+
+    /**
+     * Send email in background (Fire and Forget)
+     * Recommended for most user-facing routes to avoid latency.
+     */
+    sendEmailAsync(options: EmailOptions): void {
+        this.sendEmail(options).catch(err => {
+            console.error("[EmailService] Background send failed:", err);
+        });
     }
 
     async sendPasswordRecovery(to: string, resetLink: string) {
@@ -57,7 +71,8 @@ export class EmailService {
         <p style="text-align: center; color: #999; font-size: 12px;">© 2024 Museus App</p>
       </div>
     `;
-        await this.sendEmail({ to, subject: "Recuperação de Senha - Museus App", html });
+        // Use async fire-and-forget for better UX
+        this.sendEmailAsync({ to, subject: "Recuperação de Senha - Museus App", html });
     }
 }
 

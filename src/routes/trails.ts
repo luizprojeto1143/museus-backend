@@ -25,11 +25,29 @@ router.get("/", async (req, res) => {
       where.ownerId = null;
     }
 
-    const trails = await prisma.trail.findMany({
-      where,
-      orderBy: { createdAt: "desc" }
+    const page = Number(req.query.page) || 1;
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const [trails, total] = await Promise.all([
+      prisma.trail.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip: skip
+      }),
+      prisma.trail.count({ where })
+    ]);
+
+    return res.json({
+      data: trails,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
     });
-    return res.json(trails);
   } catch (err) {
     console.error("Erro listar trilhas", err);
     return res.status(500).json({ message: "Erro ao listar trilhas" });
@@ -40,8 +58,14 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const { tenantId } = req.query;
+
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId é obrigatório" });
+    }
+
     const trail = await prisma.trail.findFirst({ 
-      where: { id, deletedAt: null } 
+      where: { id, tenantId: String(tenantId), deletedAt: null } 
     });
     if (!trail) {
       return res.status(404).json({ message: "Trilha não encontrada" });

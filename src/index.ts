@@ -4,6 +4,7 @@ import express from "express";
 import { Socket } from "net";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import path from "path";
 import swaggerUi from 'swagger-ui-express';
 import { specs } from './config/swagger.js';
@@ -131,11 +132,27 @@ app.use(cors({
 app.options("*", cors());
 
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      imgSrc: ["'self'", "data:", "https:", "http:"], // Allow images from any source for placeholders/uploads
+      connectSrc: ["'self'", "https:", "http:"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'", "https:", "http:"],
+      frameSrc: ["'none'"]
+    }
+  },
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" }
 }));
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(compression());
+
+app.use(express.json({ limit: "2mb" })); // Reduced from 10mb for general security. Upload routes have their own multer limit.
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 app.use((req, res, next) => {
   const start = Date.now();

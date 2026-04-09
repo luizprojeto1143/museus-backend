@@ -97,8 +97,14 @@ router.get("/", softAuthMiddleware, async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const tenantId = req.query.tenantId as string | undefined;
+
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId é obrigatório" });
+    }
+
     const event = await prisma.event.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, tenantId, deletedAt: null },
       include: {
         tenant: {
           select: {
@@ -111,7 +117,7 @@ router.get("/:id", async (req, res) => {
     });
 
     if (!event) {
-      return res.status(404).json({ message: "Evento não encontrado" });
+      return res.status(404).json({ message: "Evento não encontrado ou acesso não autorizado" });
     }
 
     return res.json(event);

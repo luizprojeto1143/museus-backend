@@ -90,8 +90,14 @@ router.get("/", softAuthMiddleware, async (req, res) => {
 router.get("/:id", softAuthMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const { tenantId } = req.query;
+
     const work = await prisma.work.findFirst({ 
-      where: { id, deletedAt: null },
+      where: { 
+        id, 
+        tenantId: tenantId ? String(tenantId) : undefined, // Preferred: scope it if provided
+        deletedAt: null 
+      },
       include: { 
         category: true,
         collectibleCards: true
