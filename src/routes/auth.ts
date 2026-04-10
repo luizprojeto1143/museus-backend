@@ -18,6 +18,12 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 const ACCESS_TOKEN_EXPIRES_IN = "15m";
 // Refresh Token: 7 dias (Longa duração para UX)
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict" as const,
+  maxAge: REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
+};
 
 // Helper para gerar tokens
 const generateTokens = async (userId: string, email: string, role: Role, tenantId: string | null, tenantType: any, name?: string) => {
@@ -117,7 +123,12 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         hasProviderProfile: !!user.providerProfile
       }
     };
-    console.log("-> Success! Sending response JSON...");
+    console.log("-> Success! Setting cookies and sending response...");
+    
+    // Set Cookies for Production Excellence (Security)
+    res.cookie("museus_token", tokens.accessToken, COOKIE_OPTIONS);
+    res.cookie("museus_refresh_token", tokens.refreshToken, COOKIE_OPTIONS);
+
     return res.json(responseData);
   } catch (err: any) {
     console.error("[AUTH] Fatal error during login:", err);
@@ -167,6 +178,10 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
       storedToken.user.name
     );
 
+    // Set Cookies
+    res.cookie("museus_token", newTokens.accessToken, COOKIE_OPTIONS);
+    res.cookie("museus_refresh_token", newTokens.refreshToken, COOKIE_OPTIONS);
+
     return res.json({
       accessToken: newTokens.accessToken,
       refreshToken: newTokens.refreshToken
@@ -188,6 +203,8 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
         data: { revoked: true }
       });
     }
+    res.clearCookie("museus_token");
+    res.clearCookie("museus_refresh_token");
     return res.status(200).json({ message: "Logout realizado com sucesso" });
   } catch (err) {
     console.error("Erro logout", err);
@@ -195,7 +212,43 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
   }
 });
 
-// Password Recovery (Request Link)
+// Get Current User Profile (Auth Me)
+router.get("/me", authMiddleware, async (req: any, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        tenant: { select: { type: true } },
+        providerProfile: { select: { id: true } }
+      }
+    });
+
+    if (!user) return res.status(404).json({ message: "Usuário não encontrado" });
+
+    let equipamentoId = null;
+    if (user.tenantId) {
+      const equip = await prisma.equipamentoCultural.findFirst({
+        where: { tenantId: user.tenantId, ativo: true },
+        orderBy: { createdAt: 'asc' }
+      });
+      equipamentoId = equip?.id || null;
+    }
+
+    return res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      tenantId: user.tenantId,
+      equipamentoId,
+      tenantType: user.tenant?.type,
+      hasProviderProfile: !!user.providerProfile
+    });
+  } catch (err) {
+    return res.status(500).json({ message: "Erro ao buscar perfil" });
+  }
+});
+
 router.post("/recover-password", passwordRecoveryLimiter, validate(recoverPasswordSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email } = req.body;

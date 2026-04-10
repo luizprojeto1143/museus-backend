@@ -20,14 +20,30 @@ interface JwtPayload {
   name?: string;
 }
 
+function getCookie(cookies: string | undefined, name: string) {
+  if (!cookies) return null;
+  const match = cookies.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? match[2] : null;
+}
+
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  let token: string | null = null;
+  
+  // 1. Try Authorization header
   const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith("Bearer ")) {
-    console.warn(`[AUTH] Missing or invalid Authorization header from ${req.ip}`);
-    return res.status(401).json({ message: "Não autenticado" });
+  if (auth && auth.startsWith("Bearer ")) {
+    token = auth.substring(7);
+  } 
+  
+  // 2. Try Cookie if header is missing (for production excellence)
+  if (!token) {
+    token = getCookie(req.headers.cookie, "museus_token");
   }
 
-  const token = auth.substring(7);
+  if (!token) {
+    console.warn(`[AUTH] Missing authentication from ${req.ip}`);
+    return res.status(401).json({ message: "Não autenticado" });
+  }
   try {
     const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
     req.user = {
@@ -64,12 +80,17 @@ export function requireRole(roles: Role[]) {
 
 
 export function softAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+  let token: string | null = null;
   const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith("Bearer ")) {
-    return next();
+  if (auth && auth.startsWith("Bearer ")) {
+    token = auth.substring(7);
+  } else {
+    token = getCookie(req.headers.cookie, "museus_token");
   }
 
-  const token = auth.substring(7);
+  if (!token) {
+    return next();
+  }
   try {
     const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
     req.user = {
