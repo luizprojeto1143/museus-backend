@@ -10,15 +10,12 @@ const getDatabaseUrl = () => {
     if (!url.includes("@")) return url;
     
     // 2. Ensure mandatory query parameters for Supabase stability
-    if (!url.includes("pgbouncer=true")) {
+    if (!url.includes("pgbouncer=")) {
       const sep = url.includes("?") ? "&" : "?";
       url += `${sep}pgbouncer=true`;
     }
     if (!url.includes("connection_limit=")) {
       url += "&connection_limit=2";
-    }
-    if (!url.includes("sslmode=")) {
-      url += "&sslmode=require";
     }
     if (!url.includes("pool_timeout=")) {
       url += "&pool_timeout=90";

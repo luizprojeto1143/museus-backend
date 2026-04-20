@@ -60,10 +60,6 @@ async function resolveBestUrl() {
     console.log("🛠️ Analisando DATABASE_URL e testando conectividade...");
     
     let urlToProcess = DB_URL;
-    if (urlToProcess.includes('+') && !urlToProcess.includes('%2B')) {
-        urlToProcess = urlToProcess.replace(/\+/, '%2B');
-    }
-
     const finalUrl = new URL(urlToProcess);
     const host = finalUrl.hostname;
     const originalPort = finalUrl.port || '5432';
