@@ -9,16 +9,13 @@ const getDatabaseUrl = () => {
     // 1. Ensure Port (don't force 6543 if already set by start_deploy.js)
     if (!url.includes("@")) return url;
     
-    // 2. Ensure mandatory query parameters for Supabase stability
-    if (!url.includes("pgbouncer=")) {
-      const sep = url.includes("?") ? "&" : "?";
-      url += `${sep}pgbouncer=true`;
+    // 2. Ensure mandatory quality of service parameters
+    const sep = url.includes("?") ? "&" : "?";
+    if (!url.includes("sslmode=")) {
+      url += `${sep}sslmode=require`;
     }
-    if (!url.includes("connection_limit=")) {
-      url += "&connection_limit=2";
-    }
-    if (!url.includes("pool_timeout=")) {
-      url += "&pool_timeout=90";
+    if (!url.includes("connect_timeout=")) {
+      url += "&connect_timeout=60";
     }
 
     const maskedUrl = url.replace(/:[^:@]+@/, ":****@");
