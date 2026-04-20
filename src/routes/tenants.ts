@@ -31,10 +31,22 @@ router.get("/public", limiter, async (req, res) => {
     });
     return res.json(tenants);
   } catch (err) {
-    console.error("Erro ao listar museus públicos:", err);
+    console.error("❌ CRITICAL: Erro ao listar museus públicos na rota /public");
+    console.error("Error Object:", err);
+    if (err instanceof Error) {
+      console.error("Message:", err.message);
+      console.error("Stack:", err.stack);
+    }
+    // Check if it's a Prisma error
+    if (typeof err === 'object' && err !== null && 'code' in err) {
+      console.error("Prisma Error Code:", (err as any).code);
+      console.error("Prisma Metadata:", (err as any).meta);
+    }
+
     return res.status(500).json({ 
-      message: "Erro ao listar museus",
-      error: err instanceof Error ? err.message : String(err)
+      message: "Erro ao listar museus. Por favor, verifique o status do banco de dados.",
+      error: err instanceof Error ? err.message : String(err),
+      code: (err as any)?.code || "UNKNOWN_ERROR"
     });
   }
 });
