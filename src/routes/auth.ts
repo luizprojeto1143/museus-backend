@@ -172,11 +172,11 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
 
     // 3. Verifica se foi revogado (Grace period de 10s para evitar race conditions em chamadas paralelas)
     if (storedToken.revoked) {
+      const lastAction = (storedToken as any).updatedAt || storedToken.createdAt;
       const tenSecondsAgo = new Date(Date.now() - 10000);
-      if (storedToken.updatedAt < tenSecondsAgo) {
+      if (lastAction < tenSecondsAgo) {
         return res.status(401).json({ message: "Sessão inválida. Faça login novamente." });
       }
-      // Se foi revogado há menos de 10s, assumimos que foi uma chamada paralela e retornamos sucesso (o frontend lidará com o novo token salvo no localStorage)
       console.log(`[AUTH] Grace period activated for token ${refreshToken.substring(0,8)}...`);
     }
 
