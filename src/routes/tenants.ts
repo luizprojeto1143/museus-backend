@@ -204,7 +204,10 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
     where.deletedAt = null;
 
     const tenants = await prisma.tenant.findMany({
-      where,
+      where: {
+        ...where,
+        deletedAt: null
+      },
       orderBy: { createdAt: "desc" }
     });
     return res.json(tenants);
@@ -644,13 +647,14 @@ router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, re
       
       console.log(`[Tenant] Hard deleted tenant ${id} and all its data by MASTER`);
     } else {
-      // Soft Delete
+      // Soft Delete - Mark as deleted
       await prisma.tenant.update({
         where: { id },
         data: { deletedAt: new Date() }
       });
       console.log(`[Tenant] Soft deleted tenant ${id}`);
     }
+
 
     await createAuditLog(
       shouldHardDelete ? 'HARD_DELETE' : 'SOFT_DELETE',
