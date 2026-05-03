@@ -73,6 +73,8 @@ export class EmailService {
     `;
         // Use async fire-and-forget for better UX
         this.sendEmailAsync({ to, subject: "Recuperação de Senha - Museus App", html });
+    }
+
     async sendBadgeUpdate(to: string, status: string, name: string) {
         const statusMap: Record<string, string> = {
             APPROVED: "Aprovado! Seu crachá será impresso em breve.",
