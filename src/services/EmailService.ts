@@ -73,6 +73,28 @@ export class EmailService {
     `;
         // Use async fire-and-forget for better UX
         this.sendEmailAsync({ to, subject: "Recuperação de Senha - Museus App", html });
+    async sendBadgeUpdate(to: string, status: string, name: string) {
+        const statusMap: Record<string, string> = {
+            APPROVED: "Aprovado! Seu crachá será impresso em breve.",
+            SHIPPED: "Enviado! Em breve você receberá seu crachá físico.",
+            DELIVERED: "Entregue! Esperamos que goste do seu novo crachá.",
+            REJECTED: "Infelizmente sua solicitação foi recusada."
+        };
+
+        const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; background-color: #111; color: #fff;">
+        <h2 style="color: #d4af37; text-align: center;">Atualização de Crachá</h2>
+        <p>Olá <strong>${name}</strong>,</p>
+        <p>Temos novidades sobre o seu crachá de <strong>Embaixador da Cultura</strong>!</p>
+        <div style="background-color: #222; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #d4af37; text-align: center;">
+          <span style="font-size: 18px; font-weight: bold; color: #d4af37;">Status: ${statusMap[status] || status}</span>
+        </div>
+        <p>Você pode acompanhar o progresso diretamente no seu aplicativo.</p>
+        <hr style="border: none; border-top: 1px solid #333; margin: 20px 0;" />
+        <p style="text-align: center; color: #666; font-size: 12px;">© 2024 Museus App - Cultura Viva</p>
+      </div>
+    `;
+        this.sendEmailAsync({ to, subject: "Status do seu Crachá - Museus App", html });
     }
 }
 

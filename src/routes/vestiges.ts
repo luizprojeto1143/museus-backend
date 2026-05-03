@@ -22,12 +22,18 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 // GET /vestiges/nearby - Encontrar vestígios próximos ao GPS do usuário
-router.get("/nearby", async (req, res) => {
+router.get("/nearby", authMiddleware, async (req, res) => {
   try {
     const { lat, lng, radius = 500, tenantId } = req.query;
+    const user = req.user!;
 
     if (!lat || !lng || !tenantId) {
       return res.status(400).json({ message: "lat, lng e tenantId são obrigatórios" });
+    }
+
+    // L6 Fix: Verify tenant access (unless MASTER)
+    if (user.role !== Role.MASTER && user.tenantId !== tenantId) {
+       return res.status(403).json({ message: "Acesso negado a este museu" });
     }
 
     const uLat = parseFloat(lat as string);
@@ -75,8 +81,16 @@ router.post("/capture", authMiddleware, async (req, res) => {
       where: { id: workId },
     });
 
-    if (!work || !work.vestigeActive || work.deletedAt) {
-      return res.status(404).json({ message: "Vestígio não encontrado ou inativo" });
+    if (!work || work.deletedAt) {
+      return res.status(404).json({ message: "Vestígio não encontrado" });
+    }
+
+    // L1 Fix: Check for RELIC status even if not active
+    const now = new Date();
+    const isExpired = work.vestigeExpiresAt && work.vestigeExpiresAt < now;
+
+    if (!work.vestigeActive && !isExpired) {
+      return res.status(400).json({ message: "Vestígio inativo" });
     }
 
     // 2. Verificar proximidade GPS (Haversine)
@@ -102,11 +116,14 @@ router.post("/capture", authMiddleware, async (req, res) => {
     }
 
     // 4. Incrementar contador global e determinar raridade
-    // Usamos transação para garantir unicidade do contador
+    // C2 Fix: Use atomic increment with raw SQL to prevent race condition
     const result = await prisma.$transaction(async (tx) => {
-      const updatedWork = await (tx.work as any).update({
+      // C2 Atomic Update
+      await (tx as any).$executeRaw`UPDATE "Work" SET "vestigeTotalCapturas" = "vestigeTotalCapturas" + 1 WHERE id = ${workId}`;
+      
+      const updatedWork = await (tx.work as any).findUnique({
         where: { id: workId },
-        data: { vestigeTotalCapturas: { increment: 1 } }
+        select: { vestigeTotalCapturas: true, vestigeExpiresAt: true }
       });
 
       const count = updatedWork.vestigeTotalCapturas;
@@ -124,11 +141,11 @@ router.post("/capture", authMiddleware, async (req, res) => {
         xp = 100;
       }
 
-      // Se a exposição expirou/acabou de ser marcada como inativa, vira RELIC
+      // L1 Fix: Correct RELIC logic (capture historical)
       const now = new Date();
-      if (work.vestigeExpiresAt && work.vestigeExpiresAt < now) {
+      if (updatedWork.vestigeExpiresAt && updatedWork.vestigeExpiresAt < now) {
         raridade = "RELIC";
-        xp = 300; // Bônus por capturar algo histórico
+        xp = 300; 
       }
 
       const stamp = await (tx.passportStamp as any).create({
@@ -140,7 +157,7 @@ router.post("/capture", authMiddleware, async (req, res) => {
           xpGanho: xp,
           latCaptura: lat,
           lngCaptura: lng,
-          accuracyMetros: accuracy
+          accuracyMetros: accuracy || 0
         }
       });
 
@@ -197,9 +214,15 @@ router.post("/expire/:workId", authMiddleware, async (req, res) => {
 });
 
 // GET /vestiges/passport/:visitorId - Ver passaporte consolidado
-router.get("/passport/:visitorId", async (req, res) => {
+router.get("/passport/:visitorId", authMiddleware, async (req, res) => {
   try {
     const { visitorId } = req.params;
+    const user = req.user!;
+
+    // C1 Fix: Enforce ownership
+    if (user.role !== Role.MASTER && user.id !== visitorId) {
+       return res.status(403).json({ message: "Acesso negado" });
+    }
 
     const stamps = await (prisma.passportStamp as any).findMany({
       where: { visitorId },
@@ -211,7 +234,7 @@ router.get("/passport/:visitorId", async (req, res) => {
             vestigeImageUrl: true,
             imageUrl: true,
             tenant: {
-              select: { name: true, slug: true, address: true }
+              select: { name: true, slug: true, address: true, city: true } // I6: Include city
             }
           }
         }

@@ -529,7 +529,7 @@ model Work {
   lat              Float?     // coordenada GPS da obra
   lng              Float?     // coordenada GPS da obra
   captureRadiusM   Int        @default(15)  // raio de captura em metros
-  vestigeActive    Boolean    @default(true) // false = Relíquia (não capturável)
+  vestigeActive    Boolean    @default(false) // false = Relíquia (não capturável)
   vestigeType      String     @default("WORK") // WORK | STREET_ART | INSTALLATION
   vestigeExpiresAt DateTime?  // data de encerramento da exposição
   vestigeTotalCapturas Int    @default(0)   // contador global de capturas
@@ -965,6 +965,8 @@ model PassportStamp {
   visitor          Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
   work             Work      @relation(fields: [workId], references: [id], onDelete: Cascade)
 
+  @@index([visitorId])
+  @@index([workId])
   @@unique([visitorId, workId]) // um vestigio por obra por visitante
 }
 

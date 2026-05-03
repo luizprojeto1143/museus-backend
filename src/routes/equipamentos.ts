@@ -122,6 +122,26 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Equipamento não encontrado" });
     }
 
+    // L5 Fix: Prevent XP duplication (Check if already checked in today)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const existingCheckin = await prisma.equipamentoCheckin.findFirst({
+      where: {
+        visitorId: visitor.id,
+        equipamentoId: id,
+        createdAt: { gte: today }
+      }
+    });
+
+    if (existingCheckin) {
+      return res.status(200).json({
+        message: "Você já realizou o check-in hoje!",
+        checkin: existingCheckin,
+        xpGained: 0
+      });
+    }
+
     // Create check-in record
     const checkin = await prisma.equipamentoCheckin.create({
       data: {

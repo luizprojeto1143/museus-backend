@@ -13,6 +13,9 @@ router.get("/", authenticate, async (req, res) => {
     const skins = await prisma.skin.findMany({
       where: {
         active: true,
+        // I2 Fix: Skins de evento exclusivo não devem aparecer no marketplace geral 
+        // a menos que haja uma lógica específica futura. Por enquanto, filtramos.
+        eventOnly: false, 
         OR: [
           { tenantId: null },
           { tenantId: tenantId ?? undefined }
@@ -31,7 +34,6 @@ router.get("/", authenticate, async (req, res) => {
 
     res.json(formatted);
   } catch (err) {
-    // C7: Catch DB/validation errors to prevent unhandled rejection propagation
     console.error("[marketplace] GET / error:", err);
     res.status(500).json({ error: "Erro ao listar marketplace" });
   }
@@ -46,7 +48,6 @@ router.post("/:skinId/buy", authenticate, async (req, res) => {
 
     if (!userEmail) return res.status(401).json({ error: "Unauthorized" });
 
-    // B-02: Derive visitorId from JWT instead of trusting request body
     const visitor = await prisma.visitor.findFirst({
       where: {
         email: userEmail.toLowerCase(),
@@ -57,6 +58,7 @@ router.post("/:skinId/buy", authenticate, async (req, res) => {
     const skin = await prisma.skin.findFirst({ 
       where: { 
         id: skinId,
+        active: true,
         OR: [
           { tenantId: null },
           { tenantId: tenantId }
@@ -65,27 +67,45 @@ router.post("/:skinId/buy", authenticate, async (req, res) => {
     });
 
     if (!visitor || !skin) return res.status(404).json({ error: "Not found" });
-    if (visitor.xp < skin.xpCost) return res.status(400).json({ error: "Insufficient XP" });
 
-    const existing = await prisma.visitorSkin.findUnique({
-      where: { visitorId_skinId: { visitorId: visitor.id, skinId } }
-    });
-    if (existing) return res.status(400).json({ error: "Already owned" });
+    // C4 Fix: Move logic to transaction to prevent race conditions
+    // Use updateMany with XP condition to ensure atomicity
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Check if already owned
+      const existing = await tx.visitorSkin.findUnique({
+        where: { visitorId_skinId: { visitorId: visitor.id, skinId } }
+      });
+      if (existing) throw new Error("ALREADY_OWNED");
 
-    const [updatedVisitor] = await prisma.$transaction([
-      prisma.visitor.update({
-        where: { id: visitor.id },
-        data: { xp: { decrement: skin.xpCost } }
-      }),
-      prisma.visitorSkin.create({
+      // 2. Atomic decrement with check
+      const updated = await tx.visitor.updateMany({
+        where: { 
+          id: visitor.id, 
+          xp: { gte: skin.xpCost } 
+        },
+        data: { 
+          xp: { decrement: skin.xpCost } 
+        }
+      });
+
+      if (updated.count === 0) throw new Error("INSUFFICIENT_XP");
+
+      // 3. Create ownership
+      return await tx.visitorSkin.create({
         data: { visitorId: visitor.id, skinId }
-      })
-    ]);
+      });
+    });
 
-    res.json({ success: true, newXpBalance: updatedVisitor.xp });
-  } catch (err) {
-    // C7: Catch DB/validation errors to prevent unhandled rejection propagation
+    // Fetch updated balance for response
+    const updatedVisitor = await prisma.visitor.findUnique({ where: { id: visitor.id } });
+
+    res.json({ success: true, newXpBalance: updatedVisitor?.xp });
+  } catch (err: any) {
     console.error("[marketplace] POST /:skinId/buy error:", err);
+    
+    if (err.message === "ALREADY_OWNED") return res.status(400).json({ error: "Você já possui esta skin" });
+    if (err.message === "INSUFFICIENT_XP") return res.status(400).json({ error: "XP insuficiente" });
+
     res.status(500).json({ error: "Erro ao processar compra" });
   }
 });

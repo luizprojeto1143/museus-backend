@@ -30,6 +30,13 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     const whereClause: any = { tenantId, published: true, deletedAt: null };
     if (equipamentoId) whereClause.equipamentoId = equipamentoId;
 
+    // L2 Fix: Add vestigeActive filter if requested
+    if (req.query.vestigeActive === "true") {
+      whereClause.vestigeActive = true;
+    } else if (req.query.vestigeActive === "false") {
+      whereClause.vestigeActive = false;
+    }
+
     // Text search across title, artist, description
     if (search) {
       whereClause.OR = [
@@ -217,7 +224,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         lat: lat ? Number(lat) : null,
         lng: lng ? Number(lng) : null,
         captureRadiusM: captureRadiusM ? Number(captureRadiusM) : null,
-        vestigeActive: Boolean(vestigeActive),
+        vestigeActive: vestigeActive === true || vestigeActive === "true", // L8 Fix
         vestigeType: vestigeType || null,
         vestigeExpiresAt: vestigeExpiresAt ? new Date(vestigeExpiresAt) : null,
         vestigeImageUrl: vestigeImageUrl || null,
@@ -369,7 +376,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         lat: data.lat !== undefined ? (data.lat ? Number(data.lat) : null) : undefined,
         lng: data.lng !== undefined ? (data.lng ? Number(data.lng) : null) : undefined,
         captureRadiusM: data.captureRadiusM !== undefined ? (data.captureRadiusM ? Number(data.captureRadiusM) : null) : undefined,
-        vestigeActive: data.vestigeActive !== undefined ? Boolean(data.vestigeActive) : undefined,
+        vestigeActive: data.vestigeActive !== undefined ? (data.vestigeActive === true || data.vestigeActive === "true") : undefined, // L8 Fix
         vestigeType: data.vestigeType !== undefined ? (data.vestigeType || null) : undefined,
         vestigeExpiresAt: data.vestigeExpiresAt !== undefined ? (data.vestigeExpiresAt ? new Date(data.vestigeExpiresAt) : null) : undefined,
         vestigeImageUrl: data.vestigeImageUrl !== undefined ? (data.vestigeImageUrl || null) : undefined,

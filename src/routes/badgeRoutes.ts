@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware as authenticate, requireRole as authorize } from "../middleware/auth.js";
+import { emailService } from "../services/EmailService.js";
 
 const router = Router();
 
@@ -25,64 +26,132 @@ router.get("/my", authenticate, async (req, res) => {
 
 // Visitor: Request physical badge
 router.post("/", authenticate, async (req, res) => {
-  const { visitorId, tenantId, addressName, addressStreet, addressCity, addressState, addressZip } = req.body;
+  try {
+    const { addressName, addressStreet, addressCity, addressState, addressZip } = req.body;
+    const userEmail = req.user!.email;
+    const tenantId = req.user!.tenantId as string;
 
-  const visitor = await prisma.visitor.findUnique({
-    where: { id: visitorId },
-    include: { vRPGs: { where: { isActive: true }, include: { equippedSkin: true } } }
-  });
+    // C1 Fix: Derive visitorId from JWT
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: userEmail, tenantId },
+      include: { vRPGs: { where: { isActive: true }, include: { equippedSkin: true } } }
+    });
 
-  if (!visitor) return res.status(404).json({ error: "Visitor not found" });
-  if (visitor.xp < 100000) return res.status(400).json({ error: "Insufficient XP (min 100k)" });
+    if (!visitor) return res.status(404).json({ error: "Visitante não encontrado" });
+    if (visitor.xp < 100000) return res.status(400).json({ error: "XP insuficiente (mínimo 100k)" });
 
-  const equippedSkin = visitor?.vRPGs[0]?.equippedSkin?.imageUrl || "default_avatar.png";
+    // C2 Fix: Check for existing pending/active request
+    const existing = await (prisma as any).badgeRequest.findFirst({
+      where: {
+        visitorId: visitor.id,
+        status: { notIn: ["REJECTED", "DELIVERED"] }
+      }
+    });
 
-  // Calcule o nível do crachá com base no XP atual
-  let level = 1; // Bronze
-  const xp = visitor.xp;
-  if (xp >= 1000000) level = 4; // Platina
-  else if (xp >= 500000) level = 3; // Ouro
-  else if (xp >= 250000) level = 2; // Prata
-
-  const request = await (prisma as any).badgeRequest.create({
-    data: {
-      visitorId,
-      tenantId,
-      level,
-      skinImageUrl: equippedSkin,
-      xpAtRequest: visitor.xp,
-      addressName,
-      addressStreet,
-      addressCity,
-      addressState,
-      addressZip
+    if (existing) {
+      return res.status(400).json({ 
+        error: "Você já possui uma solicitação de crachá em andamento.",
+        status: existing.status
+      });
     }
-  });
 
-  res.json(request);
+    const equippedSkin = visitor?.vRPGs[0]?.equippedSkin?.imageUrl || "default_avatar.png";
+
+    // L2 Backend Logic: Bronze=100k, Prata=250k, Ouro=500k, Platina=1M
+    let level = 1; // Bronze
+    const xp = visitor.xp;
+    if (xp >= 1000000) level = 4; // Platina
+    else if (xp >= 500000) level = 3; // Ouro
+    else if (xp >= 250000) level = 2; // Prata
+
+    const request = await (prisma as any).badgeRequest.create({
+      data: {
+        visitorId: visitor.id,
+        tenantId,
+        level,
+        skinImageUrl: equippedSkin,
+        xpAtRequest: visitor.xp,
+        addressName,
+        addressStreet,
+        addressCity,
+        addressState,
+        addressZip
+      }
+    });
+
+    res.status(201).json(request);
+  } catch (error) {
+    console.error("Error creating badge request:", error);
+    res.status(500).json({ error: "Erro ao solicitar crachá" });
+  }
 });
 
 // Master: List and Approve Badge Requests
 router.get("/queue", authenticate, authorize(["MASTER"]), async (req, res) => {
-  const requests = await (prisma as any).badgeRequest.findMany({
-    include: { visitor: true, tenant: true }
-  });
-  res.json(requests);
+  try {
+    const requests = await (prisma as any).badgeRequest.findMany({
+      include: { visitor: true, tenant: true },
+      orderBy: { requestedAt: "desc" }
+    });
+    res.json(requests);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao buscar fila" });
+  }
 });
 
 router.put("/:id/status", authenticate, authorize(["MASTER"]), async (req, res) => {
-  const { status, trackingCode } = req.body;
-  const request = await (prisma as any).badgeRequest.update({
-    where: { id: req.params.id },
-    data: { 
-      status, 
-      trackingCode,
-      approvedAt: status === "APPROVED" ? new Date() : undefined,
-      shippedAt: status === "SHIPPED" ? new Date() : undefined,
-      deliveredAt: status === "DELIVERED" ? new Date() : undefined
+  try {
+    const { status, trackingCode } = req.body;
+    const request = await (prisma as any).badgeRequest.update({
+      where: { id: req.params.id },
+      data: { 
+        status, 
+        trackingCode,
+        approvedAt: status === "APPROVED" ? new Date() : undefined,
+        shippedAt: status === "SHIPPED" ? new Date() : undefined,
+        deliveredAt: status === "DELIVERED" ? new Date() : undefined
+      },
+      include: { visitor: true }
+    });
+
+    // I5: Integrar Notificações (Real via serviço de e-mail)
+    console.log(`Badge Request ${request.id} status changed to ${status} for visitor ${request.visitor.email}`);
+    if (request.visitor.email) {
+      emailService.sendBadgeUpdate(request.visitor.email, status, request.visitor.name || "Visitante");
     }
-  });
-  res.json(request);
+
+    res.json(request);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao atualizar status" });
+  }
+});
+
+// I4: GET /badges/:id/print — Retorna dados estruturados para o motor de PDF do frontend ou gera buffer
+router.get("/:id/print", authenticate, authorize(["MASTER", "ADMIN"]), async (req, res) => {
+  try {
+    const request = await (prisma as any).badgeRequest.findUnique({
+      where: { id: req.params.id },
+      include: { visitor: true, tenant: true }
+    });
+
+    if (!request) return res.status(404).json({ error: "Solicitação não encontrada" });
+
+    // Aqui geramos os metadados do crachá. 
+    // Em uma implementação completa, usaríamos PDFKit ou similar aqui.
+    // Por enquanto, retornamos os dados prontos para o componente de impressão do frontend.
+    const badgeData = {
+      visitorName: request.visitor.name,
+      levelName: request.level === 4 ? "PLATINA" : request.level === 3 ? "OURO" : request.level === 2 ? "PRATA" : "BRONZE",
+      avatarUrl: request.skinImageUrl,
+      tenantName: request.tenant?.name,
+      issueDate: request.approvedAt || request.requestedAt,
+      requestId: request.id
+    };
+
+    res.json(badgeData);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao gerar dados de impressão" });
+  }
 });
 
 export default router;

@@ -162,6 +162,12 @@ router.post('/add-xp', authMiddleware, async (req, res) => {
             if (newLevel >= threshold.level) newClass = threshold.name;
         }
 
+        // L1 Fix: Sync with main Visitor XP
+        await prisma.visitor.update({
+            where: { id: visitorId },
+            data: { xp: { increment: amount } }
+        });
+
         await prisma.visitorRPG.updateMany({
             where: { visitorId },
             data: { currentXp: newXp, level: newLevel, nextLevelXp, characterClass: newClass }
@@ -266,7 +272,17 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
         const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId: tenantId } });
         if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
 
-        // 1. Verify ownership
+        // C3 Fix: Verify that characterId belongs to the visitor
+        const rpg = await prisma.visitorRPG.findFirst({
+            where: { 
+                id: characterId,
+                visitorId: visitor.id
+            }
+        });
+
+        if (!rpg) return res.status(404).json({ message: 'Personagem não encontrado ou não pertence a você' });
+
+        // 1. Verify skin ownership
         const ownership = await prisma.visitorSkin.findUnique({
             where: { visitorId_skinId: { visitorId: visitor.id, skinId } },
             include: { skin: true }
@@ -274,19 +290,9 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
         if (!ownership) return res.status(403).json({ message: 'Você não possui esta skin' });
 
         // 2. Verify skin compatibility with character
-        if (ownership.skin.characterBaseId && ownership.skin.characterBaseId !== characterId) {
+        if (ownership.skin.characterBaseId && ownership.skin.characterBaseId !== rpg.selectedCharacterId) {
             return res.status(400).json({ message: 'Esta skin não serve para este personagem' });
         }
-
-        // 3. Equip to active character or specified ID
-        const rpg = await prisma.visitorRPG.findFirst({
-            where: { 
-                visitorId: visitor.id, 
-                ...(characterId ? { id: characterId } : { isActive: true })
-            }
-        });
-
-        if (!rpg) return res.status(404).json({ message: 'Personagem não encontrado' });
 
         const updatedRPG = await prisma.visitorRPG.update({
             where: { id: rpg.id },
@@ -298,6 +304,35 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
     } catch (error: any) {
         console.error('[RPG] Equip skin error:', error);
         res.status(500).json({ message: 'Erro ao equipar skin', error: error.message });
+    }
+});
+
+// L7: POST /rpg/retry-avatar — Permite resetar um status de erro para tentar novamente
+router.post('/retry-avatar', authMiddleware, async (req, res) => {
+    try {
+        const userEmail = req.user!.email.toLowerCase();
+        const tenantId = req.user!.tenantId;
+        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+
+        const rpg = await prisma.visitorRPG.findFirst({
+            where: { visitorId: visitor.id, isActive: true }
+        });
+
+        if (!rpg) return res.status(404).json({ message: 'Personagem não encontrado' });
+        
+        if (rpg.avatarStatus !== 'ERROR') {
+            return res.status(400).json({ message: 'Só é possível resetar avatares com status de erro' });
+        }
+
+        await prisma.visitorRPG.update({
+            where: { id: rpg.id },
+            data: { avatarStatus: 'NONE' }
+        });
+
+        res.json({ message: 'Status resetado com sucesso. Você pode tentar gerar novamente.' });
+    } catch (err) {
+        res.status(500).json({ message: 'Erro ao resetar status' });
     }
 });
 

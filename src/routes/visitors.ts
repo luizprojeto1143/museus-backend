@@ -432,24 +432,60 @@ router.post("/visit-from-qr", async (req, res) => {
     let trailId: string | null = null;
     let eventId: string | null = null;
 
+    let isVestige = false;
+    if (qr.type === "WORK" && qr.referenceId) {
+       const w = await prisma.work.findUnique({ where: { id: qr.referenceId }, select: { vestigeActive: true } });
+       if (w?.vestigeActive) isVestige = true;
+    }
+
     if (qr.type === "WORK") workId = qr.referenceId;
     if (qr.type === "TRAIL") trailId = qr.referenceId;
     if (qr.type === "EVENT") eventId = qr.referenceId;
 
     // Handle Cultural Equipment Check-in
     if (qr.type === "EQUIPAMENTO" && qr.referenceId) {
-       await prisma.equipamentoCheckin.create({
-         data: {
-           equipamentoId: qr.referenceId,
+       // L5 Fix: Check if already checked in today via QR/GPS
+       const today = new Date();
+       today.setHours(0,0,0,0);
+       
+       const existingCheckin = await prisma.equipamentoCheckin.findFirst({
+         where: {
            visitorId: visitor.id,
-           method: "qr_entrada",
-           xpGanho: qr.xpReward || 20
+           equipamentoId: qr.referenceId,
+           createdAt: { gte: today }
          }
        });
+
+       if (existingCheckin) {
+         return res.json({
+           message: "Você já realizou o check-in hoje!",
+           xpGained: 0,
+           type: qr.type,
+           referenceId: qr.referenceId,
+           visitorName: visitor.name
+         });
+       }
+
+       const xpGained = qr.xpReward || 20;
+
+       await prisma.$transaction([
+         prisma.equipamentoCheckin.create({
+           data: {
+             equipamentoId: qr.referenceId,
+             visitorId: visitor.id,
+             method: "qr_entrada",
+             xpGanho: xpGained
+           }
+         }),
+         prisma.visitor.update({
+           where: { id: visitor.id },
+           data: { xp: { increment: xpGained } }
+         })
+       ]);
        
        return res.status(201).json({
          message: "Check-in realizado com sucesso no equipamento!",
-         xpGained: qr.xpReward || 20,
+         xpGained,
          type: qr.type,
          referenceId: qr.referenceId,
          visitorName: visitor.name
@@ -580,6 +616,7 @@ router.post("/visit-from-qr", async (req, res) => {
       xpGained: calculatedXp,
       type: qr.type,
       referenceId: qr.referenceId,
+      isVestige,
       visitorName: visitor.name
     });
   } catch (err) {
@@ -684,6 +721,52 @@ router.get("/:id/skins", authMiddleware, async (req, res) => {
   }
 });
 
-/* Route moved to rpg.ts */
+// GET /visitors/public-passport/:id - Ver passaporte público de um visitante (C4)
+router.get("/public-passport/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const visitor = await prisma.visitor.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        photoUrl: true,
+        xp: true,
+        createdAt: true
+      }
+    });
+
+    if (!visitor) {
+      return res.status(404).json({ message: "Visitante não encontrado" });
+    }
+
+    const stamps = await (prisma.passportStamp as any).findMany({
+      where: { visitorId: id },
+      include: {
+        work: {
+          select: {
+            title: true,
+            artist: true,
+            vestigeImageUrl: true,
+            imageUrl: true,
+            tenant: {
+              select: { name: true, city: true }
+            }
+          }
+        }
+      },
+      orderBy: { stampedAt: "desc" }
+    });
+
+    return res.json({
+      visitor,
+      stamps
+    });
+  } catch (err) {
+    console.error("Erro ao buscar passaporte público:", err);
+    return res.status(500).json({ message: "Erro ao buscar passaporte público" });
+  }
+});
 
 export default router;

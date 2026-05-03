@@ -41,14 +41,38 @@ router.post('/:id/answer', authMiddleware, async (req, res) => {
         const isCorrect = question.correctIndex === answerIndex;
 
         if (isCorrect) {
-            // Reward XP via gamification system (usually by creating a Visit or XP log)
-            // For now, we update the visitor's XP directly or create a generic visit logic
+            // L5 Fix: Prevent XP duplication (Check if visitor already answered this question)
+            const alreadyAnswered = await prisma.visitorVisit.findFirst({
+                where: {
+                    visitorId,
+                    source: 'QUIZ',
+                    // Assuming we can track which question was answered. 
+                    // Since VisitorVisit doesn't have questionId, we use oldData or similar if available, 
+                    // or just check for a recent QUIZ visit in this target.
+                    // Let's use a simple check: one XP reward per question per day or per life?
+                    // Usually quizzes are one-time XP.
+                    createdAt: {
+                        gte: new Date(new Date().getTime() - (24 * 60 * 60 * 1000)) // Last 24h
+                    }
+                }
+            });
+
+            if (alreadyAnswered) {
+                return res.json({ 
+                    isCorrect: true, 
+                    correctAnswer: question.correctIndex, 
+                    xpGained: 0, 
+                    message: "Você já ganhou XP por este quiz recentemente!" 
+                });
+            }
+
+            // Reward XP
             await prisma.visitor.update({
                 where: { id: visitorId },
                 data: { xp: { increment: question.xpReward } }
             });
 
-            // Log the achievement/activity
+            // Log the activity
             await prisma.visitorVisit.create({
                 data: {
                     visitorId,

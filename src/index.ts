@@ -98,6 +98,7 @@ import extraRoutes from "./routes/roadmap-extra.js";
 import familyRoutes from "./routes/roadmap-family.js";
 import charactersRoutes from "./routes/characters.js";
 import vestigesRoutes from "./routes/vestiges.js";
+import vestigeAlertsRoutes from "./routes/vestige-alerts.js";
 import webhooksRoutes from "./routes/webhooks.js";
 import { validateEnv } from "./config/validateEnv.js";
 import { limiter } from "./middleware/rateLimiter.js";
@@ -287,6 +288,7 @@ app.use("/roadmap-extra", extraRoutes);
 app.use("/roadmap-family", familyRoutes);
 app.use("/characters", charactersRoutes);
 app.use("/vestiges", vestigesRoutes);
+app.use("/vestige-alerts", vestigeAlertsRoutes);
 app.use("/webhooks", webhooksRoutes);
 
 const PORT = process.env.PORT || 3000;
