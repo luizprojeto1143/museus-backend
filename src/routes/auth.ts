@@ -143,7 +143,13 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
 // Refresh Token Endpoint
 router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
   try {
-    const { refreshToken } = req.body;
+    let { refreshToken } = req.body;
+    
+    // Fallback para cookie se não estiver no body (padrão C1 de segurança)
+    if (!refreshToken && req.headers.cookie) {
+      const match = req.headers.cookie.match(new RegExp('(^| )museus_refresh_token=([^;]+)'));
+      if (match) refreshToken = match[2];
+    }
 
     if (!refreshToken) {
       return res.status(400).json({ message: "Refresh Token é obrigatório" });
