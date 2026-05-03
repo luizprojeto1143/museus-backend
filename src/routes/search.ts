@@ -35,8 +35,8 @@ router.get("/", async (req, res) => {
         const [works, trails, events] = await Promise.all([
             prisma.work.findMany({
                 where: {
-                    tenantId,
-                    active: true, // Only active works
+                    tenantId: tenantId as string,
+                    published: true, // Only published works
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
                         { artist: { contains: term, mode: "insensitive" } },

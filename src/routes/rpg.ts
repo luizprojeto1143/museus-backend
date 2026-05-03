@@ -311,7 +311,7 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
 router.post('/retry-avatar', authMiddleware, async (req, res) => {
     try {
         const userEmail = req.user!.email.toLowerCase();
-        const tenantId = req.user!.tenantId;
+        const tenantId = req.user!.tenantId as string;
         const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
         if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
 
