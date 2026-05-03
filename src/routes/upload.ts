@@ -136,6 +136,13 @@ async function handleUpload(req: Request, res: Response, type: string) {
       fs.unlinkSync(file.path); // Remove temp
       url = `${publicBase.replace(/\/$/, "")}/${key}`;
     } else {
+      // C5: Block upload if R2 is not configured to prevent data loss on ephemeral storage
+      if (process.env.NODE_ENV === "production") {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          return res.status(503).json({ 
+              message: "Armazenamento não configurado. Upload desabilitado para evitar perda de dados." 
+          });
+      }
       url = `/uploads/${file.filename}`;
     }
 

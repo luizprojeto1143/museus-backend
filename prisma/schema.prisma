@@ -255,6 +255,7 @@ model Tenant {
   trails                Trail[]
   events                Event[]
   visitors              Visitor[]
+  visitorVisits         VisitorVisit[]
   achievements          Achievement[]
   qrcodes               QRCode[]
   categories            Category[]
@@ -783,7 +784,7 @@ model Ticket {
   name           String
   description    String?
   type           TicketType   @default(FREE)
-  price          Decimal      @default(0.0) // 10.00
+  price          Decimal      @default(0.0) @db.Decimal(10, 2) // 10.00
   quantity       Int // Total available
   sold           Int          @default(0) // Track sold count
   absorbFee      Boolean      @default(false)
@@ -833,8 +834,14 @@ model Registration {
   ticket  Ticket   @relation(fields: [ticketId], references: [id])
   visitor Visitor? @relation(fields: [visitorId], references: [id])
 
+  deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([visitorId])
+  @@index([asaasPaymentId])
+  @@index([status])
 }
 
 model Visitor {
@@ -894,12 +901,16 @@ model VisitorVisit {
   trail   Trail?  @relation(fields: [trailId], references: [id], onDelete: Cascade)
   event   Event?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
+  tenantId  String?
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
 
   @@index([visitorId])
   @@index([workId])
   @@index([eventId])
   @@index([trailId])
+  @@index([tenantId])
   @@index([createdAt]) // For date range queries
 }
 

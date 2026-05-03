@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { SurveyQuestionType } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
+import { authMiddleware as authenticate } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -53,7 +54,7 @@ router.get("/events/:eventId/survey", async (req: Request, res: Response) => {
 });
 
 // POST /events/:eventId/survey - Create/update survey questions (admin)
-router.post("/events/:eventId/survey", async (req: Request, res: Response) => {
+router.post("/events/:eventId/survey", authenticate, async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
         const parsed = saveQuestionsSchema.safeParse(req.body);
@@ -123,7 +124,7 @@ router.post("/events/:eventId/survey", async (req: Request, res: Response) => {
 });
 
 // GET /events/:eventId/survey/results - Get aggregated survey results (admin)
-router.get("/events/:eventId/survey/results", async (req: Request, res: Response) => {
+router.get("/events/:eventId/survey/results", authenticate, async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
 

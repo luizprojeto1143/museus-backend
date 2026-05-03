@@ -30,11 +30,13 @@ router.get("/", async (req, res) => {
             .map(qr => qr.referenceId)
             .filter((id): id is string => !!id);
 
-        // 2. Buscas paralelas
+        // Security: Default search should only return PUBLIC and PUBLISHED items
+        // unless we add auth check here. For now, enforcing public safety.
         const [works, trails, events] = await Promise.all([
             prisma.work.findMany({
                 where: {
                     tenantId,
+                    active: true, // Only active works
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
                         { artist: { contains: term, mode: "insensitive" } },
@@ -47,6 +49,7 @@ router.get("/", async (req, res) => {
             prisma.trail.findMany({
                 where: {
                     tenantId,
+                    active: true, // Only active trails
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
                     ]
@@ -57,6 +60,9 @@ router.get("/", async (req, res) => {
             prisma.event.findMany({
                 where: {
                     tenantId,
+                    status: 'PUBLISHED', // Only published events
+                    visibility: 'PUBLIC',
+                    deletedAt: null,
                     OR: [
                         { title: { contains: term, mode: "insensitive" } },
                         { location: { contains: term, mode: "insensitive" } }

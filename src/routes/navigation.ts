@@ -1,9 +1,10 @@
 import { Router } from "express";
+import { authMiddleware as authenticate } from "../middleware/auth.js";
 
 const router = Router();
 
 // Proxy para OpenRouteService - evita expor API key no frontend
-router.post("/directions", async (req, res) => {
+router.post("/directions", authenticate, async (req, res) => {
     try {
         const { start, end, profile } = req.body;
 

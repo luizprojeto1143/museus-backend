@@ -281,6 +281,7 @@ router.post("/track", async (req, res) => {
           workId: workId || null,
           trailId: trailId || null,
           eventId: eventId || null,
+          tenantId: visitor.tenantId,
           source: "APP",
           xpGained: xpToAdd
         }
@@ -478,6 +479,7 @@ router.post("/visit-from-qr", async (req, res) => {
           workId,
           trailId,
           eventId,
+          tenantId: qr.tenantId,
           source: "QR",
           xpGained: calculatedXp
         }

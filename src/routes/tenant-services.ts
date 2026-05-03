@@ -43,7 +43,12 @@ router.get("/admin/:tenantId", authMiddleware, async (req, res) => {
             return res.status(403).json({ message: "Forbidden" });
         }
 
-        const masterTenantId = "8cc9b546-7f7d-4908-a6cf-acdd7b86982b"; // QS Inclusão
+        // C3: Never hardcode tenant IDs. Set MASTER_TENANT_ID in the environment.
+        const masterTenantId = process.env.MASTER_TENANT_ID;
+        if (!masterTenantId) {
+            console.error("[tenant-services] MASTER_TENANT_ID env var is not set.");
+            return res.status(503).json({ message: "Service configuration error" });
+        }
 
         // Find all active services globally (from Master)
         const allServices = await prisma.inPersonService.findMany({

@@ -13,7 +13,10 @@ import { Socket } from "net";
 router.use(authMiddleware, requireRole([Role.MASTER]));
 
 router.get("/test-dashboard", async (req, res) => {
-  const tenantId = '8cc9b546-7f7d-4908-a6cf-acdd7b86982b';
+  // C3: tenantId must be supplied explicitly — no hardcoded fallback.
+  const tenantId = req.query.tenantId as string | undefined;
+  if (!tenantId) return res.status(400).json({ error: "tenantId query param is required" });
+
   try {
     const results = await Promise.all([
       prisma.visitorVisit.count({ where: { visitor: { tenantId } } }),
@@ -25,7 +28,7 @@ router.get("/test-dashboard", async (req, res) => {
         action: 'DIAGNOSTIC_TEST',
         entity: 'SYSTEM',
         entityId: 'test-dashboard',
-        tenantId: '8cc9b546-7f7d-4908-a6cf-acdd7b86982b',
+        tenantId,
         newData: { timestamp: new Date().toISOString(), v: '1.3.0' }
       }
     });

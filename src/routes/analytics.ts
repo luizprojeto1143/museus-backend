@@ -10,7 +10,7 @@ import { Request, Response, NextFunction } from "express";
 router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res: any, next: any) => {
   try {
     const user = req.user!;
-    const tenantId = (req.query.tenantId as string) || user.tenantId;
+    const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string || user.tenantId) : user.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId obrigatório" });
@@ -108,7 +108,12 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
 // Resumo por tenant (ADMIN ou MASTER)
 router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res: any, next: any) => {
   try {
-    const { tenantId } = req.params;
+    const user = req.user!;
+    const tenantId = user.role === Role.MASTER ? req.params.tenantId : user.tenantId;
+
+    if (!tenantId) {
+      return res.status(403).json({ message: "Acesso negado" });
+    }
 
     const [tenant, visitsCount] = await Promise.all([
       prisma.tenant.findUnique({
@@ -144,9 +149,14 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
 });
 
 // Obras populares (Optimized - No changes needed, already efficient groupBy)
-router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res) => {
   try {
-    const { tenantId } = req.params;
+    const user = req.user!;
+    const tenantId = user.role === Role.MASTER ? req.params.tenantId : user.tenantId;
+
+    if (!tenantId) {
+        return res.status(403).json({ message: "Acesso negado" });
+    }
 
     const popular = await prisma.visitorVisit.groupBy({
       by: ["workId"],
@@ -184,9 +194,14 @@ router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, 
 });
 
 // Dashboard completo para Admin
-router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res: any, next: any) => {
+router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res: any, next: any) => {
   try {
-    const { tenantId } = req.params;
+    const user = req.user!;
+    const tenantId = user.role === Role.MASTER ? req.params.tenantId : user.tenantId;
+
+    if (!tenantId) {
+      return res.status(403).json({ message: "Acesso negado" });
+    }
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
@@ -426,10 +441,15 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
 });
 
 // Analytics Avançado (Heatmap, etc)
-router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res) => {
   try {
-    const { tenantId } = req.params;
+    const user = req.user!;
+    const tenantId = user.role === Role.MASTER ? req.params.tenantId : user.tenantId;
     const { range } = req.query as { range?: string };
+
+    if (!tenantId) {
+      return res.status(403).json({ message: "Acesso negado" });
+    }
 
     const startDate = new Date();
     const days = range === '90d' ? 90 : range === '7d' ? 7 : 30; // 30 is default
@@ -699,10 +719,10 @@ router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTE
 });
 
 // Heatmap — QR scan / visit frequency by room and work
-router.get("/heatmap", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/heatmap", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res) => {
   try {
     const user = req.user!;
-    const tenantId = (req.query.tenantId as string) || user.tenantId;
+    const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string || user.tenantId) : user.tenantId;
     const days = parseInt(req.query.days as string) || 30;
 
     if (!tenantId) {
@@ -771,10 +791,10 @@ router.get("/heatmap", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), a
 });
 
 // Funnel — Conversion funnel analytics
-router.get("/funnel", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/funnel", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res) => {
   try {
     const user = req.user!;
-    const tenantId = (req.query.tenantId as string) || user.tenantId;
+    const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string || user.tenantId) : user.tenantId;
     const days = parseInt(req.query.days as string) || 30;
 
     if (!tenantId) {

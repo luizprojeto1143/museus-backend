@@ -100,6 +100,7 @@ import charactersRoutes from "./routes/characters.js";
 import vestigesRoutes from "./routes/vestiges.js";
 import webhooksRoutes from "./routes/webhooks.js";
 import { validateEnv } from "./config/validateEnv.js";
+import { limiter } from "./middleware/rateLimiter.js";
 
 // Validate critical environment variables on boot
 validateEnv();
@@ -110,8 +111,9 @@ app.set('trust proxy', 1);
 const corsOrigin = (() => {
   if (process.env.NODE_ENV === "production") {
     if (!process.env.FRONTEND_URL) {
-      console.warn("⚠️  WARNING: FRONTEND_URL is not set in production. Defaulting to '*' for demo purposes.");
-      return "*";
+      // C2: Never fall back to '*' in production — fail fast so the problem is visible immediately.
+      console.error("❌ FATAL: FRONTEND_URL is required in production. Set this environment variable and redeploy.");
+      process.exit(1);
     }
     const baseUrls = process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''));
     // Return both with and without trailing slash to be safe
@@ -136,9 +138,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      // C6: Removed 'unsafe-inline' — scripts must be loaded from trusted origins only.
+      // If inline scripts are needed in the future, use per-request nonces instead.
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      imgSrc: ["'self'", "data:", "https:", "http:"], // Allow images from any source for placeholders/uploads
+      imgSrc: ["'self'", "data:", "https:", "http:"],
       connectSrc: ["'self'", "https:", "http:"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
@@ -150,6 +154,10 @@ app.use(helmet({
 }));
 
 app.use(compression());
+
+// C9: Apply global rate limiter to ALL routes (500 req/15min per IP).
+// Specific routes (auth, AI, upload) have their own tighter limiters applied locally.
+app.use(limiter);
 
 app.use(express.json({ limit: "2mb" })); // Reduced from 10mb for general security. Upload routes have their own multer limit.
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
@@ -304,6 +312,12 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   });
   
   // Persist error to AuditLog for remote debugging
+  // C3: Never fall back to a hardcoded tenant ID — null is always preferable to wrong data.
+  const resolvedTenantId = _req.params.tenantId
+    || String(_req.query.tenantId ?? "")
+    || (_req as any).tenantId
+    || null;
+
   prisma.auditLog.create({
     data: {
       action: "SERVER_ERROR",
@@ -311,7 +325,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
       entityId: _req.path,
       userId: (err as any).userId || null,
       userEmail: sanitizedBody.email || null,
-      tenantId: (_req.params.tenantId || _req.query.tenantId || (_req as any).tenantId || "8cc9b546-7f7d-4908-a6cf-acdd7b86982b"),
+      tenantId: resolvedTenantId,
       oldData: { path: _req.path, method: _req.method },
       newData: { 
         message: err.message, 
@@ -346,12 +360,42 @@ if (process.env.NODE_ENV !== 'test') {
       console.warn("⚠️ Server will CONTINUE to start, but database requests may fail.");
     }
 
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`✅ Museus backend enterprise running on port ${PORT}`);
       console.log(`🔧 Environment: ${process.env.NODE_ENV || "dev"}`);
-      console.log(`🌐 Allowed Origin: ${process.env.NODE_ENV === "production" ? (process.env.FRONTEND_URL || "*") : "*"}`);
+      console.log(`🌐 Allowed Origin: ${process.env.NODE_ENV === "production" ? process.env.FRONTEND_URL : "*"}`);
       console.log(`📝 Audit logging is ${process.env.NODE_ENV === "production" ? "ACTIVE" : "ACTIVE (dev)"}`);
     });
+
+    // C11: Graceful shutdown — drain active connections before exiting.
+    // Render (and most PaaS) sends SIGTERM before killing the process.
+    const connections = new Set<Socket>();
+    server.on('connection', (socket: Socket) => {
+      connections.add(socket);
+      socket.on('close', () => connections.delete(socket));
+    });
+
+    const shutdown = async (signal: string) => {
+      console.log(`\n[${signal}] Graceful shutdown initiated…`);
+      server.close(async () => {
+        console.log('🔒 HTTP server closed. Disconnecting database…');
+        await prisma.$disconnect();
+        console.log('✅ Graceful shutdown complete.');
+        process.exit(0);
+      });
+
+      // Force-close any lingering keep-alive connections
+      for (const socket of connections) socket.destroy();
+
+      // Hard kill after 10s if something blocks
+      setTimeout(() => {
+        console.error('⏱️ Shutdown timed out — forcing exit.');
+        process.exit(1);
+      }, 10_000);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT',  () => shutdown('SIGINT'));
   };
   
   start();

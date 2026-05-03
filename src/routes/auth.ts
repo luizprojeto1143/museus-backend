@@ -8,6 +8,7 @@ import { loginSchema, registerSchema, switchTenantSchema, recoverPasswordSchema,
 import { authMiddleware } from "../middleware/auth.js";
 import { authLimiter, passwordRecoveryLimiter } from "../middleware/rateLimiter.js";
 import crypto from "crypto";
+import { createAuditLog } from "./audit.js";
 
 const router = Router();
 
@@ -55,9 +56,6 @@ const generateTokens = async (userId: string, email: string, role: Role, tenantI
 router.post("/login", authLimiter, validate(loginSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password } = req.body;
-    console.log(`[AUTH] Login attempt: ${email}`);
-    
-    console.log("-> Searching for user...");
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
@@ -67,18 +65,14 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     });
 
     if (!user) {
-      console.warn(`[AUTH] User not found: ${email}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
-    console.log("-> Comparing password...");
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
-      console.warn(`[AUTH] Invalid password for: ${email}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
-    console.log("-> Generating tokens...");
     const tokens = await generateTokens(
       user.id,
       user.email,
@@ -87,9 +81,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       user.tenant?.type,
       user.name
     );
-    console.log("-> Tokens generated successfully.");
 
-    console.log("-> Finding equipamento...");
     let equipamentoId = null;
     try {
       if (user.tenantId) {
@@ -98,10 +90,9 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
           orderBy: { createdAt: 'asc' }
         });
         equipamentoId = equip?.id || null;
-        console.log(`-> Equipamento ID found: ${equipamentoId}`);
       }
-    } catch (e: any) {
-      console.error("-> Error finding equipamento (non-fatal):", e.message);
+    } catch (e) {
+      // Non-fatal
     }
 
     const responseData = {
@@ -123,11 +114,22 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         hasProviderProfile: !!user.providerProfile
       }
     };
-    console.log("-> Success! Setting cookies and sending response...");
     
-    // Set Cookies for Production Excellence (Security)
     res.cookie("museus_token", tokens.accessToken, COOKIE_OPTIONS);
     res.cookie("museus_refresh_token", tokens.refreshToken, COOKIE_OPTIONS);
+
+    // Audit Log
+    await createAuditLog(
+      'LOGIN',
+      'User',
+      user.id,
+      user.id,
+      user.email,
+      user.tenantId || 'MASTER',
+      null,
+      { lastLogin: new Date() },
+      req
+    );
 
     return res.json(responseData);
   } catch (err: any) {

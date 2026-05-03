@@ -560,6 +560,7 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
           data: {
             visitorId: targetVisitorId,
             eventId: id,
+            tenantId: event.tenantId,
             source: "CHECKIN",
             xpGained: 10
           }

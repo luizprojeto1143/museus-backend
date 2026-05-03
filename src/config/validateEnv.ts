@@ -23,7 +23,8 @@ const OPTIONAL_ENV_VARS = [
 // Variables that are REQUIRED in production but optional in development
 const PRODUCTION_REQUIRED_ENV_VARS = [
     "FRONTEND_URL",
-    "GAME_SECRET"
+    "GAME_SECRET",
+    "ASAAS_API_KEY"
 ];
 
 export function validateEnv(): void {
