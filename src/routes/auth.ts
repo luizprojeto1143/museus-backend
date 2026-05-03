@@ -165,18 +165,30 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
       return res.status(401).json({ message: "Token inválido" });
     }
 
-    // 2. Verifica se foi revogado ou expirou
-    if (storedToken.revoked || new Date() > storedToken.expiresAt) {
-      return res.status(401).json({ message: "Token expirado ou revogado. Faça login novamente." });
+    // 2. Verifica se expirou (Expirado é erro fatal)
+    if (new Date() > storedToken.expiresAt) {
+      return res.status(401).json({ message: "Token expirado. Faça login novamente." });
     }
 
-    // 3. Rotação de Token (Revoga o atual e cria um novo par)
-    await prisma.refreshToken.update({
-      where: { id: storedToken.id },
-      data: { revoked: true }
-    });
+    // 3. Verifica se foi revogado (Grace period de 10s para evitar race conditions em chamadas paralelas)
+    if (storedToken.revoked) {
+      const tenSecondsAgo = new Date(Date.now() - 10000);
+      if (storedToken.updatedAt < tenSecondsAgo) {
+        return res.status(401).json({ message: "Sessão inválida. Faça login novamente." });
+      }
+      // Se foi revogado há menos de 10s, assumimos que foi uma chamada paralela e retornamos sucesso (o frontend lidará com o novo token salvo no localStorage)
+      console.log(`[AUTH] Grace period activated for token ${refreshToken.substring(0,8)}...`);
+    }
 
-    // 4. Gera novos tokens
+    // 4. Rotação de Token (Revoga o atual)
+    if (!storedToken.revoked) {
+      await prisma.refreshToken.update({
+        where: { id: storedToken.id },
+        data: { revoked: true }
+      });
+    }
+
+    // 5. Gera novos tokens
     const newTokens = await generateTokens(
       storedToken.userId,
       storedToken.user.email,
