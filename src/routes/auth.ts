@@ -369,7 +369,7 @@ router.post("/reset-password", passwordRecoveryLimiter, validate(resetPasswordSc
 
 router.post("/register", authLimiter, validate(registerSchema), async (req: Request, res: Response): Promise<any> => {
   try {
-    const { email, password, name, tenantId, role, cpf, phone, bio, website, isTeacher } = req.body;
+    const { email, password, name, tenantId, role, cpf, phone, bio, website, isTeacher, age } = req.body;
 
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) {
@@ -420,7 +420,8 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
         cpf,
         phone,
         bio,
-        website
+        website,
+        age: age ? Number(age) : null
       }
     });
 
@@ -440,7 +441,8 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
               name: user.name, 
               email: user.email.toLowerCase(), 
               tenantId: newTenantId || '', // fallback to empty if null (shouldn't happen for visitor)
-              xp: 0
+              xp: 0,
+              age: age ? Number(age) : null
             }
           });
         }

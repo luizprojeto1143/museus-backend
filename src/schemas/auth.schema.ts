@@ -4,7 +4,7 @@ import { z } from 'zod';
 const emailField = z.string().email({ message: "E-mail inválido" }).toLowerCase();
 
 const passwordField = z.string()
-    .min(8, { message: "A senha deve ter no mínimo 8 caracteres" })
+    .min(6, { message: "A senha deve ter no mínimo 6 caracteres" })
     .max(128, { message: "Senha demasiado longa" });
 
 // ─── Login ────────────────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ export const registerSchema = z.object({
         bio: z.string().max(500).optional(),
         website: z.string().url().optional().nullable().or(z.literal("")),
         isTeacher: z.boolean().optional(),
+        age: z.number().optional(),
         parentTenantId: z.string().uuid().optional().nullable(),
     }),
 });
