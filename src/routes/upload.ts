@@ -96,7 +96,10 @@ async function handleUpload(req: Request, res: Response, type: string) {
     // 0. Compression
     if (type === "image") {
       await MediaService.compressImage(file.path);
-    } else if (type === "video") {
+    } 
+    /* 
+    // [DISABLED] Compression disabled to avoid timeouts on Render (512MB)
+    else if (type === "video") {
       const newPath = await MediaService.compressVideo(file.path);
       if (newPath !== file.path) {
         file.path = newPath;
@@ -111,6 +114,7 @@ async function handleUpload(req: Request, res: Response, type: string) {
         file.mimetype = "audio/mpeg";
       }
     }
+    */
 
     // Refresh file stats for accurate metadata in DB
     const stats = fs.statSync(file.path);
