@@ -112,6 +112,7 @@ router.get("/:id/settings", softAuthMiddleware, async (req, res) => {
       featureProviders: tenant.featureProviders,
       featureAccessibilityMgmt: tenant.featureAccessibilityMgmt,
       featureInstitutionalReports: tenant.featureInstitutionalReports,
+      featureTickets: tenant.featureTickets,
       // Added missing common fields for better UI
       mission: tenant.mission,
       address: tenant.address,
@@ -165,7 +166,8 @@ router.get("/:id/features", async (req, res) => {
         featureProjects: true,
         featureProviders: true,
         featureAccessibilityMgmt: true,
-        featureInstitutionalReports: true
+        featureInstitutionalReports: true,
+        featureTickets: true
       }
     });
 
@@ -282,7 +284,8 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
       featureProviders: z.boolean().optional(),
       featureAccessibilityMgmt: z.boolean().optional(),
       featureInstitutionalReports: z.boolean().optional(),
-      featureEditaisSubmission: z.boolean().optional()
+      featureEditaisSubmission: z.boolean().optional(),
+      featureTickets: z.boolean().optional()
     });
 
     const data = createTenantSchema.parse(req.body);
@@ -347,6 +350,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
         featureAccessibilityMgmt: data.featureAccessibilityMgmt,
         featureInstitutionalReports: data.featureInstitutionalReports,
         featureEditaisSubmission: data.featureEditaisSubmission,
+        featureTickets: data.featureTickets,
         users: {
           create: [
             {
@@ -543,7 +547,8 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       featureCertificates, featureReviews, featureGuestbook, featureAccessibility, featureMinigames,
       isCityMode,
       // Municipal Features
-      featureEditais, featureProjects, featureProviders, featureAccessibilityMgmt, featureInstitutionalReports
+      featureEditais, featureProjects, featureProviders, featureAccessibilityMgmt, featureInstitutionalReports,
+      featureEditaisSubmission, featureTickets
     } = req.body;
 
     // Convert maxWorks to number if present
@@ -581,7 +586,9 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         ...(featureProjects !== undefined && { featureProjects: Boolean(featureProjects) }),
         ...(featureProviders !== undefined && { featureProviders: Boolean(featureProviders) }),
         ...(featureAccessibilityMgmt !== undefined && { featureAccessibilityMgmt: Boolean(featureAccessibilityMgmt) }),
-        ...(featureInstitutionalReports !== undefined && { featureInstitutionalReports: Boolean(featureInstitutionalReports) })
+        ...(featureInstitutionalReports !== undefined && { featureInstitutionalReports: Boolean(featureInstitutionalReports) }),
+        ...(featureEditaisSubmission !== undefined && { featureEditaisSubmission: Boolean(featureEditaisSubmission) }),
+        ...(featureTickets !== undefined && { featureTickets: Boolean(featureTickets) })
       }
     });
 
