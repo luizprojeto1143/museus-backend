@@ -29,6 +29,7 @@ enum CategoryType {
   TRAIL
   EVENT
   GENERAL
+  SPACE
 }
 
 enum CertificateType {
@@ -495,6 +496,7 @@ model Category {
   works  Work[]
   trails Trail[]
   events Event[]
+  spaces Space[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1082,6 +1084,9 @@ model Space {
   timelineEvents  TimelineEvent[]
   workSubmissions WorkSubmission[]
   familyProfiles  FamilyProfile[]
+
+  categoryId      String?
+  category        Category? @relation(fields: [categoryId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

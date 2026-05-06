@@ -20,7 +20,7 @@ router.get("/", async (req, res) => {
       where: { tenantId: String(tenantId) },
       include: {
         _count: {
-          select: { works: true, trails: true, events: true }
+          select: { works: true, trails: true, events: true, spaces: true }
         }
       },
       orderBy: { name: "asc" }
@@ -38,7 +38,7 @@ router.get("/", async (req, res) => {
 
     const formatted = categories.map(cat => ({
       ...cat,
-      usageCount: (cat._count?.works || 0) + (cat._count?.trails || 0) + (cat._count?.events || 0)
+      usageCount: (cat._count?.works || 0) + (cat._count?.trails || 0) + (cat._count?.events || 0) + (cat._count?.spaces || 0)
     }));
 
     res.json(formatted);
@@ -162,14 +162,17 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), as
       where: whereClause,
       include: {
         _count: {
-          select: { works: true, trails: true, events: true }
+          select: { works: true, trails: true, events: true, spaces: true }
         }
       }
     });
 
     if (!category) return res.status(404).json({ error: "Category not found" });
 
-    const usage = category._count.works + category._count.trails + category._count.events;
+    const usage = (category._count?.works || 0) + 
+                  (category._count?.trails || 0) + 
+                  (category._count?.events || 0) + 
+                  (category._count?.spaces || 0);
     if (usage > 0) {
       return res.status(400).json({ error: "Cannot delete category in use" });
     }
