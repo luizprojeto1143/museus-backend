@@ -9,7 +9,12 @@ const router = Router();
 router.get("/", async (req, res) => {
   try {
     const { tenantId } = req.query;
-    if (!tenantId) return res.status(400).json({ error: "Missing tenantId" });
+    if (!tenantId) {
+      console.warn("⚠️ [Categories] Request received without tenantId");
+      return res.status(400).json({ error: "Missing tenantId" });
+    }
+
+    console.log(`🔍 [Categories] Fetching for tenant: ${tenantId}`);
 
     const categories = await prisma.category.findMany({
       where: { tenantId: String(tenantId) },
@@ -21,23 +26,28 @@ router.get("/", async (req, res) => {
       orderBy: { name: "asc" }
     });
 
+    console.log(`✅ [Categories] Found ${categories.length} categories`);
+
     if (categories.length === 0) {
-      // Check if tenant exists at all to differentiate between "no categories" and "deleted tenant"
       const tenantExists = await prisma.tenant.findUnique({ where: { id: String(tenantId) } });
       if (!tenantExists) {
-        return res.json([]); // Return empty if tenant is gone, don't crash
+        console.warn(`⚠️ [Categories] Tenant ${tenantId} not found`);
+        return res.json([]); 
       }
     }
 
     const formatted = categories.map(cat => ({
       ...cat,
-      usageCount: cat._count.works + cat._count.trails + cat._count.events
+      usageCount: (cat._count?.works || 0) + (cat._count?.trails || 0) + (cat._count?.events || 0)
     }));
 
     res.json(formatted);
-  } catch (error) {
-    console.error("Error listing categories:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error: any) {
+    console.error("❌ [Categories] Critical error listing categories:", error);
+    res.status(500).json({ 
+      error: "Internal server error",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
