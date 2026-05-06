@@ -29,7 +29,7 @@ export const createWorkSchema = z.object({
         lng: z.number().optional().nullable(),
         captureRadiusM: z.number().optional().nullable(),
         vestigeActive: z.boolean().optional(),
-        vestigeType: z.enum(["PIONEER", "RARE", "EPIC", "COMMON"]).optional().nullable(),
+        vestigeType: z.enum(["WORK", "STREET_ART", "INSTALLATION", "EVENT"]).optional().nullable(),
         vestigeExpiresAt: z.string().optional().nullable(),
         vestigeImageUrl: z.string().url().optional().nullable(),
         metadata: z.any().optional(),
