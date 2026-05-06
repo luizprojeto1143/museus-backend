@@ -216,16 +216,27 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
 
     where.deletedAt = null;
 
+    console.log(`[Tenants] Listing tenants for role ${user.role}, parentId: ${parentId}`);
+
     const tenants = await prisma.tenant.findMany({
       where: {
         ...where,
         deletedAt: null
       },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        createdAt: true,
+        type: true,
+        parentId: true
+      },
       orderBy: { createdAt: "desc" }
     });
+    
     return res.json(tenants);
   } catch (err) {
-    console.error("Erro ao listar museus:", err);
+    console.error("❌ Erro ao listar museus:", err);
     return res.status(500).json({
       message: "Erro ao listar museus",
       error: err instanceof Error ? err.message : String(err)
@@ -245,7 +256,51 @@ router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async
     }
 
     const tenant = await prisma.tenant.findUnique({
-      where: { id }
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        type: true,
+        parentId: true,
+        logoUrl: true,
+        coverImageUrl: true,
+        primaryColor: true,
+        secondaryColor: true,
+        termsOfUse: true,
+        privacyPolicy: true,
+        // Individual Flags
+        featureWorks: true,
+        featureTrails: true,
+        featureEvents: true,
+        featureReviews: true,
+        featureGuestbook: true,
+        featureShop: true,
+        featureGamification: true,
+        featureQRCodes: true,
+        featureChatAI: true,
+        featureCertificates: true,
+        featureAccessibility: true,
+        featureEditais: true,
+        featureProjects: true,
+        featureAccessibilityMgmt: true,
+        featureProviders: true,
+        featureInstitutionalReports: true,
+        featureEditaisSubmission: true,
+        // Group Flags
+        featureGroupContent: true,
+        featureGroupEvents: true,
+        featureGroupEngagement: true,
+        featureGroupGamification: true,
+        featureGroupInstitutional: true,
+        featureGroupTools: true,
+        featureGroupAnalytics: true,
+        featureGroupSocial: true,
+        featureGroupPreservation: true,
+        featureGroupAI: true,
+        featureGroupRoadmap: true,
+        createdAt: true
+      }
     });
 
     if (!tenant) {
