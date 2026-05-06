@@ -144,6 +144,19 @@ async function main() {
         console.error("⚠️ Sincronização falhou ou timeout. Tentando subir o app mesmo assim...");
     }
 
+    // -------------------------------------------------------------------------
+    // MASTER RESCUE:
+    // -------------------------------------------------------------------------
+    try {
+        console.log("👤 Garantindo usuário Master (Rescue)...");
+        execSync('npx tsx scripts/rescue_master.ts', { 
+            stdio: 'inherit',
+            env: { ...process.env, DATABASE_URL: finalDirectUrl }
+        });
+    } catch (err) {
+        console.error("⚠️ Falha ao garantir usuário Master:", err.message);
+    }
+
     console.log("🚀 [Render-Boost] Iniciando servidor...");
     process.env.DATABASE_URL = poolerUrl;
     
