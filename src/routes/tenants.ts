@@ -256,51 +256,7 @@ router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async
     }
 
     const tenant = await prisma.tenant.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        type: true,
-        parentId: true,
-        logoUrl: true,
-        coverImageUrl: true,
-        primaryColor: true,
-        secondaryColor: true,
-        termsOfUse: true,
-        privacyPolicy: true,
-        // Individual Flags
-        featureWorks: true,
-        featureTrails: true,
-        featureEvents: true,
-        featureReviews: true,
-        featureGuestbook: true,
-        featureShop: true,
-        featureGamification: true,
-        featureQRCodes: true,
-        featureChatAI: true,
-        featureCertificates: true,
-        featureAccessibility: true,
-        featureEditais: true,
-        featureProjects: true,
-        featureAccessibilityMgmt: true,
-        featureProviders: true,
-        featureInstitutionalReports: true,
-        featureEditaisSubmission: true,
-        // Group Flags
-        featureGroupContent: true,
-        featureGroupEvents: true,
-        featureGroupEngagement: true,
-        featureGroupGamification: true,
-        featureGroupInstitutional: true,
-        featureGroupTools: true,
-        featureGroupAnalytics: true,
-        featureGroupSocial: true,
-        featureGroupPreservation: true,
-        featureGroupAI: true,
-        featureGroupRoadmap: true,
-        createdAt: true
-      }
+      where: { id }
     });
 
     if (!tenant) {
