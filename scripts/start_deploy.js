@@ -131,30 +131,31 @@ async function main() {
     // -------------------------------------------------------------------------
     // SCHEMA SYNC:
     // -------------------------------------------------------------------------
+    // 1. Sincronizar banco de dados (prisma db push)
+    // Adicionamos --skip-generate para economizar memória, já que o build já gerou o client
+    console.log("🛠️ Sincronizando esquema do banco de dados (Prisma DB Push)...");
     try {
-        console.log("🛠️ Sincronizando esquema do banco de dados (Prisma DB Push)...");
-        // We use a timeout to prevent hanging the entire deploy if DB push is stuck
-        execSync('npx prisma db push', { 
-            stdio: 'inherit',
-            timeout: 60000, // 1 minute timeout for db push
-            env: { ...process.env, DATABASE_URL: finalDirectUrl }
-        });
-        console.log("✅ Schema sincronizado com sucesso.");
-    } catch (dbErr) {
-        console.error("⚠️ Sincronização falhou ou timeout. Tentando subir o app mesmo assim...");
+      execSync("npx prisma db push --skip-generate", { 
+        env: { ...process.env, DATABASE_URL: finalDirectUrl },
+        stdio: "inherit",
+        timeout: 90000 // 90 segundos
+      });
+    } catch (error) {
+      console.log("⚠️ Sincronização falhou ou timeout. Tentando subir o app mesmo assim...");
     }
 
-    // -------------------------------------------------------------------------
-    // MASTER RESCUE:
-    // -------------------------------------------------------------------------
+    // 2. Garantir usuário Master (Rescue)
+    console.log("👤 Garantindo usuário Master (Rescue)...");
     try {
-        console.log("👤 Garantindo usuário Master (Rescue)...");
-        execSync('npx tsx scripts/rescue_master.ts', { 
-            stdio: 'inherit',
-            env: { ...process.env, DATABASE_URL: finalDirectUrl }
-        });
-    } catch (err) {
-        console.error("⚠️ Falha ao garantir usuário Master:", err.message);
+      // Usamos node direto no arquivo compilado se disponível, ou ts-node com limite de memória
+      execSync("npx ts-node --transpile-only scripts/rescue_master.ts", { 
+        env: { ...process.env, DATABASE_URL: poolerUrl, NODE_OPTIONS: "--max-old-space-size=300" },
+        stdio: "inherit",
+        timeout: 60000
+      });
+    } catch (error) {
+      console.log("⚠️ Erro ao executar rescue_master, mas continuando...");
+      console.error(error);
     }
 
     console.log("🚀 [Render-Boost] Iniciando servidor...");
