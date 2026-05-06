@@ -118,18 +118,22 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     res.cookie("museus_token", tokens.accessToken, COOKIE_OPTIONS);
     res.cookie("museus_refresh_token", tokens.refreshToken, COOKIE_OPTIONS);
 
-    // Audit Log
-    await createAuditLog(
-      'LOGIN',
-      'User',
-      user.id,
-      user.id,
-      user.email,
-      user.tenantId || 'MASTER',
-      null,
-      { lastLogin: new Date() },
-      req
-    );
+    // Audit Log (Non-blocking)
+    try {
+      await createAuditLog(
+        'LOGIN',
+        'User',
+        user.id,
+        user.id,
+        user.email,
+        user.tenantId || 'MASTER',
+        null,
+        { lastLogin: new Date() },
+        req
+      );
+    } catch (auditErr) {
+      console.warn("[AUTH] Failed to create audit log, but continuing login:", auditErr);
+    }
 
     return res.json(responseData);
   } catch (err: any) {
