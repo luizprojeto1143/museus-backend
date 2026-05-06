@@ -1,0 +1,1 @@
+import { prisma } from "./src/prisma.js"; async function test() { try { const tenant = await prisma.tenant.findUnique({ where: { id: "ccdf6be1-a5e0-4767-adee-d484f73c31dc" } }); console.log("SUCCESS:", !!tenant); } catch(err) { console.error("ERROR:", err); } finally { await prisma.$disconnect(); } } test();

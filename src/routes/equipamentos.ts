@@ -29,24 +29,22 @@ router.get("/public", async (req, res) => {
 
     const equipments = await prisma.equipamentoCultural.findMany({
       where,
-      select: {
-        id: true,
-        nome: true,
-        slug: true,
-        tipo: true,
-        descricao: true,
-        endereco: true,
-        cidade: true,
-        lat: true,
-        lng: true,
-        fotoCapaUrl: true,
-        logoUrl: true,
-        tenantId: true
+      include: {
+        tenant: {
+          select: { parentId: true }
+        }
       },
       orderBy: { nome: 'asc' }
     });
 
-    return res.json(equipments);
+    // Flatten for easier frontend consumption
+    const flattened = equipments.map(e => ({
+      ...e,
+      cityId: e.tenant?.parentId || null,
+      tenant: undefined
+    }));
+
+    return res.json(flattened);
   } catch (err) {
     console.error("Erro ao listar equipamentos públicos:", err);
     return res.status(500).json({ message: "Erro ao listar equipamentos" });

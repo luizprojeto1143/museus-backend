@@ -1,0 +1,1 @@
+import { prisma } from "./src/prisma.js"; async function fix() { try { await prisma.$executeRawUnsafe("DELETE FROM \"RefreshToken\""); console.log("Refresh tokens cleared."); } catch(err) { console.log(err); } finally { await prisma.$disconnect(); } } fix();

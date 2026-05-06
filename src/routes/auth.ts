@@ -64,7 +64,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
-        tenant: { select: { type: true } },
+        tenant: { select: { type: true, parentId: true } },
         providerProfile: { select: { id: true } }
       }
     });
@@ -110,6 +110,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       refreshToken: tokens.refreshToken,
       role: user.role,
       tenantId: user.tenantId,
+      cityId: user.tenant?.parentId || null,
       equipamentoId,
       tenantType: user.tenant?.type,
       hasProviderProfile: !!user.providerProfile,
@@ -119,6 +120,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         name: user.name,
         role: user.role,
         tenantId: user.tenantId,
+        cityId: user.tenant?.parentId || null,
         equipamentoId,
         tenantType: user.tenant?.type,
         hasProviderProfile: !!user.providerProfile
@@ -255,7 +257,7 @@ router.get("/me", authMiddleware, async (req: any, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       include: {
-        tenant: { select: { type: true } },
+        tenant: { select: { type: true, parentId: true } },
         providerProfile: { select: { id: true } }
       }
     });
@@ -277,6 +279,7 @@ router.get("/me", authMiddleware, async (req: any, res: Response) => {
       name: user.name,
       role: user.role,
       tenantId: user.tenantId,
+      cityId: user.tenant?.parentId || null,
       equipamentoId,
       tenantType: user.tenant?.type,
       hasProviderProfile: !!user.providerProfile
@@ -536,6 +539,7 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
       refreshToken,
       role: user.role,
       tenantId: targetTenantId,
+      cityId: tenant.parentId || null,
       equipamentoId: equip?.id || null,
       user: {
         id: user.id,
@@ -543,6 +547,7 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
         name: user.name,
         role: user.role,
         tenantId: targetTenantId,
+        cityId: tenant.parentId || null,
         equipamentoId: equip?.id || null
       }
     });

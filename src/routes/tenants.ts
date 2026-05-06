@@ -264,11 +264,14 @@ router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async
     }
 
     return res.json(tenant);
-  } catch (err) {
-    console.error("Erro ao buscar tenant:", err);
+  } catch (err: any) {
+    console.error(`❌ Erro ao buscar tenant [${req.params.id}]:`, err);
+    console.error("Stack do Erro:", err?.stack);
+    if (err?.code) console.error("Prisma Code:", err.code);
     return res.status(500).json({ 
       message: "Erro ao buscar tenant",
-      error: err instanceof Error ? err.message : String(err)
+      error: err instanceof Error ? err.message : String(err),
+      stack: err?.stack || undefined
     });
   }
 });
