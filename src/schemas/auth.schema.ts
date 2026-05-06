@@ -31,7 +31,7 @@ export const registerSchema = z.object({
         bio: z.string().max(500).optional(),
         website: z.string().url().optional().nullable().or(z.literal("")),
         isTeacher: z.boolean().optional(),
-        age: z.number().optional(),
+        age: z.coerce.number().optional(),
         parentTenantId: z.string().uuid().optional().nullable(),
     }),
 });

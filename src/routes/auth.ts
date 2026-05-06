@@ -420,8 +420,7 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
         cpf,
         phone,
         bio,
-        website,
-        age: age ? Number(age) : null
+        website
       }
     });
 
@@ -442,7 +441,8 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
               email: user.email.toLowerCase(), 
               tenantId: newTenantId || '', // fallback to empty if null (shouldn't happen for visitor)
               xp: 0,
-              age: age ? Number(age) : null
+              age: age ? Number(age) : null,
+              isTeacher: !!isTeacher
             }
           });
         }
