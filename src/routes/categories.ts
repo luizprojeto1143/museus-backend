@@ -21,6 +21,14 @@ router.get("/", async (req, res) => {
       orderBy: { name: "asc" }
     });
 
+    if (categories.length === 0) {
+      // Check if tenant exists at all to differentiate between "no categories" and "deleted tenant"
+      const tenantExists = await prisma.tenant.findUnique({ where: { id: String(tenantId) } });
+      if (!tenantExists) {
+        return res.json([]); // Return empty if tenant is gone, don't crash
+      }
+    }
+
     const formatted = categories.map(cat => ({
       ...cat,
       usageCount: cat._count.works + cat._count.trails + cat._count.events
