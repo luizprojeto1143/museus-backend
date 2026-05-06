@@ -40,14 +40,18 @@ const generateTokens = async (userId: string, email: string, role: Role, tenantI
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRES_DAYS);
 
-  // 3. Salva Refresh Token no Banco
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: userId,
-      expiresAt: expiresAt
-    }
-  });
+  // 3. Salva Refresh Token no Banco (Resiliente)
+  try {
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: userId,
+        expiresAt: expiresAt
+      }
+    });
+  } catch (err) {
+    console.error("[AUTH] Failed to store refresh token in DB, continuing anyway:", err);
+  }
 
   return { accessToken, refreshToken };
 };
@@ -56,6 +60,7 @@ const generateTokens = async (userId: string, email: string, role: Role, tenantI
 router.post("/login", authLimiter, validate(loginSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password } = req.body;
+    console.log(`[AUTH] Attempting login for: ${email}`);
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
@@ -65,14 +70,18 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     });
 
     if (!user) {
+      console.log(`[AUTH] User not found: ${email}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
+    console.log(`[AUTH] User found, comparing password...`);
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
+      console.log(`[AUTH] Password mismatch for: ${email}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
+    console.log(`[AUTH] Password OK, generating tokens...`);
     const tokens = await generateTokens(
       user.id,
       user.email,
@@ -82,6 +91,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       user.name
     );
 
+    console.log(`[AUTH] Tokens generated. Checking cultural equipment...`);
     let equipamentoId = null;
     try {
       if (user.tenantId) {
@@ -92,7 +102,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         equipamentoId = equip?.id || null;
       }
     } catch (e) {
-      // Non-fatal
+      console.warn("[AUTH] Failed to find cultural equipment:", e);
     }
 
     const responseData = {
@@ -118,6 +128,8 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     res.cookie("museus_token", tokens.accessToken, COOKIE_OPTIONS);
     res.cookie("museus_refresh_token", tokens.refreshToken, COOKIE_OPTIONS);
 
+    console.log(`[AUTH] Login successful for: ${email}`);
+
     // Audit Log (Non-blocking)
     try {
       await createAuditLog(
@@ -137,9 +149,10 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
 
     return res.json(responseData);
   } catch (err: any) {
-    console.error("[AUTH] Fatal error during login:", err);
+    console.error("[AUTH] CRITICAL ERROR during login:", err);
     return res.status(500).json({ 
-      message: "Erro interno no servidor de autenticação"
+      message: "Erro interno no servidor de autenticação",
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 });
