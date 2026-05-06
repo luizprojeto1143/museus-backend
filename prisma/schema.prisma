@@ -222,6 +222,19 @@ model Tenant {
   featureInstitutionalReports Boolean @default(false) // Relatórios institucionais
   featureEditaisSubmission    Boolean @default(false) // Produtores podem submeter a editais
 
+  // Módulos de Menu (Agrupadores)
+  featureGroupContent       Boolean @default(true)
+  featureGroupEvents        Boolean @default(true)
+  featureGroupEngagement    Boolean @default(true)
+  featureGroupGamification  Boolean @default(true)
+  featureGroupInstitutional Boolean @default(true)
+  featureGroupTools         Boolean @default(true)
+  featureGroupAnalytics     Boolean @default(true)
+  featureGroupSocial        Boolean @default(true)
+  featureGroupPreservation  Boolean @default(true)
+  featureGroupAI            Boolean @default(true)
+  featureGroupRoadmap       Boolean @default(true)
+
   // Phase 1 Features
   featureCuratorNotes Boolean @default(false) // Notas de curador nas obras
   featureNPS          Boolean @default(false) // Net Promoter Score

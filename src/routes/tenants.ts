@@ -113,6 +113,17 @@ router.get("/:id/settings", softAuthMiddleware, async (req, res) => {
       featureAccessibilityMgmt: tenant.featureAccessibilityMgmt,
       featureInstitutionalReports: tenant.featureInstitutionalReports,
       featureTickets: tenant.featureTickets,
+      featureGroupContent: tenant.featureGroupContent,
+      featureGroupEvents: tenant.featureGroupEvents,
+      featureGroupEngagement: tenant.featureGroupEngagement,
+      featureGroupGamification: tenant.featureGroupGamification,
+      featureGroupInstitutional: tenant.featureGroupInstitutional,
+      featureGroupTools: tenant.featureGroupTools,
+      featureGroupAnalytics: tenant.featureGroupAnalytics,
+      featureGroupSocial: tenant.featureGroupSocial,
+      featureGroupPreservation: tenant.featureGroupPreservation,
+      featureGroupAI: tenant.featureGroupAI,
+      featureGroupRoadmap: tenant.featureGroupRoadmap,
       // Added missing common fields for better UI
       mission: tenant.mission,
       address: tenant.address,
@@ -285,7 +296,18 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
       featureAccessibilityMgmt: z.boolean().optional(),
       featureInstitutionalReports: z.boolean().optional(),
       featureEditaisSubmission: z.boolean().optional(),
-      featureTickets: z.boolean().optional()
+      featureTickets: z.boolean().optional(),
+      featureGroupContent: z.boolean().optional(),
+      featureGroupEvents: z.boolean().optional(),
+      featureGroupEngagement: z.boolean().optional(),
+      featureGroupGamification: z.boolean().optional(),
+      featureGroupInstitutional: z.boolean().optional(),
+      featureGroupTools: z.boolean().optional(),
+      featureGroupAnalytics: z.boolean().optional(),
+      featureGroupSocial: z.boolean().optional(),
+      featureGroupPreservation: z.boolean().optional(),
+      featureGroupAI: z.boolean().optional(),
+      featureGroupRoadmap: z.boolean().optional()
     });
 
     const data = createTenantSchema.parse(req.body);
@@ -351,6 +373,17 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
         featureInstitutionalReports: data.featureInstitutionalReports,
         featureEditaisSubmission: data.featureEditaisSubmission,
         featureTickets: data.featureTickets,
+        featureGroupContent: data.featureGroupContent,
+        featureGroupEvents: data.featureGroupEvents,
+        featureGroupEngagement: data.featureGroupEngagement,
+        featureGroupGamification: data.featureGroupGamification,
+        featureGroupInstitutional: data.featureGroupInstitutional,
+        featureGroupTools: data.featureGroupTools,
+        featureGroupAnalytics: data.featureGroupAnalytics,
+        featureGroupSocial: data.featureGroupSocial,
+        featureGroupPreservation: data.featureGroupPreservation,
+        featureGroupAI: data.featureGroupAI,
+        featureGroupRoadmap: data.featureGroupRoadmap,
         users: {
           create: [
             {
@@ -548,7 +581,10 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
       isCityMode,
       // Municipal Features
       featureEditais, featureProjects, featureProviders, featureAccessibilityMgmt, featureInstitutionalReports,
-      featureEditaisSubmission, featureTickets
+      featureEditaisSubmission, featureTickets,
+      featureGroupContent, featureGroupEvents, featureGroupEngagement, featureGroupGamification,
+      featureGroupInstitutional, featureGroupTools, featureGroupAnalytics, featureGroupSocial,
+      featureGroupPreservation, featureGroupAI, featureGroupRoadmap
     } = req.body;
 
     // Convert maxWorks to number if present
@@ -588,7 +624,18 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         ...(featureAccessibilityMgmt !== undefined && { featureAccessibilityMgmt: Boolean(featureAccessibilityMgmt) }),
         ...(featureInstitutionalReports !== undefined && { featureInstitutionalReports: Boolean(featureInstitutionalReports) }),
         ...(featureEditaisSubmission !== undefined && { featureEditaisSubmission: Boolean(featureEditaisSubmission) }),
-        ...(featureTickets !== undefined && { featureTickets: Boolean(featureTickets) })
+        ...(featureTickets !== undefined && { featureTickets: Boolean(featureTickets) }),
+        ...(featureGroupContent !== undefined && { featureGroupContent: Boolean(featureGroupContent) }),
+        ...(featureGroupEvents !== undefined && { featureGroupEvents: Boolean(featureGroupEvents) }),
+        ...(featureGroupEngagement !== undefined && { featureGroupEngagement: Boolean(featureGroupEngagement) }),
+        ...(featureGroupGamification !== undefined && { featureGroupGamification: Boolean(featureGroupGamification) }),
+        ...(featureGroupInstitutional !== undefined && { featureGroupInstitutional: Boolean(featureGroupInstitutional) }),
+        ...(featureGroupTools !== undefined && { featureGroupTools: Boolean(featureGroupTools) }),
+        ...(featureGroupAnalytics !== undefined && { featureGroupAnalytics: Boolean(featureGroupAnalytics) }),
+        ...(featureGroupSocial !== undefined && { featureGroupSocial: Boolean(featureGroupSocial) }),
+        ...(featureGroupPreservation !== undefined && { featureGroupPreservation: Boolean(featureGroupPreservation) }),
+        ...(featureGroupAI !== undefined && { featureGroupAI: Boolean(featureGroupAI) }),
+        ...(featureGroupRoadmap !== undefined && { featureGroupRoadmap: Boolean(featureGroupRoadmap) })
       }
     });
 
