@@ -463,54 +463,13 @@ router.get('/stats/today', authMiddleware, requireRole(['ADMIN', 'MASTER', 'PROD
         });
 
         const revenue = registrations.reduce((sum, r) => sum + Number(r.pricePaid || 0), 0);
-            where.event = { tenantId };
-        }
-        if (eventId) {
-            where.eventId = String(eventId);
-        }
-
-        if (q) {
-            const search = String(q).trim();
-            where.OR = [
-                { guestName: { contains: search, mode: 'insensitive' } },
-                { guestEmail: { contains: search, mode: 'insensitive' } },
-                { code: { contains: search, mode: 'insensitive' } },
-                { visitor: { name: { contains: search, mode: 'insensitive' } } },
-                { visitor: { email: { contains: search, mode: 'insensitive' } } }
-            ];
-        }
-
-        const page = Number(req.query.page) || 1;
-        const limit = Number(req.query.limit) || 50; // Higher default for registrations
-        const skip = (page - 1) * limit;
-
-        const [registrations, total] = await Promise.all([
-            prisma.registration.findMany({
-                where,
-                include: {
-                    event: { select: { title: true } },
-                    ticket: { select: { name: true } },
-                    visitor: { select: { name: true, email: true, photoUrl: true } }
-                },
-                orderBy: { createdAt: 'desc' },
-                take: limit,
-                skip: skip
-            }),
-            prisma.registration.count({ where })
-        ]);
-
         res.json({
-            data: registrations,
-            meta: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit)
-            }
+            count,
+            revenue
         });
     } catch (e) {
-        console.error("Error fetching registrations", e);
-        res.status(500).json({ error: 'Erro ao buscar participantes' });
+        console.error("Error fetching today stats", e);
+        res.status(500).json({ error: 'Erro ao buscar estatísticas de hoje' });
     }
 });
 
