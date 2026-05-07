@@ -18,6 +18,7 @@ interface JwtPayload {
   tenantId: string;
   email: string;
   name?: string;
+  permissions?: any;
 }
 
 function getCookie(cookies: string | undefined, name: string) {
@@ -51,7 +52,8 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
       role: payload.role,
       tenantId: payload.tenantId,
       email: payload.email,
-      name: payload.name
+      name: payload.name,
+      permissions: payload.permissions
     };
     return next();
   } catch (err) {
@@ -72,12 +74,31 @@ export function requireRole(roles: Role[]) {
       return res.status(401).json({ message: "Não autenticado" });
     }
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ message: "Sem permissão" });
+      return res.status(403).json({ message: "Sem permissão (Role)" });
     }
     return next();
   };
 }
 
+export function requirePermission(permission: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "Não autenticado" });
+    }
+    
+    // Master and Admin have bypass
+    if (req.user.role === Role.MASTER || req.user.role === Role.ADMIN) {
+      return next();
+    }
+
+    // Collaborators check flags
+    if (req.user.role === Role.COLLABORATOR && req.user.permissions?.[permission]) {
+      return next();
+    }
+
+    return res.status(403).json({ message: `Sem permissão: ${permission}` });
+  };
+}
 
 export function softAuthMiddleware(req: Request, res: Response, next: NextFunction) {
   let token: string | null = null;
@@ -98,7 +119,8 @@ export function softAuthMiddleware(req: Request, res: Response, next: NextFuncti
       role: payload.role,
       tenantId: payload.tenantId,
       email: payload.email,
-      name: payload.name
+      name: payload.name,
+      permissions: payload.permissions
     };
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {

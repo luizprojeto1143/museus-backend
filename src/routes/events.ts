@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
-import { authMiddleware, softAuthMiddleware, requireRole } from "../middleware/auth.js";
+import { authMiddleware, softAuthMiddleware, requireRole, requirePermission } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { sendCertificateEmail, generateCertificateBuffer } from "../services/email.js";
 import { z } from "zod";
@@ -14,7 +14,7 @@ const router = Router();
 router.get("/", softAuthMiddleware, async (req, res) => {
   try {
     const tenantId = req.query.tenantId as string | undefined;
-    const { visibility, discovery, status, equipamentoId } = req.query; // discovery=true ignores tenantId
+    const { visibility, discovery, status, equipamentoId, cityId } = req.query; // discovery=true ignores tenantId
 
     // Check authentication for role-based filtering
     const user = req.user;
@@ -30,6 +30,9 @@ router.get("/", softAuthMiddleware, async (req, res) => {
       whereClause.status = 'PUBLISHED';
       whereClause.startDate = { gte: new Date() }; // Upcoming only by default
       if (equipamentoId) whereClause.equipamentoId = equipamentoId as string;
+      if (cityId) {
+        whereClause.tenant = { parentId: cityId as string };
+      }
     }
     // 2. Tenant Scoped
     else {
@@ -99,18 +102,20 @@ router.get("/:id", async (req, res) => {
     const { id } = req.params;
     const tenantId = req.query.tenantId as string | undefined;
 
-    if (!tenantId) {
-      return res.status(400).json({ message: "tenantId é obrigatório" });
+    const whereClause: any = { id, deletedAt: null };
+    if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
+      whereClause.tenantId = tenantId;
     }
 
     const event = await prisma.event.findFirst({
-      where: { id, tenantId, deletedAt: null },
+      where: whereClause,
       include: {
         tenant: {
+          select: { id: true, name: true, slug: true }
+        },
+        _count: {
           select: {
-            id: true,
-            name: true,
-            slug: true
+            registrations: { where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } } }
           }
         }
       }
@@ -120,7 +125,13 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ message: "Evento não encontrado ou acesso não autorizado" });
     }
 
-    return res.json(event);
+    // Attach social proof count to root for easier access
+    const responseData = {
+      ...event,
+      confirmedCount: event._count.registrations
+    };
+
+    return res.json(responseData);
   } catch (err) {
     console.error("Erro ao buscar evento", err);
     return res.status(500).json({ message: "Erro ao buscar evento" });
@@ -144,7 +155,7 @@ router.post("/:id/view", async (req, res) => {
 });
 
 // CRUD Admin
-router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(createEventSchema), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), requirePermission("manage_events"), validate(createEventSchema), async (req, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string) : user.tenantId;
@@ -272,7 +283,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
   }
 });
 
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(updateEventSchema), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), requirePermission("manage_events"), validate(updateEventSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -374,7 +385,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
   }
 });
 
-router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), requirePermission("manage_events"), async (req, res) => {
   try {
     const { id } = req.params;
     const { hard } = req.query;
@@ -475,7 +486,7 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;
-    const isPrivileged = user.role === Role.ADMIN || user.role === Role.MASTER || user.role === Role.PRODUCER;
+    const isPrivileged = user.role === Role.ADMIN || user.role === Role.MASTER || user.role === Role.PRODUCER || (user.role === Role.COLLABORATOR && user.permissions?.manage_scanner);
 
     // Initialize variables
     let visitorId: string | undefined = req.body.visitorId;
@@ -787,7 +798,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
 
       // 2. Find Visitor
       const visitor = await tx.visitor.findFirst({
-        where: { email: user.email, tenantId: event.tenantId }
+        where: { email: user.email.toLowerCase(), tenantId: event.tenantId }
       });
       if (!visitor) throw new Error("Perfil de visitante não encontrado");
 

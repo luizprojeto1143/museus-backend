@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
-import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { authMiddleware, requireRole, requirePermission } from "../middleware/auth.js";
 import { Role, QRType } from "@prisma/client";
 import { z } from "zod";
 import { validate } from "../middleware/validate.js";
@@ -162,7 +162,7 @@ router.get("/:id/related", async (req, res) => {
 });
 
 // CRUD Admin
-router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(createWorkSchema), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), requirePermission("manage_works"), validate(createWorkSchema), async (req, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string) : user.tenantId;
@@ -261,7 +261,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
 });
 
 // Update Work
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(updateWorkSchema), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), requirePermission("manage_works"), validate(updateWorkSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -401,7 +401,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
   }
 });
 
-router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), requirePermission("manage_works"), async (req, res) => {
   try {
     const { id } = req.params;
     const { hard } = req.query; // ?hard=true for MASTER permanent delete

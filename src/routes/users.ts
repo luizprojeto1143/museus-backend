@@ -31,6 +31,7 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
         name: true,
         role: true,
         tenantId: true,
+        permissions: true,
         tenant: {
           select: {
             name: true,
@@ -66,6 +67,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
         name: true,
         role: true,
         tenantId: true,
+        permissions: true,
         tenant: {
           select: {
             name: true,
@@ -84,7 +86,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
     }
 
     // SECURITY: Admin users can only view users from their own tenant
-    if (currentUser.role === "ADMIN" && user.tenantId !== currentUser.tenantId) {
+    if (currentUser.role === Role.ADMIN && user.tenantId !== currentUser.tenantId) {
       return res.status(403).json({ message: "Sem permissão para acessar este usuário" });
     }
 
@@ -95,9 +97,20 @@ router.get("/:id", authMiddleware, async (req, res) => {
   }
 });
 
-router.post("/", authMiddleware, requireRole([Role.MASTER]), validate(createUserSchema), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), validate(createUserSchema), async (req, res) => {
   try {
-    const { email, password, name, role, tenantId } = req.body;
+    const { email, password, name, role, tenantId, permissions } = req.body;
+    const currentUser = req.user!;
+
+    // SECURITY: ADMIN can only create COLLABORATOR role for their own tenant
+    if (currentUser.role === Role.ADMIN) {
+      if (role !== Role.COLLABORATOR) {
+        return res.status(403).json({ message: "Administradores só podem criar colaboradores" });
+      }
+      if (tenantId && tenantId !== currentUser.tenantId) {
+        return res.status(403).json({ message: "Administradores só podem criar usuários para o seu próprio tenant" });
+      }
+    }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -112,7 +125,8 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), validate(createUser
         password: hashedPassword,
         name,
         role: role as Role,
-        tenantId: tenantId || null
+        tenantId: (currentUser.role === Role.ADMIN ? currentUser.tenantId : tenantId) || null,
+        permissions: permissions || {}
       },
       select: {
         id: true,
@@ -120,6 +134,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), validate(createUser
         name: true,
         role: true,
         tenantId: true,
+        permissions: true,
         createdAt: true
       }
     });
@@ -166,10 +181,26 @@ router.put("/me/settings", authMiddleware, async (req, res) => {
   }
 });
 
-router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUserSchema), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), validate(updateUserSchema), async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, name, role, tenantId, password } = req.body;
+    const { email, name, role, tenantId, password, permissions } = req.body;
+    const currentUser = req.user!;
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({ message: "Usuário não encontrado" });
+    }
+
+    // SECURITY: ADMIN can only update COLLABORATOR users from their own tenant
+    if (currentUser.role === Role.ADMIN) {
+      if (targetUser.tenantId !== currentUser.tenantId) {
+        return res.status(403).json({ message: "Sem permissão para editar usuários de outros tenants" });
+      }
+      if (targetUser.role !== Role.COLLABORATOR) {
+         return res.status(403).json({ message: "Administradores só podem editar colaboradores" });
+      }
+    }
 
     interface UserUpdateData {
       email?: string;
@@ -177,17 +208,17 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUs
       role?: Role;
       tenantId?: string | null;
       password?: string;
+      permissions?: any;
     }
 
     const data: UserUpdateData = {};
 
     if (email) data.email = email;
     if (name) data.name = name;
-    if (role) data.role = role as Role;
-    if (tenantId !== undefined) data.tenantId = tenantId || null;
+    if (role && currentUser.role === Role.MASTER) data.role = role as Role;
+    if (tenantId !== undefined && currentUser.role === Role.MASTER) data.tenantId = tenantId || null;
     if (password) data.password = await bcrypt.hash(password, 10);
-
-    const oldUser = await prisma.user.findUnique({ where: { id } });
+    if (permissions !== undefined) data.permissions = permissions;
 
     const user = await prisma.user.update({
       where: { id },
@@ -198,6 +229,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUs
         name: true,
         role: true,
         tenantId: true,
+        permissions: true,
         updatedAt: true
       }
     });
@@ -209,7 +241,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUs
       req.user!.id,
       req.user!.email,
       user.tenantId || req.user!.tenantId || 'master',
-      oldUser,
+      targetUser,
       user,
       req
     );
@@ -221,10 +253,25 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), validate(updateUs
   }
 });
 
-router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
     const { id } = req.params;
-    const oldUser = await prisma.user.findUnique({ where: { id } });
+    const currentUser = req.user!;
+    
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({ message: "Usuário não encontrado" });
+    }
+
+    // SECURITY: ADMIN can only delete COLLABORATOR users from their own tenant
+    if (currentUser.role === Role.ADMIN) {
+      if (targetUser.tenantId !== currentUser.tenantId) {
+        return res.status(403).json({ message: "Sem permissão para excluir usuários de outros tenants" });
+      }
+      if (targetUser.role !== Role.COLLABORATOR) {
+        return res.status(403).json({ message: "Administradores só podem excluir colaboradores" });
+      }
+    }
 
     await prisma.user.delete({ where: { id } });
 
@@ -234,8 +281,8 @@ router.delete("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, re
       id,
       req.user!.id,
       req.user!.email,
-      oldUser?.tenantId || req.user!.tenantId || 'master',
-      oldUser,
+      targetUser?.tenantId || req.user!.tenantId || 'master',
+      targetUser,
       null,
       req
     );

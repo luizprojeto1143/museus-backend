@@ -369,6 +369,13 @@ if (process.env.NODE_ENV !== 'test') {
       console.log(`📝 Audit logging is ${process.env.NODE_ENV === "production" ? "ACTIVE" : "ACTIVE (dev)"}`);
     });
 
+    try {
+      const { initCronJobs } = await import("./services/cron.js");
+      initCronJobs();
+    } catch (e) {
+      console.error("Failed to initialize cron jobs:", e);
+    }
+
     // C11: Graceful shutdown — drain active connections before exiting.
     // Render (and most PaaS) sends SIGTERM before killing the process.
     const connections = new Set<Socket>();

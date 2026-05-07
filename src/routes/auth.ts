@@ -27,10 +27,10 @@ const COOKIE_OPTIONS = {
 };
 
 // Helper para gerar tokens
-const generateTokens = async (userId: string, email: string, role: Role, tenantId: string | null, tenantType: any, name?: string) => {
+const generateTokens = async (userId: string, email: string, role: Role, tenantId: string | null, tenantType: any, name?: string, permissions?: any) => {
   // 1. Gera Access Token (JWT)
   const accessToken = jwt.sign(
-    { id: userId, email, role, tenantId, type: tenantType, name },
+    { id: userId, email, role, tenantId, type: tenantType, name, permissions },
     JWT_SECRET as jwt.Secret,
     { subject: userId, expiresIn: ACCESS_TOKEN_EXPIRES_IN }
   );
@@ -88,7 +88,8 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       user.role,
       user.tenantId,
       user.tenant?.type,
-      user.name
+      user.name,
+      user.permissions
     );
 
     console.log(`[AUTH] Tokens generated. Checking cultural equipment...`);
@@ -114,6 +115,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       equipamentoId,
       tenantType: user.tenant?.type,
       hasProviderProfile: !!user.providerProfile,
+      permissions: user.permissions,
       user: {
         id: user.id,
         email: user.email,
@@ -123,7 +125,8 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         cityId: user.tenant?.parentId || null,
         equipamentoId,
         tenantType: user.tenant?.type,
-        hasProviderProfile: !!user.providerProfile
+        hasProviderProfile: !!user.providerProfile,
+        permissions: user.permissions
       }
     };
     
@@ -214,7 +217,8 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
       storedToken.user.role,
       storedToken.user.tenantId,
       storedToken.user.tenant?.type,
-      storedToken.user.name
+      storedToken.user.name,
+      storedToken.user.permissions
     );
 
     // Set Cookies
@@ -282,7 +286,8 @@ router.get("/me", authMiddleware, async (req: any, res: Response) => {
       cityId: user.tenant?.parentId || null,
       equipamentoId,
       tenantType: user.tenant?.type,
-      hasProviderProfile: !!user.providerProfile
+      hasProviderProfile: !!user.providerProfile,
+      permissions: user.permissions
     });
   } catch (err) {
     return res.status(500).json({ message: "Erro ao buscar perfil" });
