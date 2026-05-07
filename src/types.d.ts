@@ -8,6 +8,7 @@ declare global {
       tenantId?: string | null;
       email: string;
       name?: string;
+      permissions?: any;
     }
     interface Request {
       user?: UserPayload;

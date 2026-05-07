@@ -645,7 +645,7 @@ router.get('/:code/wallet/apple', async (req, res) => {
         try {
             // Using passkit-generator to create Apple Wallet Pass
             const { PKPass } = await import('passkit-generator');
-            const pass = new PKPass({
+            const pass = new (PKPass as any)({
                 "formatVersion": 1,
                 "passTypeIdentifier": "pass.com.culturaviva.ingresso",
                 "serialNumber": registration.code,
