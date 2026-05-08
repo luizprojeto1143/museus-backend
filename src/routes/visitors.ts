@@ -81,6 +81,53 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
   }
 });
 
+// Perfil do visitante logado
+router.get("/me", authMiddleware, async (req, res) => {
+  try {
+    const email = req.user?.email;
+    const tenantId = (req as any).tenantId;
+
+    if (!email || !tenantId) {
+      return res.status(400).json({ message: "email e tenantId são obrigatórios" });
+    }
+
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: email.toLowerCase(), tenantId },
+      include: {
+        visits: {
+          include: {
+            work: { select: { title: true } },
+            trail: { select: { title: true } },
+            event: { select: { title: true } }
+          },
+          orderBy: { createdAt: "desc" },
+          take: 50
+        },
+        achievements: {
+          include: {
+            achievement: {
+              select: {
+                title: true,
+                iconUrl: true,
+                xpReward: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!visitor) {
+      return res.status(404).json({ message: "Perfil de visitante não encontrado neste museu" });
+    }
+
+    return res.json(visitor);
+  } catch (err) {
+    console.error("Erro ao buscar perfil do visitante:", err);
+    return res.status(500).json({ message: "Erro interno ao buscar perfil" });
+  }
+});
+
 // Resumo do visitante atual (por email/tenantId)
 router.get("/me/summary", async (req, res) => {
   try {
