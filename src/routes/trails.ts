@@ -10,7 +10,10 @@ const router = Router();
 // Lista trilhas por tenant
 router.get("/", async (req, res) => {
   try {
-    const tenantId = (req as any).tenantId || req.query.tenantId;
+    const tenantId = (req as any).tenantId || (req.query.tenantId as string);
+    const equipamentoId = req.query.equipamentoId as string;
+    const ownerId = req.query.ownerId as string;
+
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
