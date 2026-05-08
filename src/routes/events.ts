@@ -13,7 +13,7 @@ const router = Router();
 // Lista eventos (Suporta Discovery Mode / Agenda Unificada)
 router.get("/", softAuthMiddleware, async (req, res) => {
   try {
-    const tenantId = req.query.tenantId as string | undefined;
+    const tenantId = (req as any).tenantId || req.query.tenantId;
     const { visibility, discovery, status, equipamentoId, cityId } = req.query; // discovery=true ignores tenantId
 
     // Check authentication for role-based filtering

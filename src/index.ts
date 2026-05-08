@@ -102,6 +102,7 @@ import vestigeAlertsRoutes from "./routes/vestige-alerts.js";
 import webhooksRoutes from "./routes/webhooks.js";
 import { validateEnv } from "./config/validateEnv.js";
 import { limiter } from "./middleware/rateLimiter.js";
+import { tenantMiddleware } from "./middleware/tenant.js";
 
 // Validate critical environment variables on boot
 validateEnv();
@@ -162,6 +163,7 @@ app.use(limiter);
 
 app.use(express.json({ limit: "2mb" })); // Reduced from 10mb for general security. Upload routes have their own multer limit.
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+app.use(tenantMiddleware);
 
 app.use((req, res, next) => {
   const start = Date.now();

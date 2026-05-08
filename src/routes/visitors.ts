@@ -11,7 +11,7 @@ const router = Router();
 // Lista visitantes de um tenant (com paginação) - Protegido (Admin/Master only)
 router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
-    const { tenantId } = req.query as { tenantId?: string };
+    const tenantId = (req as any).tenantId || req.query.tenantId;
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const skip = (page - 1) * limit;
@@ -84,7 +84,8 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
 // Resumo do visitante atual (por email/tenantId)
 router.get("/me/summary", async (req, res) => {
   try {
-    const { email, tenantId } = req.query as { email?: string; tenantId?: string };
+    const { email } = req.query as { email?: string };
+    const tenantId = (req as any).tenantId || req.query.tenantId;
 
     if (!email || !tenantId) {
       return res.status(400).json({ message: "email e tenantId são obrigatórios" });
@@ -307,7 +308,7 @@ router.post("/visit-from-qr", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { tenantId } = req.query;
+    const tenantId = (req as any).tenantId || req.query.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório para isolamento de dados" });

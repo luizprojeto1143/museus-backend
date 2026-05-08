@@ -15,7 +15,7 @@ import { softAuthMiddleware } from "../middleware/auth.js";
 // Lista obras públicas por tenant (com paginação)
 router.get("/", softAuthMiddleware, async (req, res) => {
   try {
-    const tenantId = req.query.tenantId as string | undefined;
+    const tenantId = (req as any).tenantId || req.query.tenantId as string | undefined;
     const equipamentoId = req.query.equipamentoId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
@@ -97,7 +97,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
 router.get("/:id", softAuthMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { tenantId } = req.query;
+    const tenantId = (req as any).tenantId || req.query.tenantId;
 
     const work = await prisma.work.findFirst({ 
       where: { 
