@@ -12,8 +12,11 @@ export function tenantMiddleware(req: Request, res: Response, next: NextFunction
   const bodyTenant = req.body?.tenantId;
 
   const resolvedTenantId = headerTenant || queryTenant || bodyTenant;
-
-  if (resolvedTenantId) {
+  
+  if (resolvedTenantId && 
+      resolvedTenantId !== "undefined" && 
+      resolvedTenantId !== "null" && 
+      resolvedTenantId !== "") {
     // Attach to request for easy access in controllers
     (req as any).tenantId = String(resolvedTenantId);
   }
