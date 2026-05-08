@@ -91,7 +91,7 @@ router.get("/me", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "email e tenantId são obrigatórios" });
     }
 
-    const visitor = await prisma.visitor.findFirst({
+    let visitor = await prisma.visitor.findFirst({
       where: { email: email.toLowerCase(), tenantId },
       include: {
         visits: {
@@ -118,7 +118,19 @@ router.get("/me", authMiddleware, async (req, res) => {
     });
 
     if (!visitor) {
-      return res.status(404).json({ message: "Perfil de visitante não encontrado neste museu" });
+      // Criação automática do perfil de visitante ao primeiro acesso logado neste museu
+      visitor = await prisma.visitor.create({
+        data: {
+          email: email.toLowerCase(),
+          tenantId,
+          name: req.user?.name || "Visitante",
+          xp: 0
+        },
+        include: {
+          visits: true,
+          achievements: true
+        }
+      }) as any;
     }
 
     return res.json(visitor);
