@@ -32,10 +32,15 @@ router.get('/profiles/:id', async (req, res) => {
             where: { id },
             include: { events: { orderBy: { year: 'asc' } } }
         });
+
+        if (!profile) {
+            return res.status(404).json({ message: 'Perfil de família não encontrado' });
+        }
+
         res.json(profile);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erro ao buscar perfil de família' });
+        console.error("Erro ao buscar perfil familiar:", error);
+        res.status(500).json({ message: 'Erro interno ao buscar perfil' });
     }
 });
 

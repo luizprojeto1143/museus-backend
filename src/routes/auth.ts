@@ -502,6 +502,81 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
   }
 });
 
+// Register Provider with Stripe Subscription (R$ 50/month)
+router.post("/register-provider", authLimiter, async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { email, password, name, services, description } = req.body;
+    const { stripeService } = await import("../services/stripeService.js");
+
+    const exists = await prisma.user.findUnique({ where: { email } });
+    if (exists) {
+      return res.status(400).json({ message: "Email já cadastrado" });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+    
+    // 1. Create User & Provider Profile in Transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          password: hash,
+          name,
+          role: Role.PRODUCER, // Service Providers are a type of Producer in the system
+          termsAcceptedAt: new Date(),
+        }
+      });
+
+      const provider = await tx.accessibilityProvider.create({
+        data: {
+          name,
+          email,
+          description,
+          services: services || [],
+          userId: user.id,
+          active: false, // Inactive until subscription is paid
+        }
+      });
+
+      return { user, provider };
+    });
+
+    // 2. Create Stripe Customer
+    const stripeCustomerId = await stripeService.createCustomer({
+      email: result.user.email,
+      name: result.user.name,
+      userId: result.user.id
+    });
+
+    // 3. Update Provider with Stripe ID
+    await prisma.accessibilityProvider.update({
+      where: { id: result.provider.id },
+      data: { stripeCustomerId }
+    });
+
+    // 4. Create Stripe Subscription Checkout Session (R$ 50/month)
+    // IMPORTANT: Price ID should be in env
+    const PRICE_ID = process.env.STRIPE_PRICE_ID_PROVIDER || "price_default_50_monthly";
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+
+    const session = await stripeService.createSubscriptionSession(
+      stripeCustomerId,
+      PRICE_ID,
+      `${frontendUrl}/provider/subscription-success`,
+      `${frontendUrl}/provider/subscription-cancel`
+    );
+
+    return res.status(201).json({
+      message: "Cadastro realizado. Redirecionando para pagamento.",
+      checkoutUrl: session.url
+    });
+
+  } catch (err: any) {
+    console.error("Erro register-provider", err);
+    return res.status(500).json({ message: "Erro ao criar perfil de prestador", details: err.message });
+  }
+});
+
 router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), async (req: any, res: any) => {
   try {
     const { targetTenantId } = req.body;

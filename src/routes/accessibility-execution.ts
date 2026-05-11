@@ -3,7 +3,6 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
 import { z } from "zod";
-import { asaasService } from "../services/asaasService.js";
 
 const router = Router();
 
@@ -14,9 +13,7 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
         const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
         const { status, projectId, providerId, serviceType } = req.query;
 
-        if (!tenantId) {
-            return res.status(400).json({ message: "tenantId é obrigatório" });
-        }
+        if (!tenantId) return res.status(400).json({ message: "tenantId é obrigatório" });
 
         const where: any = { tenantId };
         if (status) where.status = status;
@@ -32,10 +29,8 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
                 provider: { select: { id: true, name: true } }
             }
         });
-
         return res.json(executions);
     } catch (err) {
-        console.error("Erro ao listar execuções", err);
         return res.status(500).json({ message: "Erro ao listar execuções" });
     }
 });
@@ -45,40 +40,21 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
     try {
         const user = req.user!;
         const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
-
-        if (!tenantId) {
-            return res.status(400).json({ message: "tenantId é obrigatório" });
-        }
+        if (!tenantId) return res.status(400).json({ message: "tenantId é obrigatório" });
 
         const [byStatus, byService, recentExecutions] = await Promise.all([
-            prisma.accessibilityExecution.groupBy({
-                by: ["status"],
-                where: { tenantId },
-                _count: true
-            }),
-            prisma.accessibilityExecution.groupBy({
-                by: ["serviceType"],
-                where: { tenantId },
-                _count: true
-            }),
+            prisma.accessibilityExecution.groupBy({ by: ["status"], where: { tenantId }, _count: true }),
+            prisma.accessibilityExecution.groupBy({ by: ["serviceType"], where: { tenantId }, _count: true }),
             prisma.accessibilityExecution.findMany({
-                where: { tenantId },
-                orderBy: { createdAt: "desc" },
-                take: 10,
+                where: { tenantId }, orderBy: { createdAt: "desc" }, take: 10,
                 include: {
                     project: { select: { id: true, title: true } },
                     provider: { select: { id: true, name: true } }
                 }
             })
         ]);
-
-        return res.json({
-            byStatus,
-            byService,
-            recentExecutions
-        });
+        return res.json({ byStatus, byService, recentExecutions });
     } catch (err) {
-        console.error("Erro ao carregar dashboard", err);
         return res.status(500).json({ message: "Erro ao carregar dashboard" });
     }
 });
@@ -86,34 +62,19 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
 // Detalhes da execução
 router.get("/:id", authMiddleware, async (req, res) => {
     try {
-        const { id } = req.params;
-        const user = req.user!;
-
         const execution = await prisma.accessibilityExecution.findUnique({
-            where: { id },
-            include: {
-                project: true,
-                provider: true,
-                tenant: { select: { id: true, name: true } }
-            }
+            where: { id: req.params.id },
+            include: { project: true, provider: true, tenant: { select: { id: true, name: true } } }
         });
-
-        if (!execution) {
-            return res.status(404).json({ message: "Execução não encontrada" });
-        }
-
-        if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) {
-            return res.status(403).json({ message: "Sem permissão" });
-        }
-
+        if (!execution) return res.status(404).json({ message: "Execução não encontrada" });
+        if (req.user!.role !== Role.MASTER && execution.tenantId !== req.user!.tenantId) return res.status(403).json({ message: "Sem permissão" });
         return res.json(execution);
     } catch (err) {
-        console.error("Erro ao buscar execução", err);
         return res.status(500).json({ message: "Erro ao buscar execução" });
     }
 });
 
-// Solicitar serviço de acessibilidade
+// Solicitar serviço
 const requestSchema = z.object({
     serviceType: z.nativeEnum(AccessibilityServiceType),
     projectId: z.string().optional(),
@@ -124,44 +85,15 @@ const requestSchema = z.object({
 
 router.post("/request", authMiddleware, async (req, res) => {
     try {
-        const user = req.user!;
         const data = requestSchema.parse(req.body);
-
-        // Security: Enforce tenantId from user token if not Master
-        const targetTenantId = user.role === Role.MASTER ? data.tenantId : user.tenantId;
-
-        if (!targetTenantId) {
-            return res.status(400).json({ message: "Tenant ID não encontrado" });
-        }
-
-        // Verificar feature habilitada
-        const tenant = await prisma.tenant.findUnique({
-            where: { id: targetTenantId },
-            select: { featureAccessibilityMgmt: true }
-        });
-
-        if (!tenant?.featureAccessibilityMgmt && user.role !== Role.MASTER) {
-            return res.status(403).json({ message: "Módulo de gestão de acessibilidade não habilitado" });
-        }
+        const targetTenantId = req.user!.role === Role.MASTER ? data.tenantId : req.user!.tenantId;
+        if (!targetTenantId) return res.status(400).json({ message: "Tenant ID não encontrado" });
 
         const execution = await prisma.accessibilityExecution.create({
-            data: {
-                serviceType: data.serviceType,
-                projectId: data.projectId,
-                eventId: data.eventId,
-                requestNotes: data.requestNotes,
-                requestedBy: user.id,
-                tenantId: targetTenantId,
-                status: "PENDING"
-            }
+            data: { ...data, requestedBy: req.user!.id, tenantId: targetTenantId, status: "PENDING" }
         });
-
         return res.status(201).json(execution);
     } catch (err) {
-        if (err instanceof z.ZodError) {
-            return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
-        }
-        console.error("Erro ao solicitar serviço", err);
         return res.status(500).json({ message: "Erro ao solicitar serviço" });
     }
 });
@@ -169,107 +101,27 @@ router.post("/request", authMiddleware, async (req, res) => {
 // Aprovar solicitação
 router.put("/:id/approve", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
-        const { id } = req.params;
         const { approvedBudget } = req.body;
-        const user = req.user!;
-
-        const execution = await prisma.accessibilityExecution.findUnique({ where: { id } });
-        if (!execution) {
-            return res.status(404).json({ message: "Execução não encontrada" });
-        }
-
-        if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) {
-            return res.status(403).json({ message: "Sem permissão" });
-        }
-
-        const updated = await prisma.accessibilityExecution.update({
-            where: { id },
-            data: {
-                status: "APPROVED",
-                approvedAt: new Date(),
-                approvedBy: user.id,
-                approvedBudget
-            }
+        const execution = await prisma.accessibilityExecution.update({
+            where: { id: req.params.id },
+            data: { status: "APPROVED", approvedAt: new Date(), approvedBy: req.user!.id, approvedBudget }
         });
-
-        return res.json(updated);
+        return res.json(execution);
     } catch (err) {
-        console.error("Erro ao aprovar", err);
         return res.status(500).json({ message: "Erro ao aprovar" });
-    }
-});
-
-// Atribuir prestador
-router.put("/:id/assign", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { providerId } = req.body;
-        const user = req.user!;
-
-        const execution = await prisma.accessibilityExecution.findUnique({ where: { id } });
-        if (!execution) {
-            return res.status(404).json({ message: "Execução não encontrada" });
-        }
-
-        if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) {
-            return res.status(403).json({ message: "Sem permissão" });
-        }
-
-        // Verificar se prestador existe
-        const provider = await prisma.accessibilityProvider.findUnique({ where: { id: providerId } });
-        if (!provider) {
-            return res.status(404).json({ message: "Prestador não encontrado" });
-        }
-
-        const updated = await prisma.accessibilityExecution.update({
-            where: { id },
-            data: {
-                providerId,
-                status: "IN_PROGRESS"
-            }
-        });
-
-        return res.json(updated);
-    } catch (err) {
-        console.error("Erro ao atribuir prestador", err);
-        return res.status(500).json({ message: "Erro ao atribuir prestador" });
     }
 });
 
 // Registrar entrega
 router.put("/:id/deliver", authMiddleware, async (req, res) => {
     try {
-        const { id } = req.params;
         const { deliverables, executionNotes } = req.body;
-        const user = req.user!;
-
-        const execution = await prisma.accessibilityExecution.findUnique({ where: { id } });
-        if (!execution) {
-            return res.status(404).json({ message: "Execução não encontrada" });
-        }
-
-        // Só o prestador atribuído ou admin pode registrar entrega
-        const isProvider = execution.providerId && user.id === execution.providerId;
-        const isAdmin = user.role === Role.ADMIN && execution.tenantId === user.tenantId;
-        const isMaster = user.role === Role.MASTER;
-
-        if (!isProvider && !isAdmin && !isMaster) {
-            return res.status(403).json({ message: "Sem permissão" });
-        }
-
         const updated = await prisma.accessibilityExecution.update({
-            where: { id },
-            data: {
-                deliverables,
-                executionNotes,
-                executedAt: new Date(),
-                status: "DELIVERED"
-            }
+            where: { id: req.params.id },
+            data: { deliverables, executionNotes, executedAt: new Date(), status: "DELIVERED" }
         });
-
         return res.json(updated);
     } catch (err) {
-        console.error("Erro ao registrar entrega", err);
         return res.status(500).json({ message: "Erro ao registrar entrega" });
     }
 });
@@ -277,25 +129,10 @@ router.put("/:id/deliver", authMiddleware, async (req, res) => {
 // Validar execução
 router.put("/:id/validate", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
-        const { id } = req.params;
         const { validationStatus, validationNotes } = req.body;
-        const user = req.user!;
+        const execution = await prisma.accessibilityExecution.findUnique({ where: { id: req.params.id } });
+        if (!execution) return res.status(404).json({ message: "Execução não encontrada" });
 
-        const execution = await prisma.accessibilityExecution.findUnique({ where: { id } });
-        if (!execution) {
-            return res.status(404).json({ message: "Execução não encontrada" });
-        }
-
-        if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) {
-            return res.status(403).json({ message: "Sem permissão" });
-        }
-
-        const validStatuses = ["APPROVED", "NEEDS_REVISION", "REJECTED"];
-        if (!validStatuses.includes(validationStatus)) {
-            return res.status(400).json({ message: "Status de validação inválido" });
-        }
-
-        // Atualizar contador do prestador se aprovado
         if (validationStatus === "APPROVED" && execution.providerId) {
             await prisma.accessibilityProvider.update({
                 where: { id: execution.providerId },
@@ -304,25 +141,19 @@ router.put("/:id/validate", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         }
 
         const updated = await prisma.accessibilityExecution.update({
-            where: { id },
+            where: { id: req.params.id },
             data: {
-                validationStatus,
-                validationNotes,
-                validatedAt: new Date(),
-                validatedBy: user.id,
-                status: validationStatus === "APPROVED" ? "VALIDATED" :
-                    validationStatus === "NEEDS_REVISION" ? "IN_PROGRESS" : "REJECTED"
+                validationStatus, validationNotes, validatedAt: new Date(), validatedBy: req.user!.id,
+                status: validationStatus === "APPROVED" ? "VALIDATED" : validationStatus === "NEEDS_REVISION" ? "IN_PROGRESS" : "REJECTED"
             }
         });
-
         return res.json(updated);
     } catch (err) {
-        console.error("Erro ao validar", err);
         return res.status(500).json({ message: "Erro ao validar" });
     }
 });
 
-// Criar pagamento para contratação de prestador (com Split)
+// Criar pagamento via STRIPE (com Split)
 router.post("/:id/pay", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
@@ -330,75 +161,55 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 
         const execution = await prisma.accessibilityExecution.findUnique({
             where: { id },
-            include: {
-                provider: true,
-                tenant: true
-            }
+            include: { provider: true, tenant: true }
         });
 
-        if (!execution || !execution.provider) {
-            return res.status(404).json({ message: "Execução ou prestador não encontrado" });
-        }
+        if (!execution || !execution.provider) return res.status(404).json({ message: "Execução ou prestador não encontrado" });
+        if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) return res.status(403).json({ message: "Sem permissão" });
+        if (!execution.approvedBudget) return res.status(400).json({ message: "Valor aprovado não definido" });
 
-        if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) {
-            return res.status(403).json({ message: "Sem permissão" });
-        }
-
-        if (!execution.approvedBudget) {
-            return res.status(400).json({ message: "Valor aprovado não definido" });
-        }
-
-        if (!(execution.provider as any).asaasWalletId) {
-            return res.status(400).json({ message: "Prestador não possui carteira Asaas configurada para recebimento" });
-        }
-
-        // Buscar carteira da plataforma (Master Tenant)
-        const masterTenant = await prisma.tenant.findFirst({
-            where: { type: "CITY" } // No sistema, o tenant CITY/SECRETARIA geralmente é o master
-        });
-
-        const platformWalletId = masterTenant?.asaasWalletId;
-
-        // Criar cliente no Asaas para o Payer (o tenant/usuário atual)
-        const customerId = await asaasService.createCustomer({
-            name: user.name || execution.tenant.name,
-            email: user.email,
-        });
-
-        // Split: 90% para o prestador, 10% para a plataforma (se houver wallet)
-        const splits = [];
-        if (platformWalletId) {
-            splits.push({
-                walletId: platformWalletId,
-                percentualValue: 10 // 10% de comissão
+        // Stripe Split Payment Verification
+        if (!execution.provider.stripeConnectId) {
+            return res.status(400).json({ 
+                message: "O prestador ainda não configurou sua conta Stripe Connect. Solicite ao prestador que acesse o painel e configure os recebimentos." 
             });
         }
 
-        const payment = await asaasService.createPayment({
-            customer: customerId,
-            billingType: 'PIX',
-            value: Number(execution.approvedBudget),
-            dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Amanhã
-            description: `Serviço de Acessibilidade: ${execution.serviceType} - ${execution.id.slice(0, 8)}`,
-            externalReference: execution.id,
-            split: splits
+        const { stripeService } = await import("../services/stripeService.js");
+        const amountCents = Math.round(Number(execution.approvedBudget) * 100);
+        const platformFeeCents = Math.round(amountCents * 0.10); // 10% comissão plataforma
+
+        const stripeCustomerId = await stripeService.createCustomer({
+            name: user.name || execution.tenant.name,
+            email: user.email,
+            userId: user.id
         });
 
-        // Se for PIX, pegar o QR Code
-        let pixData = null;
-        if (payment.id) {
-            pixData = await asaasService.getPixQrCode(payment.id);
-        }
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
-        // Registrar transação no banco (opcional, se houver tabela Transaction)
-        // Por enquanto retornamos o pagamento
+        const session = await stripeService.createSplitPaymentSession({
+            customerId: stripeCustomerId,
+            amount: amountCents,
+            description: `Serviço de Acessibilidade: ${execution.serviceType}`,
+            connectedAccountId: execution.provider.stripeConnectId || '', 
+            applicationFeeAmount: platformFeeCents,
+            successUrl: `${frontendUrl}/accessibility/success?id=${id}`,
+            cancelUrl: `${frontendUrl}/accessibility/cancel?id=${id}`
+        });
+
+        // Save session ID to execution record for webhook tracking
+        await prisma.accessibilityExecution.update({
+            where: { id },
+            data: { stripePaymentIntentId: session.id }
+        });
+
         return res.json({
-            payment,
-            pixData
+            checkoutUrl: session.url,
+            sessionId: session.id
         });
 
     } catch (err) {
-        console.error("Erro ao processar pagamento", err);
+        console.error("Erro ao processar pagamento Stripe", err);
         return res.status(500).json({ message: "Erro ao processar pagamento" });
     }
 });

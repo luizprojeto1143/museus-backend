@@ -10,25 +10,18 @@ const router = Router();
 router.get("/", authMiddleware, async (req, res) => {
     try {
         const user = req.user!;
-
         const where: any = {};
 
-        // If producer, find where producerId matches
         if (user.role === Role.PRODUCER) {
             where.producerId = user.id;
-        }
-        // If master/admin, can see all (for audit)
-        else if (user.role === Role.MASTER || user.role === Role.ADMIN) {
-            // Optional: Filter by tenant? For now, see all.
-        }
-        // If user is linked to a provider (need to check relation)
-        else {
-            // Check if user is a provider
+        } else if (user.role === Role.MASTER || user.role === Role.ADMIN) {
+            // Master can see all
+        } else {
             const provider = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
             if (provider) {
                 where.providerId = provider.id;
             } else {
-                return res.json([]); // No conversations
+                return res.json([]);
             }
         }
 
@@ -63,20 +56,16 @@ router.get("/:id", authMiddleware, async (req, res) => {
             include: {
                 provider: { select: { id: true, name: true, email: true } },
                 producer: { select: { id: true, name: true, email: true } },
-                messages: {
-                    orderBy: { createdAt: "asc" }
-                },
-                transactions: {
-                    orderBy: { createdAt: "desc" }
-                }
+                messages: { orderBy: { createdAt: "asc" } },
+                transactions: { orderBy: { createdAt: "desc" } }
             }
         });
 
         if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
-        // Access Control
         const isProducer = conversation.producerId === user.id;
-        const isProvider = conversation.provider.id === (await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } }))?.id;
+        const providerProfile = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
+        const isProvider = conversation.provider.id === providerProfile?.id;
         const isAdmin = user.role === Role.ADMIN || user.role === Role.MASTER;
 
         if (!isProducer && !isProvider && !isAdmin) {
@@ -90,13 +79,12 @@ router.get("/:id", authMiddleware, async (req, res) => {
     }
 });
 
-// Create Conversation (Start Negotiation)
+// Create Conversation
 router.post("/", authMiddleware, async (req, res) => {
     try {
         const { providerId, initialMessage } = req.body;
-        const user = req.user!; // Producer
+        const user = req.user!;
 
-        // Check if conversation exists
         let conversation = await prisma.conversation.findUnique({
             where: {
                 producerId_providerId: {
@@ -116,7 +104,6 @@ router.post("/", authMiddleware, async (req, res) => {
             });
         }
 
-        // Add Initial Message
         if (initialMessage) {
             await prisma.message.create({
                 data: {
@@ -127,8 +114,6 @@ router.post("/", authMiddleware, async (req, res) => {
                     type: "TEXT"
                 }
             });
-
-            // Update lastMessageAt
             await prisma.conversation.update({
                 where: { id: conversation.id },
                 data: { lastMessageAt: new Date() }
@@ -137,7 +122,6 @@ router.post("/", authMiddleware, async (req, res) => {
 
         return res.json(conversation);
     } catch (err) {
-        console.error("Error creating conversation", err);
         return res.status(500).json({ message: "Error creating conversation" });
     }
 });
@@ -152,7 +136,6 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
         const conversation = await prisma.conversation.findUnique({ where: { id } });
         if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
-        // Identify sender type
         let senderType = "SYSTEM";
         if (conversation.producerId === user.id) {
             senderType = "PRODUCER";
@@ -171,7 +154,7 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
             data: {
                 conversationId: id,
                 senderId: user.id,
-                senderType, // "PRODUCER" | "PROVIDER" | "SYSTEM"
+                senderType,
                 content,
                 type: type || "TEXT",
                 attachments
@@ -184,29 +167,46 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
         });
 
         return res.json(message);
-
     } catch (err) {
-        console.error("Error sending message", err);
         return res.status(500).json({ message: "Error sending message" });
     }
 });
 
-// Initialize Payment (Asaas Integration Stub)
+// Initialize Payment (Stripe Marketplace Connect)
 router.post("/:id/payment", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const { amount, description, paymentMethod } = req.body; // paymentMethod: PIX, CREDIT_CARD
+        const { amount, description } = req.body;
         const user = req.user!;
 
-        const conversation = await prisma.conversation.findUnique({ where: { id } });
+        const conversation = await prisma.conversation.findUnique({ 
+            where: { id },
+            include: { provider: true }
+        });
         if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
-        // 1. Call Asaas API (Simulated for now)
-        // const asaasResponse = await asaas.createPayment(...)
-        const fakeAsaasId = `pay_${Date.now()}`;
-        const fakeInvoiceUrl = `https://sandbox.asaas.com/i/${fakeAsaasId}`;
-        const fakePixQrCode = "00020126580014BR.GOV.BCB.PIX0136...";
-        const fakePixCopyPaste = "00020126580014BR.GOV.BCB.PIX0136...";
+        // 1. Stripe Split Payment Logic
+        const { stripeService } = await import("../services/stripeService.js");
+        const amountCents = Math.round(amount * 100);
+        const platformFeeCents = Math.round(amountCents * 0.10); // 10% fee for marketplace services
+
+        const stripeCustomerId = await stripeService.createCustomer({
+            name: user.name,
+            email: user.email,
+            userId: user.id
+        });
+
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+
+        const session = await stripeService.createSplitPaymentSession({
+            customerId: stripeCustomerId,
+            amount: amountCents,
+            description: `Serviço Profissional: ${description}`,
+            connectedAccountId: conversation.provider.stripeConnectId || '', // Payout to Provider
+            applicationFeeAmount: platformFeeCents,
+            successUrl: `${frontendUrl}/inbox/${id}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancelUrl: `${frontendUrl}/inbox/${id}/cancel`
+        });
 
         // 2. Create Transaction
         const transaction = await prisma.transaction.create({
@@ -217,11 +217,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
                 amount,
                 description,
                 status: "PENDING",
-                asaasId: fakeAsaasId,
-                paymentMethod,
-                asaasInvoiceUrl: fakeInvoiceUrl,
-                pixQrCode: paymentMethod === "PIX" ? fakePixQrCode : null,
-                pixCopyPaste: paymentMethod === "PIX" ? fakePixCopyPaste : null
+                stripePaymentIntentId: session.id
             }
         });
 
@@ -231,12 +227,15 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
                 conversationId: id,
                 senderId: user.id,
                 senderType: "SYSTEM",
-                content: `Solicitação de Pagamento gerada: R$ ${amount}`,
+                content: `Solicitação de Pagamento gerada: R$ ${amount}. [Clique aqui para pagar](${session.url})`,
                 type: "PAYMENT_REQUEST"
             }
         });
 
-        return res.json(transaction);
+        return res.json({
+            transaction,
+            checkoutUrl: session.url
+        });
 
     } catch (err) {
         console.error("Error creating payment", err);

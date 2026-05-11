@@ -482,23 +482,29 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
         const { id } = req.params;
         const project = await prisma.culturalProject.findUnique({
             where: { id },
-            include: { notice: true }
+            include: { notice: true, proponent: true, tenant: true }
         });
 
         if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
         if (project.eventId) return res.status(400).json({ message: "Projeto já publicado como evento" });
+        
+        // SECURITY LOCK: Only APPROVED projects can be published to the agenda
+        if (project.status !== "APPROVED") {
+            return res.status(403).json({ 
+                message: "Apenas projetos com status 'APROVADO' podem ser publicados na Agenda Cultural." 
+            });
+        }
 
         // Find or create default category
         let category = await prisma.category.findFirst({
-            where: { tenantId: project.tenantId, type: "EVENT" }
+            where: { type: "EVENT" }
         });
 
         if (!category) {
             category = await prisma.category.create({
                 data: {
                     name: "Projetos Culturais",
-                    type: "EVENT",
-                    tenantId: project.tenantId
+                    type: "EVENT"
                 }
             });
         }
@@ -507,19 +513,33 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
             data: {
                 title: project.title,
                 description: project.description || project.summary || "",
-                tenantId: project.tenantId,
                 categoryId: category.id,
                 startDate: project.startDate || new Date(),
                 endDate: project.endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
                 location: project.targetRegion || "Local a definir",
-                status: "DRAFT", // Start as Draft so they can edit details
-                coverUrl: "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000&auto=format&fit=crop", // Generic 'Event' Placeholder
-                format: "PRESENTIAL", // Default
-                visibility: "PUBLIC"
+                status: "PUBLISHED", // Published directly to agenda
+                coverUrl: "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000&auto=format&fit=crop", 
+                format: "PRESENTIAL",
+                visibility: "PUBLIC",
+                producerName: project.proponent?.name || "Produtor Cultural",
+                tenantId: project.tenantId
             }
         });
 
-        // Link back and update status to IN_EXECUTION (Project is being executed)
+        // Auto-create a default Free Ticket
+        await prisma.ticket.create({
+            data: {
+                name: "Ingresso Gratuito",
+                description: "Acesso via Projeto Cultural",
+                price: 0,
+                quantity: project.expectedAudience || 100,
+                sold: 0,
+                status: "ACTIVE",
+                eventId: event.id
+            }
+        });
+
+        // Link back and update status to IN_EXECUTION
         await prisma.culturalProject.update({
             where: { id },
             data: {
@@ -528,7 +548,11 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
             }
         });
 
-        return res.json({ message: "Evento criado com sucesso!", eventId: event.id });
+        return res.json({ 
+            message: "Evento ativado e publicado na agenda!", 
+            eventId: event.id,
+            slug: project.tenant.slug 
+        });
 
     } catch (err) {
         console.error(err);

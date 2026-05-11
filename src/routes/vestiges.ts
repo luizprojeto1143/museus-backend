@@ -72,7 +72,7 @@ router.post("/capture", authMiddleware, async (req, res) => {
     const { workId, lat, lng, accuracy } = req.body;
     const visitorId = req.user?.id;
 
-    if (!workId || !lat || !lng || !visitorId) {
+    if (!workId || !visitorId) {
       return res.status(400).json({ message: "Dados incompletos para captura" });
     }
 
@@ -93,16 +93,9 @@ router.post("/capture", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Vestígio inativo" });
     }
 
-    // 2. Verificar proximidade GPS (Haversine)
-    if (work.lat && work.lng) {
-      const distance = getDistance(lat, lng, work.lat, work.lng);
-      if (distance > (work.captureRadiusM || 15)) {
-        return res.status(403).json({ 
-          message: "Você está muito longe para capturar este vestígio",
-          distance
-        });
-      }
-    }
+    // 2. GPS Proximity (Optional - bypassed for QR-only flow)
+    // We still record if provided, but no longer block the user
+    const distance = (work.lat && work.lng && lat && lng) ? getDistance(lat, lng, work.lat, work.lng) : null;
 
     // 3. Verificar se já capturou
     const existing = await (prisma.passportStamp as any).findUnique({
@@ -155,8 +148,8 @@ router.post("/capture", authMiddleware, async (req, res) => {
           raridade,
           numeroCaptura: count,
           xpGanho: xp,
-          latCaptura: lat,
-          lngCaptura: lng,
+          latCaptura: lat || null,
+          lngCaptura: lng || null,
           accuracyMetros: accuracy || 0
         }
       });

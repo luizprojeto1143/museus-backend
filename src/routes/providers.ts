@@ -329,7 +329,8 @@ router.get("/me/stats", authMiddleware, async (req, res) => {
                         }
                     }
                 }
-            })
+            }),
+            hasStripeConnect: !!provider.stripeConnectId
         };
 
         return res.json(stats);

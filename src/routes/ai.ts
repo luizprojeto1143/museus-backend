@@ -581,4 +581,54 @@ router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, r
   }
 });
 
+// Refinar Proposta Cultural (Ajudante do Agente Cultural)
+router.post("/refine-proposal", authMiddleware, async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
+    }
+
+    const { field, projectTitle, projectCurrentText, noticeObjectives, noticeRequirements } = req.body;
+
+    if (!field || !projectTitle) {
+      return res.status(400).json({ message: "Campos obrigatórios ausentes (field, projectTitle)" });
+    }
+
+    const systemPrompt = `Você é um consultor especialista em projetos culturais e leis de incentivo (como Lei Rouanet, Paulo Gustavo, Aldir Blanc).
+Sua tarefa é ajudar o Agente Cultural a escrever ou melhorar o campo "${field}" do seu projeto intitulado "${projectTitle}".
+
+DIRETRIZES:
+1. Use uma linguagem profissional, persuasiva e culturalmente rica.
+2. ALINHAMENTO COM O EDITAL: Utilize os objetivos e requisitos fornecidos para garantir que o texto atenda às expectativas dos avaliadores.
+3. Se o texto atual for fornecido, melhore-o mantendo a essência original. Se estiver vazio, gere um novo texto inspirador.
+4. Mantenha o foco em impacto social, democratização do acesso e viabilidade cultural.
+5. Retorne APENAS o texto refinado, sem introduções ou comentários extras.
+
+CONTEXTO DO EDITAL:
+- Objetivos: ${noticeObjectives || "Não informados"}
+- Requisitos: ${noticeRequirements || "Não informados"}
+`;
+
+    const userPrompt = projectCurrentText 
+      ? `Melhore o seguinte texto para o campo "${field}":\n\n${projectCurrentText}`
+      : `Gere um texto inicial para o campo "${field}" do projeto "${projectTitle}".`;
+
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.7,
+    });
+
+    const response = completion.choices[0]?.message?.content || "";
+    return res.json({ response });
+
+  } catch (err) {
+    console.error("Erro IA refine-proposal", err);
+    return res.status(500).json({ message: "Erro ao refinar proposta" });
+  }
+});
+
 export default router;

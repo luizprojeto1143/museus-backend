@@ -44,6 +44,7 @@
     "prisma": "5.22.0",
     "qrcode": "^1.5.4",
     "sharp": "^0.34.5",
+    "stripe": "^22.1.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "tsx": "^4.20.6",

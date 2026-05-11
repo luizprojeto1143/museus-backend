@@ -257,7 +257,9 @@ model Tenant {
   accessibilityResources Json? // { physical: [], sensory: [], content: [] }
 
   // Financial Settings
-  asaasWalletId String? // ID da Carteira Asaas para recebimento (Split)
+  asaasWalletId    String? // ID da Carteira Asaas para recebimento (Split) (Legacy)
+  stripeCustomerId String? @unique
+  stripeConnectId  String? @unique
 
   // Mode: Museum or City
   isCityMode Boolean @default(false) // false = Museu, true = Cidade/Roteiro Turístico
@@ -432,6 +434,9 @@ model User {
   website       String?
   preferences   Json? // { emailNotifications: boolean, publicProfile: boolean, twoFactor: boolean, language: string }
   refreshTokens RefreshToken[]
+
+  // Stripe Data
+  stripeCustomerId String? @unique
 
   // Enterprise Features
   producerConversations Conversation[]         @relation("ProducerConversations")
@@ -844,6 +849,7 @@ model Registration {
   platformFee        Decimal?           @db.Decimal(10, 2)
   asaasPaymentId     String?
   asaasPaymentStatus String?
+  stripePaymentIntentId String? @unique
 
   // Sympla Killer Features 🚀
   customFormData Json? // { questionId: answer }
@@ -1304,7 +1310,8 @@ model Donation {
   anonymous  Boolean @default(false)
 
   status    String  @default("PENDING") // PENDING, COMPLETED, FAILED
-  paymentId String?
+  paymentId String? // Legacy Asaas ID
+  stripePaymentIntentId String? @unique
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1387,7 +1394,8 @@ model Order {
 
   // Payment
   paymentMethod String?
-  paymentId     String?
+  paymentId     String? // Legacy Asaas ID
+  stripePaymentIntentId String? @unique
   invoiceUrl    String?
   bankSlipUrl   String?
   pixQrCode     String? // Base64 image
@@ -1763,6 +1771,7 @@ model AccessibilityExecution {
   validationNotes  String?
 
   status String @default("PENDING")
+  stripePaymentIntentId String? @unique
 
   // Vínculos
   projectId String?
@@ -1809,7 +1818,10 @@ model AccessibilityProvider {
   user   User?   @relation(fields: [userId], references: [id])
 
   // Financial Data (for Splits)
-  asaasWalletId String? // ID da Carteira Asaas do Prestador
+  asaasWalletId    String? // ID da Carteira Asaas do Prestador (Legacy)
+  stripeCustomerId String? @unique
+  stripeConnectId  String? @unique
+  subscriptionStatus String @default("INACTIVE") // INACTIVE, ACTIVE, PAST_DUE, CANCELED
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1895,12 +1907,8 @@ model Transaction {
   payerId String // User (Producer)
   payeeId String // Provider ID
 
-  // Asaas Data
-  asaasId         String? @unique // External Transaction ID
-  paymentMethod   String? // PIX, CREDIT_CARD, BOLETO
-  asaasInvoiceUrl String?
-  pixQrCode       String? // Base64
-  pixCopyPaste    String?
+  // Stripe Data
+  stripePaymentIntentId String? @unique
 
   paidAt DateTime?
 

@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { limiter } from '../middleware/rateLimiter.js';
-import { asaasService } from '../services/asaasService.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -16,7 +15,7 @@ const donationSchema = z.object({
     tenantId: z.string()
 });
 
-// POST /donations - Create a donation (placeholder for payment integration)
+// POST /donations - Create a donation with Stripe Checkout
 router.post('/', limiter, async (req, res) => {
     try {
         const data = donationSchema.parse(req.body);
@@ -33,89 +32,69 @@ router.post('/', limiter, async (req, res) => {
             }
         });
 
-        // PLATFORM FEE CALCULATION (5%)
-        const platformFeeVal = data.amount * 0.05;
-
-        // Fetch Tenant to get its asaasWalletId
+        // 1. Fetch Tenant to get its stripeConnectId
         const tenant = await prisma.tenant.findUnique({
             where: { id: data.tenantId },
-            select: { asaasWalletId: true }
+            select: { stripeConnectId: true, name: true }
         });
 
-        // Config Split dynamic (95% to Museum, 5% to Platform)
-        // If museum has a wallet id, we use it for split.
-        // Asaas requires percentualValue or fixedValue.
-        const split = [];
+        // 2. Integration with Stripe
+        let stripePaymentData: any = null;
+        try {
+            const { stripeService } = await import('../services/stripeService.js');
+            
+            const amountCents = Math.round(data.amount * 100);
+            const platformFeeCents = Math.round(amountCents * 0.05); // 5% fee
 
-        // 1. Platform Fee (5%)
-        if (process.env.ASAAS_PLATFORM_WALLET_ID) {
-            split.push({
-                walletId: process.env.ASAAS_PLATFORM_WALLET_ID,
-                percentualValue: 5
+            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+
+            // Create/Get Customer
+            const stripeCustomerId = await stripeService.createCustomer({
+                name: data.donorName || 'Doador Anônimo',
+                email: data.donorEmail || 'anon@example.com',
+                userId: 'guest'
             });
-        }
 
-        // 2. Museum Share (95%) - Only if they have a configured wallet
-        if (tenant?.asaasWalletId) {
-            split.push({
-                walletId: tenant.asaasWalletId,
-                percentualValue: 95
+            // Create Split Session (95% Museum, 5% Platform)
+            const session = await stripeService.createSplitPaymentSession({
+                customerId: stripeCustomerId,
+                amount: amountCents,
+                description: `Doação para o Museu: ${tenant?.name || 'Cultura'}`,
+                connectedAccountId: tenant?.stripeConnectId || '', 
+                applicationFeeAmount: platformFeeCents,
+                successUrl: `${frontendUrl}/donations/success?id=${donation.id}`,
+                cancelUrl: `${frontendUrl}/donations/cancel?id=${donation.id}`
             });
-        }
 
-        // 1. Create/Get Customer in Asaas (Using anonymous info if needed)
-        let asaasPaymentData: any = null;
-        if (data.donorEmail) {
-            try {
-                const asaasCustomerId = await asaasService.createCustomer({
-                    name: data.donorName || 'Doador Anônimo',
-                    email: data.donorEmail
-                });
+            stripePaymentData = {
+                id: session.id,
+                checkoutUrl: session.url
+            };
 
-                const dueDate = new Date();
-                dueDate.setDate(dueDate.getDate() + 1);
-
-                asaasPaymentData = await asaasService.createPayment({
-                    customer: asaasCustomerId,
-                    billingType: 'PIX',
-                    value: data.amount,
-                    dueDate: dueDate.toISOString().split('T')[0],
-                    description: `Doação para o Museu: ${data.message || ''}`,
-                    split: split.length > 0 ? split : undefined,
-                    externalReference: donation.id
-                });
-
-                // Get Pix QR Code
-                const pixData = await asaasService.getPixQrCode(asaasPaymentData.id);
-                if (pixData) {
-                    asaasPaymentData.pixQrCode = pixData.encodedImage;
-                    asaasPaymentData.pixPayload = pixData.payload;
+            // Update Donation with Stripe ID
+            await prisma.donation.update({
+                where: { id: donation.id },
+                data: {
+                    platformFee: data.amount * 0.05,
+                    stripePaymentIntentId: session.id
                 }
-            } catch (err) {
-                console.error("Erro na integração Asaas para doação:", err);
-            }
-        }
+            });
 
-        await prisma.donation.update({
-            where: { id: donation.id },
-            data: {
-                platformFee: platformFeeVal,
-                paymentId: asaasPaymentData?.id
-            }
-        });
+        } catch (err) {
+            console.error("Erro na integração Stripe para doação:", err);
+            // Non-blocking but return error in payment data
+        }
 
         res.status(201).json({
-            donation: { ...donation, platformFee: platformFeeVal },
-            payment: asaasPaymentData ? {
-                method: 'PIX',
-                pixCode: asaasPaymentData.pixPayload,
-                qrCodeUrl: asaasPaymentData.pixQrCode, // This is base64
-                invoiceUrl: asaasPaymentData.invoiceUrl
+            donation,
+            payment: stripePaymentData ? {
+                method: 'STRIPE',
+                checkoutUrl: stripePaymentData.checkoutUrl
             } : {
-                method: 'PIX',
-                message: 'Erro ao gerar pagamento real via Asaas. Tente novamente mais tarde.'
+                method: 'STRIPE',
+                message: 'Erro ao gerar checkout do Stripe.'
             },
-            message: 'Doação registrada.'
+            message: 'Doação registrada. Redirecionando para pagamento.'
         });
     } catch (error) {
         console.error('Error creating donation:', error);
@@ -153,10 +132,9 @@ router.get('/wall', async (req, res) => {
         const publicDonations = donations.map(d => ({
             ...d,
             donorName: d.anonymous ? 'Doador Anônimo' : d.donorName,
-            amount: d.anonymous ? null : d.amount // Hide amount for anonymous
+            amount: d.anonymous ? null : d.amount 
         }));
 
-        // Calculate totals
         const total = donations.reduce((sum, d) => sum + Number(d.amount), 0);
         const count = donations.length;
 

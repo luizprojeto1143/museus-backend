@@ -1,107 +1,169 @@
-import { Router, Request } from "express";
+import { Router, Request, Response } from "express";
 import { prisma } from "../prisma.js";
 import { mailService } from "../services/email.js";
-import crypto from "crypto";
+import { stripeService, stripe } from "../services/stripeService.js";
 
 const router = Router();
 
 /**
- * C8: Verify the Asaas webhook signature.
- * Asaas signs the payload using HMAC-SHA256 with the webhook secret.
- * The signature is sent in the `asaas-access-token` header.
- * Configure ASAAS_WEBHOOK_SECRET in your environment variables.
+ * Stripe Webhook - Handles real-time payment events
+ * IMPORTANT: Requires raw body for signature verification
  */
-function verifyAsaasSignature(req: Request): boolean {
-  const secret = process.env.ASAAS_WEBHOOK_SECRET;
+router.post("/stripe", async (req: Request, res: Response) => {
+  const sig = req.headers["stripe-signature"];
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      console.error("[Webhook] ASAAS_WEBHOOK_SECRET is not set. Rejecting all requests.");
-      return false;
-    }
-    // Development: allow through but warn loudly
-    console.warn("[Webhook] ASAAS_WEBHOOK_SECRET not set — skipping signature check (dev only).");
-    return true;
-  }
-
-  const receivedSignature = req.headers["asaas-access-token"] as string | undefined;
-  if (!receivedSignature) return false;
-
-  const body = JSON.stringify(req.body);
-  const expectedSignature = crypto
-    .createHmac("sha256", secret)
-    .update(body)
-    .digest("hex");
+  let event;
 
   try {
-    // timingSafeEqual prevents timing-based side-channel attacks
-    return crypto.timingSafeEqual(
-      Buffer.from(receivedSignature, "utf8"),
-      Buffer.from(expectedSignature, "utf8")
+    // In express, req.body is usually parsed. For webhooks, we need the raw body.
+    // If you are using express.json({ verify: ... }), it might work.
+    event = stripe.webhooks.constructEvent(
+      (req as any).rawBody || JSON.stringify(req.body),
+      sig as string,
+      endpointSecret as string
     );
-  } catch {
-    return false;
-  }
-}
-
-/**
- * ASAAS Webhook - Handles payment confirmations
- */
-router.post("/asaas", async (req, res) => {
-  // C8: Verify signature before processing any payload
-  if (!verifyAsaasSignature(req)) {
-    console.warn("[Webhook Asaas] Invalid or missing signature. Request rejected.");
-    return res.status(401).json({ error: "Invalid webhook signature" });
+  } catch (err: any) {
+    console.error(`[Stripe Webhook] Error: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  const { event, payment } = req.body;
+  console.log(`[Stripe Webhook] Received event: ${event.type}`);
 
-  console.log(`[Webhook Asaas] Event: ${event}, Payment ID: ${payment?.id}, Ref: ${payment?.externalReference}`);
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as any;
+        const metadata = session.metadata || {};
 
-  if (event === "PAYMENT_RECEIVED" || event === "PAYMENT_CONFIRMED") {
-    const code = payment.externalReference;
-    if (!code) return res.status(200).send(); // Safe ignore
-
-    try {
-      const registration = await prisma.registration.findUnique({
-        where: { code },
-        include: {
-          event: { select: { title: true, startDate: true, location: true } },
-          ticket: { select: { name: true } }
+        // 1. Handle Registration (Tickets)
+        const registration = await prisma.registration.findFirst({
+          where: { stripePaymentIntentId: session.id }
+        });
+        if (registration && registration.status === "PENDING") {
+          await prisma.registration.update({
+            where: { id: registration.id },
+            data: { status: "CONFIRMED" }
+          });
+          console.log(`[Webhook] Registration ${registration.code} CONFIRMED!`);
+          
+          // Send Ticket Email
+          const eventData = await prisma.event.findUnique({ where: { id: registration.eventId } });
+          mailService.sendTicketEmail(
+            registration.guestEmail,
+            eventData?.title || "Evento",
+            registration.guestName,
+            registration.code
+          );
         }
-      });
 
-      if (registration && registration.status === "PENDING") {
-        await prisma.registration.update({
-          where: { id: registration.id },
-          data: { status: "CONFIRMED" }
+        // 2. Handle Shop Orders
+        const order = await prisma.order.findFirst({
+          where: { stripePaymentIntentId: session.id }
+        });
+        if (order && order.status === "PENDING") {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { status: "PAID" }
+          });
+          console.log(`[Webhook] Order ${order.id} PAID!`);
+        }
+
+        // 3. Handle Service Transactions (Chat)
+        const transaction = await prisma.transaction.findFirst({
+          where: { stripePaymentIntentId: session.id }
+        });
+        if (transaction && transaction.status === "PENDING") {
+          await prisma.transaction.update({
+            where: { id: transaction.id },
+            data: { status: "PAID", paidAt: new Date() }
+          });
+          console.log(`[Webhook] Service Transaction ${transaction.id} PAID!`);
+        }
+
+        // 4. Handle Accessibility Service Executions
+        const execution = await prisma.accessibilityExecution.findFirst({
+          where: { stripePaymentIntentId: session.id }
+        });
+        if (execution && execution.status !== "PAID") {
+          await prisma.accessibilityExecution.update({
+            where: { id: execution.id },
+            data: { status: "PAID" }
+          });
+          console.log(`[Webhook] Accessibility Execution ${execution.id} PAID!`);
+        }
+        break;
+      }
+
+      case "customer.subscription.created":
+      case "customer.subscription.updated": {
+        const subscription = event.data.object as any;
+        const customerId = subscription.customer as string;
+        const status = subscription.status; // active, past_due, canceled, etc.
+
+        // Update Provider Subscription Status
+        const provider = await prisma.accessibilityProvider.findFirst({
+          where: { stripeCustomerId: customerId }
         });
 
-        console.log(`[Webhook Asaas] Registration ${code} CONFIRMED!`);
-
-        const eventTitle = registration.event.title;
-        const eventDate = registration.event.startDate
-          ? new Date(registration.event.startDate).toLocaleDateString("pt-BR", {
-              weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit"
-            })
-          : undefined;
-        const eventLocation = registration.event.location || undefined;
-
-        await mailService.sendTicketEmail(
-          registration.guestEmail,
-          eventTitle,
-          registration.guestName,
-          registration.code,
-          eventDate,
-          eventLocation
-        );
+        if (provider) {
+          await prisma.accessibilityProvider.update({
+            where: { id: provider.id },
+            data: { 
+              subscriptionStatus: status.toUpperCase(),
+              active: status === "active"
+            }
+          });
+          console.log(`[Webhook] Provider ${provider.name} subscription status: ${status}`);
+        }
+        break;
       }
-    } catch (err) {
-      console.error("[Webhook Asaas] Error processing confirmation:", err);
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as any;
+        const customerId = subscription.customer as string;
+
+        const provider = await prisma.accessibilityProvider.findFirst({
+          where: { stripeCustomerId: customerId }
+        });
+
+        if (provider) {
+          await prisma.accessibilityProvider.update({
+            where: { id: provider.id },
+            data: { 
+              subscriptionStatus: "CANCELED",
+              active: false
+            }
+          });
+          console.log(`[Webhook] Provider ${provider.name} subscription CANCELED.`);
+        }
+        break;
+      }
+
+      /*
+      case "donation.succeeded": {
+        // @ts-ignore
+        const session = event.data.object as any;
+        const donation = await prisma.donation.findFirst({
+            where: { stripePaymentIntentId: session.id }
+        });
+        if (donation && donation.status === "PENDING") {
+            await prisma.donation.update({
+                where: { id: donation.id },
+                data: { status: "COMPLETED" }
+            });
+            console.log(`[Webhook] Donation ${donation.id} COMPLETED!`);
+        }
+        break;
+      }
+      */
     }
+  } catch (err) {
+    console.error(`[Stripe Webhook Processing Error]:`, err);
+    return res.status(500).send("Internal Server Error");
   }
 
-  return res.status(200).send();
+  return res.status(200).send({ received: true });
 });
 
 export default router;

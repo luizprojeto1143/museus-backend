@@ -102,14 +102,25 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), validat
     const { email, password, name, role, tenantId, permissions } = req.body;
     const currentUser = req.user!;
 
-    // SECURITY: ADMIN can only create COLLABORATOR role for their own tenant
+    // SECURITY: ADMIN can only create COLLABORATOR or PRODUCER roles for their own tenant
     if (currentUser.role === Role.ADMIN) {
-      if (role !== Role.COLLABORATOR) {
-        return res.status(403).json({ message: "Administradores só podem criar colaboradores" });
+      if (!([Role.COLLABORATOR, Role.PRODUCER] as Role[]).includes(role as Role)) {
+        return res.status(403).json({ message: "Administradores só podem criar colaboradores ou produtores" });
       }
       if (tenantId && tenantId !== currentUser.tenantId) {
-        return res.status(403).json({ message: "Administradores só podem criar usuários para o seu próprio tenant" });
+        return res.status(403).json({ message: "Administradores só podem criar usuários para o seu próprio museu" });
       }
+    }
+
+    // Sanitise permissions (ensure admin doesn't grant master flags)
+    const allowedFlags = ["manage_works", "manage_events", "manage_trails", "view_analytics", "manage_scanner", "manage_chat_ai", "manage_guestbook", "manage_shop"];
+    const sanitizedPermissions: any = {};
+    if (permissions && typeof permissions === 'object') {
+      Object.keys(permissions).forEach(key => {
+        if (allowedFlags.includes(key)) {
+          sanitizedPermissions[key] = !!permissions[key];
+        }
+      });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -126,7 +137,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), validat
         name,
         role: role as Role,
         tenantId: (currentUser.role === Role.ADMIN ? currentUser.tenantId : tenantId) || null,
-        permissions: permissions || {}
+        permissions: sanitizedPermissions
       },
       select: {
         id: true,
@@ -192,14 +203,25 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), valid
       return res.status(404).json({ message: "Usuário não encontrado" });
     }
 
-    // SECURITY: ADMIN can only update COLLABORATOR users from their own tenant
+    // SECURITY: ADMIN can only update COLLABORATOR or PRODUCER users from their own tenant
     if (currentUser.role === Role.ADMIN) {
       if (targetUser.tenantId !== currentUser.tenantId) {
-        return res.status(403).json({ message: "Sem permissão para editar usuários de outros tenants" });
+        return res.status(403).json({ message: "Sem permissão para editar usuários de outros museus" });
       }
-      if (targetUser.role !== Role.COLLABORATOR) {
-         return res.status(403).json({ message: "Administradores só podem editar colaboradores" });
+      if (!([Role.COLLABORATOR, Role.PRODUCER] as Role[]).includes(targetUser.role as Role)) {
+         return res.status(403).json({ message: "Administradores só podem editar colaboradores ou produtores" });
       }
+    }
+
+    // Sanitise permissions
+    const allowedFlags = ["manage_works", "manage_events", "manage_trails", "view_analytics", "manage_scanner", "manage_chat_ai", "manage_guestbook", "manage_shop"];
+    const sanitizedPermissions: any = {};
+    if (permissions !== undefined && typeof permissions === 'object') {
+      Object.keys(permissions).forEach(key => {
+        if (allowedFlags.includes(key)) {
+          sanitizedPermissions[key] = !!permissions[key];
+        }
+      });
     }
 
     interface UserUpdateData {
@@ -218,7 +240,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), valid
     if (role && currentUser.role === Role.MASTER) data.role = role as Role;
     if (tenantId !== undefined && currentUser.role === Role.MASTER) data.tenantId = tenantId || null;
     if (password) data.password = await bcrypt.hash(password, 10);
-    if (permissions !== undefined) data.permissions = permissions;
+    if (permissions !== undefined) data.permissions = sanitizedPermissions;
 
     const user = await prisma.user.update({
       where: { id },

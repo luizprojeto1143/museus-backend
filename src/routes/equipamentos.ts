@@ -72,7 +72,8 @@ router.get("/public/:identifier", async (req, res) => {
             primaryColor: true,
             secondaryColor: true,
             theme: true,
-            historicalFont: true
+            historicalFont: true,
+            parentId: true
           }
         }
       }
@@ -82,7 +83,13 @@ router.get("/public/:identifier", async (req, res) => {
       return res.status(404).json({ message: "Equipamento não encontrado" });
     }
 
-    return res.json(equipment);
+    const flattened = {
+      ...equipment,
+      cityId: equipment.tenant?.parentId || null,
+      tenant: equipment.tenant // Keep tenant for styles/meta
+    };
+
+    return res.json(flattened);
   } catch (err) {
     console.error("Erro ao buscar detalhes do equipamento:", err);
     return res.status(500).json({ message: "Erro interno" });

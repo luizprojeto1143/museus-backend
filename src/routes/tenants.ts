@@ -514,7 +514,11 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
 
       // Legal
       termsOfUse: z.string().nullable().optional(),
-      privacyPolicy: z.string().nullable().optional()
+      privacyPolicy: z.string().nullable().optional(),
+
+      // Financial
+      asaasWalletId: z.string().nullable().optional(),
+      stripeConnectId: z.string().nullable().optional()
     });
 
     const result = settingsSchema.safeParse(req.body);
@@ -553,7 +557,9 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         welcomeVideoUrl: data.welcomeVideoUrl,
         frameUrl: data.frameUrl,
         termsOfUse: data.termsOfUse,
-        privacyPolicy: data.privacyPolicy
+        privacyPolicy: data.privacyPolicy,
+        asaasWalletId: data.asaasWalletId,
+        stripeConnectId: data.stripeConnectId
       }
     });
 

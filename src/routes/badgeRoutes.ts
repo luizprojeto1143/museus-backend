@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware as authenticate, requireRole as authorize } from "../middleware/auth.js";
 import { emailService } from "../services/EmailService.js";
+import { BadgeService } from "../services/badgeService.js";
 
 const router = Router();
 
@@ -126,31 +127,17 @@ router.put("/:id/status", authenticate, authorize(["MASTER"]), async (req, res) 
   }
 });
 
-// I4: GET /badges/:id/print — Retorna dados estruturados para o motor de PDF do frontend ou gera buffer
+// I4: GET /badges/:id/print — Gera o crachá físico (PDF) para impressão profissional
 router.get("/:id/print", authenticate, authorize(["MASTER", "ADMIN"]), async (req, res) => {
   try {
-    const request = await (prisma as any).badgeRequest.findUnique({
-      where: { id: req.params.id },
-      include: { visitor: true, tenant: true }
-    });
-
-    if (!request) return res.status(404).json({ error: "Solicitação não encontrada" });
-
-    // Aqui geramos os metadados do crachá. 
-    // Em uma implementação completa, usaríamos PDFKit ou similar aqui.
-    // Por enquanto, retornamos os dados prontos para o componente de impressão do frontend.
-    const badgeData = {
-      visitorName: request.visitor.name,
-      levelName: request.level === 4 ? "PLATINA" : request.level === 3 ? "OURO" : request.level === 2 ? "PRATA" : "BRONZE",
-      avatarUrl: request.skinImageUrl,
-      tenantName: request.tenant?.name,
-      issueDate: request.approvedAt || request.requestedAt,
-      requestId: request.id
-    };
-
-    res.json(badgeData);
+    const pdfBuffer = await BadgeService.generatePDF(req.params.id);
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="badge-${req.params.id}.pdf"`);
+    res.send(pdfBuffer);
   } catch (error) {
-    res.status(500).json({ error: "Erro ao gerar dados de impressão" });
+    console.error("Error generating badge PDF:", error);
+    res.status(500).json({ error: "Erro ao gerar crachá para impressão" });
   }
 });
 

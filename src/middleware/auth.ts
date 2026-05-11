@@ -91,8 +91,8 @@ export function requirePermission(permission: string) {
       return next();
     }
 
-    // Collaborators check flags
-    if (req.user.role === Role.COLLABORATOR && req.user.permissions?.[permission]) {
+    // Operational roles check flags (Collaborator, Producer, etc)
+    if ([Role.COLLABORATOR, Role.PRODUCER].includes(req.user.role) && req.user.permissions?.[permission]) {
       return next();
     }
 
