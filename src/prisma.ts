@@ -18,6 +18,11 @@ const getDatabaseUrl = () => {
       url += "&connect_timeout=60";
     }
 
+    // 3. Mandatory for Transaction Mode Pooler (Port 6543)
+    if (url.includes(":6543") && !url.includes("pgbouncer=")) {
+      url += "&pgbouncer=true";
+    }
+
     const maskedUrl = url.replace(/:[^:@]+@/, ":****@");
     console.log(`🔌 [PRISMA] Supabase connection parameters optimized: ${maskedUrl}`);
   }
