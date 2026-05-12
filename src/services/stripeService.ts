@@ -11,6 +11,8 @@ export const stripe = new Stripe(STRIPE_SECRET_KEY, {
     apiVersion: '2025-01-27' as any, // Updated to latest stable for current SDK
 });
 
+const IS_PLACEHOLDER = STRIPE_SECRET_KEY.includes('missing_key');
+
 interface CustomerData {
     name: string;
     email: string;
@@ -23,6 +25,10 @@ export const stripeService = {
      * Creates or retrieves a customer in Stripe
      */
     async createCustomer(data: CustomerData) {
+        if (IS_PLACEHOLDER) {
+            console.log("💳 [STRIPE SIMULATION] Creating dummy customer for:", data.email);
+            return `cus_dummy_${Math.random().toString(36).substring(7)}`;
+        }
         try {
             // Search by email first
             const customers = await stripe.customers.list({
@@ -55,6 +61,10 @@ export const stripeService = {
      * Creates a Checkout Session for Subscriptions (R$ 50/month)
      */
     async createSubscriptionSession(customerId: string, priceId: string, successUrl: string, cancelUrl: string) {
+        if (IS_PLACEHOLDER) {
+            console.log("💳 [STRIPE SIMULATION] Skipping subscription session, redirecting to successUrl.");
+            return { url: successUrl } as any;
+        }
         try {
             const session = await stripe.checkout.sessions.create({
                 customer: customerId,
@@ -89,6 +99,10 @@ export const stripeService = {
         successUrl: string;
         cancelUrl: string;
     }) {
+        if (IS_PLACEHOLDER) {
+            console.log("💳 [STRIPE SIMULATION] Skipping split payment session, redirecting to successUrl.");
+            return { url: data.successUrl } as any;
+        }
         try {
             const session = await stripe.checkout.sessions.create({
                 customer: data.customerId,
@@ -134,6 +148,10 @@ export const stripeService = {
      * Creates a new Connected Account (Express)
      */
     async createConnectedAccount(email: string, name: string) {
+        if (IS_PLACEHOLDER) {
+            console.log("💳 [STRIPE SIMULATION] Creating dummy connected account.");
+            return { id: `acct_dummy_${Math.random().toString(36).substring(7)}` } as any;
+        }
         try {
             const account = await stripe.accounts.create({
                 type: 'express',
@@ -157,6 +175,10 @@ export const stripeService = {
      * Creates an Account Link for Onboarding
      */
     async createAccountLink(accountId: string, refreshUrl: string, returnUrl: string) {
+        if (IS_PLACEHOLDER) {
+            console.log("💳 [STRIPE SIMULATION] Creating dummy account link.");
+            return { url: returnUrl } as any;
+        }
         try {
             const accountLink = await stripe.accountLinks.create({
                 account: accountId,
