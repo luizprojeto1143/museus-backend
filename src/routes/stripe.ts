@@ -85,6 +85,12 @@ router.get('/dashboard-link', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Configuração de pagamentos pendente' });
         }
 
+        // Handle Simulation Mode
+        if (connectedId.startsWith('acct_dummy_')) {
+            console.log("💳 [STRIPE SIMULATION] Generating dummy dashboard link.");
+            return res.json({ url: "https://dashboard.stripe.com/test/dashboard" });
+        }
+
         // Generate Login Link (Express Dashboard)
         const loginLink = await stripe.accounts.createLoginLink(connectedId);
         
