@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_missing_key_please_configure_in_render_env_vars';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
 if (!STRIPE_SECRET_KEY) {

@@ -135,7 +135,7 @@ async function main() {
     // Adicionamos --skip-generate para economizar memória, já que o build já gerou o client
     console.log("🛠️ Sincronizando esquema do banco de dados (Prisma DB Push)...");
     try {
-      execSync("npx prisma db push --skip-generate", { 
+      execSync("npx prisma db push --skip-generate --accept-data-loss", { 
         env: { ...process.env, DATABASE_URL: finalDirectUrl },
         stdio: "inherit",
         timeout: 90000 // 90 segundos
