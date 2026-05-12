@@ -29,7 +29,7 @@ export const registerSchema = z.object({
         cpf: z.string().max(20).optional(),
         phone: z.string().max(30).optional(),
         bio: z.string().max(500).optional(),
-        website: z.string().url().optional().nullable().or(z.literal("")),
+        website: z.string().max(200).optional().nullable().or(z.literal("")),
         isTeacher: z.boolean().optional(),
         age: z.coerce.number().optional(),
         parentTenantId: z.string().uuid().optional().nullable(),
