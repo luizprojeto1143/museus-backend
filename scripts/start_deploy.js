@@ -132,18 +132,34 @@ async function main() {
     // SCHEMA SYNC:
     // -------------------------------------------------------------------------
     // 1. Sincronizar banco de dados (prisma db push)
-    // Adicionamos --skip-generate para economizar memória, já que o build já gerou o client
-    console.log("🛠️ Sincronizando esquema do banco de dados (Prisma DB Push)...");
+    console.log("🛠️ Sincronizando esquema do banco de dados...");
+    let migrationSuccess = false;
+
     try {
+      console.log("📡 Tentando Sincronização via URL Direta (Porta 5432)...");
       execSync("npx prisma db push --skip-generate --accept-data-loss", { 
         env: { ...process.env, DATABASE_URL: finalDirectUrl },
         stdio: "inherit",
-        timeout: 90000 // 90 segundos
+        timeout: 90000 
       });
+      migrationSuccess = true;
+      console.log("✅ Sincronização concluída via URL Direta.");
     } catch (error) {
-      console.error("❌ ERRO CRÍTICO NA MIGRAÇÃO DO BANCO:");
-      console.error(error.message);
-      console.log("⚠️ Tentando subir o app mesmo com erro de sincronização...");
+      console.warn("⚠️ Falha na URL Direta. Tentando via URL de Conexão Principal...");
+      try {
+        execSync("npx prisma db push --skip-generate --accept-data-loss", { 
+          env: { ...process.env, DATABASE_URL: poolerUrl },
+          stdio: "inherit",
+          timeout: 90000 
+        });
+        migrationSuccess = true;
+        console.log("✅ Sincronização concluída via URL Principal.");
+      } catch (error2) {
+        console.error("❌ ERRO CRÍTICO: Não foi possível sincronizar o banco de dados em nenhuma porta.");
+        console.error("Erro Direto:", error.message);
+        console.error("Erro Principal:", error2.message);
+        console.log("⚠️ O app pode apresentar erros 500 se houver colunas faltando.");
+      }
     }
 
     // 2. Garantir usuário Master (Rescue)
