@@ -141,7 +141,9 @@ async function main() {
         timeout: 90000 // 90 segundos
       });
     } catch (error) {
-      console.log("⚠️ Sincronização falhou ou timeout. Tentando subir o app mesmo assim...");
+      console.error("❌ ERRO CRÍTICO NA MIGRAÇÃO DO BANCO:");
+      console.error(error.message);
+      console.log("⚠️ Tentando subir o app mesmo com erro de sincronização...");
     }
 
     // 2. Garantir usuário Master (Rescue)

@@ -572,8 +572,12 @@ router.post("/register-provider", authLimiter, async (req: Request, res: Respons
     });
 
   } catch (err: any) {
-    console.error("Erro register-provider", err);
-    return res.status(500).json({ message: "Erro ao criar perfil de prestador", details: err.message });
+    console.error("Erro register-provider:", err);
+    return res.status(500).json({ 
+      message: "Erro ao criar perfil de prestador", 
+      details: err.message,
+      stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined 
+    });
   }
 });
 
