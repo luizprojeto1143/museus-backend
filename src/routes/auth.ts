@@ -504,25 +504,29 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
 
 // Register Provider with Stripe Subscription (R$ 50/month)
 router.post("/register-provider", authLimiter, validate(registerProviderSchema), async (req: Request, res: Response): Promise<any> => {
+  const { email, password, name, services, description } = req.body;
+  console.log(`🚀 Starting provider registration for: ${email}`);
+
   try {
-    const { email, password, name, services, description } = req.body;
     const { stripeService } = await import("../services/stripeService.js");
 
+    // 1. Check if user already exists
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) {
+      console.warn(`⚠️ Registration failed: Email ${email} already exists.`);
       return res.status(400).json({ message: "Email já cadastrado" });
     }
 
     const hash = await bcrypt.hash(password, 10);
     
-    // 1. Create User & Provider Profile in Transaction
+    // 2. Create User & Provider Profile in Transaction
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
           email,
           password: hash,
           name,
-          role: Role.PRODUCER, // Service Providers are a type of Producer in the system
+          role: Role.PRODUCER,
           termsAcceptedAt: new Date(),
         }
       });
@@ -534,49 +538,66 @@ router.post("/register-provider", authLimiter, validate(registerProviderSchema),
           description,
           services: services || [],
           userId: user.id,
-          active: false, // Inactive until subscription is paid
+          active: false,
         }
       });
 
       return { user, provider };
     });
 
-    // 2. Create Stripe Customer
-    const stripeCustomerId = await stripeService.createCustomer({
-      email: result.user.email,
-      name: result.user.name,
-      userId: result.user.id
-    });
+    console.log(`✅ User and Provider created in DB: ${result.user.id}`);
 
-    // 3. Update Provider with Stripe ID
-    await prisma.accessibilityProvider.update({
-      where: { id: result.provider.id },
-      data: { stripeCustomerId }
-    });
+    // 3. Stripe Integration (Non-blocking for DB transaction)
+    let stripeCustomerId = null;
+    let checkoutUrl = null;
 
-    // 4. Create Stripe Subscription Checkout Session (R$ 50/month)
-    // IMPORTANT: Price ID should be in env
-    const PRICE_ID = process.env.STRIPE_PRICE_ID_PROVIDER || "price_default_50_monthly";
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    try {
+      // 3.1 Create Stripe Customer
+      stripeCustomerId = await stripeService.createCustomer({
+        email: result.user.email,
+        name: result.user.name,
+        userId: result.user.id
+      });
 
-    const session = await stripeService.createSubscriptionSession(
-      stripeCustomerId,
-      PRICE_ID,
-      `${frontendUrl}/provider/subscription-success`,
-      `${frontendUrl}/provider/subscription-cancel`
-    );
+      // 3.2 Update Provider with Stripe ID
+      await prisma.accessibilityProvider.update({
+        where: { id: result.provider.id },
+        data: { stripeCustomerId }
+      });
+
+      // 3.3 Create Subscription Session
+      const PRICE_ID = process.env.STRIPE_PRICE_ID_PROVIDER || "price_default_50_monthly";
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+      
+      const session = await stripeService.createSubscriptionSession(
+        stripeCustomerId,
+        PRICE_ID,
+        `${frontendUrl}/provider/subscription-success`,
+        `${frontendUrl}/provider/subscription-cancel`
+      );
+      checkoutUrl = session.url;
+
+      console.log(`💳 Stripe setup complete for: ${email}`);
+    } catch (stripeError: any) {
+      console.error("❌ Stripe Integration Error (Non-Fatal):", stripeError.message);
+      // We don't return 500 here, we let the user know they are registered but payment failed
+    }
 
     return res.status(201).json({
-      message: "Cadastro realizado. Redirecionando para pagamento.",
-      checkoutUrl: session.url
+      message: checkoutUrl 
+        ? "Cadastro realizado com sucesso! Redirecionando para o pagamento."
+        : "Cadastro realizado, mas houve um problema com o sistema de pagamentos. Entre em contato com o suporte para ativar sua conta.",
+      checkoutUrl,
+      userId: result.user.id,
+      providerId: result.provider.id
     });
 
   } catch (err: any) {
-    console.error("Erro register-provider:", err);
+    console.error("🔥 CRITICAL ERROR in register-provider:", err);
     return res.status(500).json({ 
-      message: "Erro ao criar perfil de prestador", 
+      message: "Erro crítico ao criar perfil de prestador", 
       details: err.message,
-      stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined 
+      code: err.code // Prisma error codes are useful
     });
   }
 });
