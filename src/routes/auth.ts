@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { prisma } from "../prisma.js";
 import { Role } from "@prisma/client";
 import { validate } from "../middleware/validate.js";
-import { loginSchema, registerSchema, switchTenantSchema, recoverPasswordSchema, resetPasswordSchema } from "../schemas/auth.schema.js";
+import { loginSchema, registerSchema, switchTenantSchema, recoverPasswordSchema, resetPasswordSchema, registerProviderSchema } from "../schemas/auth.schema.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { authLimiter, passwordRecoveryLimiter } from "../middleware/rateLimiter.js";
 import crypto from "crypto";
@@ -503,7 +503,7 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
 });
 
 // Register Provider with Stripe Subscription (R$ 50/month)
-router.post("/register-provider", authLimiter, async (req: Request, res: Response): Promise<any> => {
+router.post("/register-provider", authLimiter, validate(registerProviderSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password, name, services, description } = req.body;
     const { stripeService } = await import("../services/stripeService.js");

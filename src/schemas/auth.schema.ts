@@ -36,6 +36,20 @@ export const registerSchema = z.object({
     }),
 });
 
+// ─── Registro de Prestador ────────────────────────────────────────────────────
+export const registerProviderSchema = z.object({
+    body: z.object({
+        name: z.string()
+            .min(2, { message: "O nome deve ter no mínimo 2 caracteres" })
+            .max(120, { message: "Nome demasiado longo" })
+            .trim(),
+        email: emailField,
+        password: passwordField,
+        services: z.array(z.string()).optional(),
+        description: z.string().max(1000).optional(),
+    }),
+});
+
 // ─── Troca de museu ───────────────────────────────────────────────────────────
 export const switchTenantSchema = z.object({
     body: z.object({

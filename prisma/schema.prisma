@@ -1657,6 +1657,7 @@ enum AccessibilityServiceType {
   BRAILLE
   TACTILE_MODEL
   EASY_READING
+  OTHER
 }
 
 // Edital Público
