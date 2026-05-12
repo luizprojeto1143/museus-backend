@@ -104,7 +104,7 @@ router.get("/me/stats", authMiddleware, async (req, res) => {
 });
 
 // Detalhes do prestador
-router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -216,7 +216,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 });
 
 // Atualizar prestador
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
@@ -226,8 +226,13 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
             return res.status(404).json({ message: "Prestador não encontrado" });
         }
 
-        // Verificar permissão
-        if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+        // Verificar permissão: Se for PRODUCER, só pode editar o próprio perfil
+        if (user.role === Role.PRODUCER) {
+            if (existing.userId !== user.id) {
+                return res.status(403).json({ message: "Você não tem permissão para editar este perfil" });
+            }
+        } else if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
+            // Regra Admin: só edita se for do mesmo museu (tenant)
             return res.status(403).json({ message: "Sem permissão" });
         }
 
@@ -242,8 +247,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
                 ...(phone !== undefined && { phone }),
                 ...(description !== undefined && { description }),
                 ...(services && { services }),
-                ...(active !== undefined && { active }),
-                ...(rating !== undefined && { rating })
+                ...(active !== undefined && user.role !== Role.PRODUCER ? { active } : {}), // Produtor não altera o status 'active'
+                ...(rating !== undefined && user.role !== Role.PRODUCER ? { rating } : {})
             }
         });
 
