@@ -191,7 +191,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
         const platformFeeCents = Math.round(amountCents * 0.10); // 10% fee for marketplace services
 
         const stripeCustomerId = await stripeService.createCustomer({
-            name: user.name,
+            name: user.name || "User",
             email: user.email,
             userId: user.id
         });

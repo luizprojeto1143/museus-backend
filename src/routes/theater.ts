@@ -9,7 +9,7 @@ const router = Router();
 // List Theater Sessions
 router.get("/sessions", authMiddleware, async (req, res) => {
     try {
-        const tenantId = req.user!.tenantId;
+        const tenantId = req.user!.tenantId as string;
         const sessions = await prisma.event.findMany({
             where: {
                 tenantId,
@@ -136,7 +136,7 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
 // Theater Analytics
 router.get("/analytics", authMiddleware, async (req, res) => {
     try {
-        const tenantId = req.user!.tenantId;
+        const tenantId = req.user!.tenantId as string;
         
         const sessions = await prisma.event.findMany({
             where: { tenantId, isTheaterSession: true, deletedAt: null }
@@ -167,7 +167,7 @@ router.get("/analytics", authMiddleware, async (req, res) => {
 // List Members
 router.get("/members", authMiddleware, async (req, res) => {
     try {
-        const tenantId = req.user!.tenantId;
+        const tenantId = req.user!.tenantId as string;
         const members = await prisma.theaterMember.findMany({
             where: { tenantId },
             orderBy: { name: "asc" }
@@ -197,13 +197,13 @@ router.post("/members", authMiddleware, async (req, res) => {
         if (data.id) {
             const updated = await prisma.theaterMember.update({
                 where: { id: data.id },
-                data: { ...data, tenantId }
+                data: { ...data, tenantId: tenantId as string }
             });
             return res.json(updated);
         }
 
         const member = await prisma.theaterMember.create({
-            data: { ...data, tenantId }
+            data: { ...data, tenantId: tenantId as string }
         });
         return res.status(201).json(member);
     } catch (err) {

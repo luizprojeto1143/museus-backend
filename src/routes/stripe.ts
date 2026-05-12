@@ -19,7 +19,7 @@ router.get('/onboarding-link', authMiddleware, async (req, res) => {
         let dbUpdate: any = null;
 
         if (type === 'MUSEUM') {
-            const tenantId = id as string || user.tenantId;
+            const tenantId = (id as string || user.tenantId) as string;
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
             if (!tenant) return res.status(404).json({ message: 'Museu não encontrado' });
             

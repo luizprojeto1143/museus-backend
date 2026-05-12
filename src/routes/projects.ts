@@ -504,7 +504,8 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
             category = await prisma.category.create({
                 data: {
                     name: "Projetos Culturais",
-                    type: "EVENT"
+                    type: "EVENT",
+                    tenantId: project.tenantId
                 }
             });
         }
