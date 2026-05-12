@@ -43,6 +43,66 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODU
     }
 });
 
+// Get current provider info (for the logged in user)
+router.get("/me", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const provider = await prisma.accessibilityProvider.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!provider) {
+            return res.status(404).json({ message: "Perfil de prestador não encontrado para este usuário" });
+        }
+
+        return res.json(provider);
+    } catch (err) {
+        console.error("Erro ao buscar meu perfil de prestador", err);
+        return res.status(500).json({ message: "Erro ao buscar perfil" });
+    }
+});
+
+// Get current provider stats
+router.get("/me/stats", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const provider = await prisma.accessibilityProvider.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!provider) {
+            return res.status(404).json({ message: "Perfil de prestador não encontrado" });
+        }
+
+        const stats = {
+            totalExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id } }),
+            completedExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id, status: "VALIDATED" } }),
+            activeConversations: await prisma.conversation.count({
+                where: {
+                    providerId: provider.id,
+                    status: "OPEN"
+                }
+            }),
+            pendingQuotes: await prisma.conversation.count({
+                where: {
+                    providerId: provider.id,
+                    messages: {
+                        none: {
+                            senderType: "PROVIDER"
+                        }
+                    }
+                }
+            }),
+            hasStripeConnect: !!provider.stripeConnectId
+        };
+
+        return res.json(stats);
+    } catch (err) {
+        console.error("Erro ao buscar estatísticas", err);
+        return res.status(500).json({ message: "Erro ao buscar estatísticas" });
+    }
+});
+
 // Detalhes do prestador
 router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
@@ -277,66 +337,6 @@ router.get("/:id/history", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]
     } catch (err) {
         console.error("Erro ao buscar histórico", err);
         return res.status(500).json({ message: "Erro ao buscar histórico" });
-    }
-});
-
-// Get current provider info (for the logged in user)
-router.get("/me", authMiddleware, async (req, res) => {
-    try {
-        const user = req.user!;
-        const provider = await prisma.accessibilityProvider.findUnique({
-            where: { userId: user.id }
-        });
-
-        if (!provider) {
-            return res.status(404).json({ message: "Perfil de prestador não encontrado para este usuário" });
-        }
-
-        return res.json(provider);
-    } catch (err) {
-        console.error("Erro ao buscar meu perfil de prestador", err);
-        return res.status(500).json({ message: "Erro ao buscar perfil" });
-    }
-});
-
-// Get current provider stats
-router.get("/me/stats", authMiddleware, async (req, res) => {
-    try {
-        const user = req.user!;
-        const provider = await prisma.accessibilityProvider.findUnique({
-            where: { userId: user.id }
-        });
-
-        if (!provider) {
-            return res.status(404).json({ message: "Perfil de prestador não encontrado" });
-        }
-
-        const stats = {
-            totalExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id } }),
-            completedExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id, status: "VALIDATED" } }),
-            activeConversations: await prisma.conversation.count({
-                where: {
-                    providerId: provider.id,
-                    status: "OPEN"
-                }
-            }),
-            pendingQuotes: await prisma.conversation.count({
-                where: {
-                    providerId: provider.id,
-                    messages: {
-                        none: {
-                            senderType: "PROVIDER"
-                        }
-                    }
-                }
-            }),
-            hasStripeConnect: !!provider.stripeConnectId
-        };
-
-        return res.json(stats);
-    } catch (err) {
-        console.error("Erro ao buscar estatísticas", err);
-        return res.status(500).json({ message: "Erro ao buscar estatísticas" });
     }
 });
 
