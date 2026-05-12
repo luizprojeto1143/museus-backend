@@ -51,7 +51,7 @@ router.get('/onboarding-link', authMiddleware, async (req, res) => {
         
         // Generate Onboarding Link
         const accountLink = await stripeService.createAccountLink(
-            stripeConnectId,
+            stripeConnectId as string,
             `${frontendUrl}/dashboard?stripe=refresh`, // Refresh URL
             returnUrl
         );
