@@ -101,6 +101,7 @@ import vestigesRoutes from "./routes/vestiges.js";
 import vestigeAlertsRoutes from "./routes/vestige-alerts.js";
 import webhooksRoutes from "./routes/webhooks.js";
 import { stripeRouter } from "./routes/stripe.js";
+import theaterRoutes from "./routes/theater.js";
 import { validateEnv } from "./config/validateEnv.js";
 import { limiter } from "./middleware/rateLimiter.js";
 import { tenantMiddleware } from "./middleware/tenant.js";
@@ -294,6 +295,7 @@ app.use("/vestiges", vestigesRoutes);
 app.use("/vestige-alerts", vestigeAlertsRoutes);
 app.use("/webhooks", webhooksRoutes);
 app.use("/stripe", stripeRouter);
+app.use("/theater", theaterRoutes);
 
 const PORT = process.env.PORT || 3000;
 

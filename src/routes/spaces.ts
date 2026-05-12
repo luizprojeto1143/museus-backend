@@ -17,7 +17,8 @@ const spaceSchema = z.object({
         resources: z.array(z.string()).optional(), // Array of strings
         isBookable: z.boolean().optional(),
         imageUrl: z.string().url().optional().nullable(),
-        equipamentoId: z.string().optional().nullable()
+        equipamentoId: z.string().optional().nullable(),
+        theaterLayout: z.any().optional()
     })
 });
 
@@ -108,7 +109,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
                 resources: resources ?? undefined,
                 isBookable,
                 imageUrl: imageUrl ?? undefined,
-                equipamentoId: req.body.equipamentoId !== undefined ? req.body.equipamentoId : undefined
+                equipamentoId: req.body.equipamentoId !== undefined ? req.body.equipamentoId : undefined,
+                theaterLayout: req.body.theaterLayout !== undefined ? req.body.theaterLayout : undefined
             }
         });
 

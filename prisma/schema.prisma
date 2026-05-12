@@ -320,8 +320,31 @@ model Tenant {
   characterBases         CharacterBase[]
   equipamentos           EquipamentoCultural[]
   vestigeAlerts          VestigeAlert[]
+  theaterMembers         TheaterMember[]
 
   @@index([parentId])
+}
+
+model TheaterSeatReservation {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  seatId    String   // Format: "row-num" e.g., "A-1"
+  status    String   @default("RESERVED") // RESERVED, SOLD, BLOCKED
+  
+  visitorId String?
+  visitor   Visitor? @relation(fields: [visitorId], references: [id])
+  
+  ticketId  String?
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id])
+  
+  expiresAt DateTime? // For temporary cart reservations
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, seatId])
+  @@index([eventId])
 }
 
 model EquipamentoCultural {
@@ -742,6 +765,10 @@ model Event {
   surveyQuestions           SurveyQuestion[]
   certificateRequiresSurvey Boolean           @default(false)
 
+  isTheaterSession          Boolean           @default(false)
+  seatReservations          TheaterSeatReservation[]
+  theaterCues               TheaterCue[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -820,6 +847,7 @@ model Ticket {
 
   event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
   registrations Registration[]
+  theaterSeatReservations TheaterSeatReservation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -904,6 +932,7 @@ model Visitor {
   equipamentoCheckins    EquipamentoCheckin[]
   trails                 Trail[]
   avatarCaches           VisitorAvatarCache[]
+  theaterSeatReservations TheaterSeatReservation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1096,6 +1125,8 @@ model Space {
 
   categoryId      String?
   category        Category? @relation(fields: [categoryId], references: [id])
+
+  theaterLayout   Json?     // { rows: [{ name: 'A', seats: 10, type: 'VIP' }, ...] }
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2804,3 +2835,40 @@ model VisitorAvatarCache {
   @@unique([visitorId, skinId])
 }
 
+
+model TheaterMember {
+  id        String   @id @default(uuid())
+  name      String
+  role      String   // e.g., "Ator Principal", "Diretor de Cena", "Iluminação"
+  status    String   @default("READY") // READY, REHEARSING, AWAY
+  rating    Int      @default(5)
+  tags      String[] // ["Barítono", "Drama"]
+  
+  phone     String?
+  email     String?
+  
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model TheaterCue {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  type      String   // LIGHT, SOUND, CURTAIN, OTHER
+  label     String
+  desc      String?
+  time      String   // Format: "HH:mm:ss" relative to start
+  order     Int      @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+}
