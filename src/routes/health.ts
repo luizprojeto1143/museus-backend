@@ -22,7 +22,10 @@ router.get('/', async (req, res) => {
         const columnCheck = {
             work_deletedAt: false,
             tenant_deletedAt: false,
-            event_deletedAt: false
+            event_deletedAt: false,
+            user_stripeCustomerId: false,
+            provider_stripeCustomerId: false,
+            provider_stripeConnectId: false
         };
 
         try {
@@ -35,8 +38,17 @@ router.get('/', async (req, res) => {
 
                 const eventCols: any[] = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'Event' AND column_name = 'deletedAt'`;
                 columnCheck.event_deletedAt = eventCols.length > 0;
+
+                const userStripe: any[] = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'User' AND column_name = 'stripeCustomerId'`;
+                columnCheck.user_stripeCustomerId = userStripe.length > 0;
+
+                const providerStripe: any[] = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'AccessibilityProvider' AND column_name = 'stripeCustomerId'`;
+                columnCheck.provider_stripeCustomerId = providerStripe.length > 0;
+
+                const providerConnect: any[] = await prisma.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name = 'AccessibilityProvider' AND column_name = 'stripeConnectId'`;
+                columnCheck.provider_stripeConnectId = providerConnect.length > 0;
             };
-            await Promise.race([checkCols(), new Promise((_, r) => setTimeout(r, 5000))]);
+            await Promise.race([checkCols(), new Promise((_, r) => setTimeout(r, 8000))]);
         } catch (colErr) {
             console.error('Column diagnostic failed or timed out:', colErr);
         }
