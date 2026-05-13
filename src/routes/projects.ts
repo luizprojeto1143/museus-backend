@@ -369,6 +369,34 @@ router.put("/:id/status", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
             }
         });
 
+        // AUTO-UNLOCK FEATURES FOR PRODUCER UPON APPROVAL
+        if (status === "APPROVED") {
+            try {
+                const proponent = await prisma.user.findUnique({
+                    where: { id: project.proponentId },
+                    select: { tenantId: true, role: true }
+                });
+
+                if (proponent?.tenantId && proponent.role === Role.PRODUCER) {
+                    await prisma.tenant.update({
+                        where: { id: proponent.tenantId },
+                        data: {
+                            featureTickets: true,
+                            featureEvents: true,
+                            featureGamification: true,
+                            featureWorks: true,
+                            featureAccessibility: true,
+                            featureCertificates: true,
+                            featureReviews: true
+                        }
+                    });
+                    console.log(`[PROJECTS] Features unlocked for tenant ${proponent.tenantId} (Producer Approved)`);
+                }
+            } catch (unlockErr) {
+                console.error("[PROJECTS] Failed to auto-unlock producer features:", unlockErr);
+            }
+        }
+
         return res.json(updated);
     } catch (err) {
         console.error("Erro ao atualizar status", err);
