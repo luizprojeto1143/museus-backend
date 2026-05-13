@@ -245,13 +245,13 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
 });
 
 // Detalhes do Tenant (MASTER ou ADMIN do próprio tenant)
-router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.PRODUCER]), async (req, res) => {
+router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.PRODUCER, Role.COLLABORATOR]), async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;
 
-    // Se for admin ou produtor, só pode ver seu próprio tenant
-    if ((user.role === Role.ADMIN || user.role === Role.PRODUCER) && user.tenantId !== id) {
+    // Se for admin, produtor ou colaborador, só pode ver seu próprio tenant
+    if ((user.role === Role.ADMIN || user.role === Role.PRODUCER || user.role === Role.COLLABORATOR) && user.tenantId !== id) {
       return res.status(403).json({ message: "Sem permissão" });
     }
 

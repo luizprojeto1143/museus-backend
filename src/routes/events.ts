@@ -19,7 +19,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     // Check authentication for role-based filtering
     const user = req.user;
     const isMaster = user?.role === Role.MASTER;
-    const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER) && user.tenantId === tenantId;
+    const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER || user.role === Role.COLLABORATOR) && user.tenantId === tenantId;
     const hasPrivilege = isMaster || isTenantAdmin;
 
     const whereClause: import("@prisma/client").Prisma.EventWhereInput = { deletedAt: null };

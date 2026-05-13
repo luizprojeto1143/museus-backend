@@ -49,7 +49,7 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     // If authenticated and authorized, allow seeing unpublished works
     if (req.user) {
       const isMaster = req.user.role === Role.MASTER;
-      const isTenantAdmin = (req.user.role === Role.ADMIN || req.user.role === Role.PRODUCER) && req.user.tenantId === tenantId;
+      const isTenantAdmin = (req.user.role === Role.ADMIN || req.user.role === Role.PRODUCER || req.user.role === Role.COLLABORATOR) && req.user.tenantId === tenantId;
 
       if (isMaster || isTenantAdmin) {
         delete whereClause.published; // Remove published filter
@@ -125,7 +125,7 @@ router.get("/:id", softAuthMiddleware, async (req, res) => {
     if (!work.published) {
       const user = req.user;
       const isMaster = user?.role === Role.MASTER;
-      const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER) && user.tenantId === work.tenantId;
+      const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER || user.role === Role.COLLABORATOR) && user.tenantId === work.tenantId;
 
       if (!isMaster && !isTenantAdmin) {
         return res.status(404).json({ message: "Obra não encontrada ou indisponível" }); // Return 404 to hide existence

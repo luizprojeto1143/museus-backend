@@ -9,14 +9,14 @@ import { createAuditLog } from "./audit.js";
 
 const router = Router();
 
-router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLLABORATOR]), async (req, res) => {
   try {
     const user = req.user!;
     const whereClause: Record<string, string> = {};
 
-    if (user.role === Role.ADMIN) {
+    if (user.role !== Role.MASTER) {
       if (!user.tenantId) {
-        return res.status(403).json({ message: "Admin sem tenantId" });
+        return res.status(403).json({ message: "Usuário sem tenantId" });
       }
       whereClause.tenantId = user.tenantId;
     } else if (req.query.tenantId) {

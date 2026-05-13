@@ -7,7 +7,7 @@ const router = Router();
 import { Request, Response, NextFunction } from "express";
 
 // Resumo simplificado para componentes como TCE Export, etc.
-router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res: any, next: any) => {
+router.get("/summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), async (req: any, res: any, next: any) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string || user.tenantId) : user.tenantId;
@@ -106,7 +106,7 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
 });
 
 // Resumo por tenant (ADMIN ou MASTER)
-router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res: any, next: any) => {
+router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req: any, res: any, next: any) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? req.params.tenantId : user.tenantId;
@@ -194,7 +194,7 @@ router.get("/popular-works/:tenantId", authMiddleware, requireRole([Role.ADMIN, 
 });
 
 // Dashboard completo para Admin
-router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res: any, next: any) => {
+router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), async (req: any, res: any, next: any) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? req.params.tenantId : user.tenantId;
@@ -441,7 +441,7 @@ router.get("/dashboard/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role
 });
 
 // Analytics Avançado (Heatmap, etc)
-router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: any, res) => {
+router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), async (req: any, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? req.params.tenantId : user.tenantId;
@@ -655,7 +655,7 @@ router.get("/accessibility-summary", authMiddleware, requireRole([Role.ADMIN, Ro
 });
 
 // Sales & Ticket Analytics (Sympla Killer Dashboard)
-router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.COLLABORATOR]), async (req, res) => {
   try {
     const user = req.user!;
     const tenantId = user.tenantId;
@@ -719,7 +719,7 @@ router.get("/sales-summary", authMiddleware, requireRole([Role.ADMIN, Role.MASTE
 });
 
 // Heatmap — QR scan / visit frequency by room and work
-router.get("/heatmap", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res) => {
+router.get("/heatmap", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req: any, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string || user.tenantId) : user.tenantId;
@@ -791,7 +791,7 @@ router.get("/heatmap", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), a
 });
 
 // Funnel — Conversion funnel analytics
-router.get("/funnel", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res) => {
+router.get("/funnel", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req: any, res) => {
   try {
     const user = req.user!;
     const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string || user.tenantId) : user.tenantId;

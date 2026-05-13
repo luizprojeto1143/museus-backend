@@ -52,7 +52,7 @@ router.get("/", async (req, res) => {
 });
 
 // Criar categoria
-router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
   try {
     const user = req.user!;
     const { name, type, description } = req.body;
@@ -97,7 +97,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Atualizar categoria
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -123,7 +123,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 });
 
 // Atualizar status (patch)
-router.patch("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.patch("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -149,7 +149,7 @@ router.patch("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), asy
 });
 
 // Deletar categoria
-router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;

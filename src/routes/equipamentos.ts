@@ -198,12 +198,12 @@ const equipmentSchema = z.object({
 });
 
 // List all for management
-router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLLABORATOR]), async (req, res) => {
   try {
     const user = req.user!;
     const where: any = {};
 
-    if (user.role === Role.ADMIN) {
+    if (user.role !== Role.MASTER) {
       where.tenantId = user.tenantId;
     }
 
@@ -220,12 +220,12 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
 });
 
 // Create new equipment
-router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLLABORATOR]), async (req, res) => {
   try {
     const user = req.user!;
     const data = equipmentSchema.parse(req.body);
 
-    const tenantId = user.role === Role.ADMIN ? user.tenantId : req.body.tenantId;
+    const tenantId = user.role !== Role.MASTER ? user.tenantId : req.body.tenantId;
     if (!tenantId) {
       return res.status(400).json({ message: "Tenant ID é necessário" });
     }
@@ -248,7 +248,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
 });
 
 // Update equipment
-router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLLABORATOR]), async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user!;
@@ -257,7 +257,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async
     const existing = await prisma.equipamentoCultural.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ message: "Equipamento não encontrado" });
 
-    if (user.role === Role.ADMIN && existing.tenantId !== user.tenantId) {
+    if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
       return res.status(403).json({ message: "Sem permissão" });
     }
 

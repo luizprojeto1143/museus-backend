@@ -113,7 +113,7 @@ router.get("/public/:id/results", async (req, res) => {
 // ========== ADMIN ENDPOINTS ==========
 
 // Lista todos os editais do tenant (admin)
-router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
     try {
         const user = req.user!;
         const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
@@ -165,7 +165,7 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
 });
 
 // Publicar RESULTADOS do edital
-router.put("/:id/publish-results", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.put("/:id/publish-results", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
@@ -195,7 +195,7 @@ router.put("/:id/publish-results", authMiddleware, requireRole([Role.ADMIN, Role
 });
 
 // Detalhes do edital (admin)
-router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
@@ -305,7 +305,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 });
 
 // Atualizar edital
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
@@ -359,7 +359,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 });
 
 // Publicar edital
-router.put("/:id/publish", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.put("/:id/publish", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
@@ -399,7 +399,7 @@ router.put("/:id/publish", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]
 });
 
 // Deletar edital
-router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
@@ -422,7 +422,7 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), as
 });
 
 // Projetos inscritos no edital
-router.get("/:id/projects", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/:id/projects", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;

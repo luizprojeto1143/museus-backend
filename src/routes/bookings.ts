@@ -272,8 +272,8 @@ router.put("/:id", authMiddleware, validate(updateBookingSchema), async (req, re
             return res.status(403).json({ message: "Sem permissão" });
         }
 
-        // Permitir apenas dono ou admin
-        if (booking.userId !== userId && userRole !== Role.ADMIN && userRole !== Role.MASTER) {
+        // Permitir apenas dono, admin ou colaborador
+        if (booking.userId !== userId && userRole !== Role.ADMIN && userRole !== Role.MASTER && userRole !== Role.COLLABORATOR) {
             return res.status(403).json({ message: "Sem permissão" });
         }
 
@@ -338,7 +338,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
             return res.status(403).json({ message: "Sem permissão" });
         }
 
-        if (booking.userId !== userId && userRole !== Role.ADMIN && userRole !== Role.MASTER) {
+        if (booking.userId !== userId && userRole !== Role.ADMIN && userRole !== Role.MASTER && userRole !== Role.COLLABORATOR) {
             return res.status(403).json({ message: "Sem permissão" });
         }
 
