@@ -113,7 +113,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), validat
     }
 
     // Sanitise permissions (ensure admin doesn't grant master flags)
-    const allowedFlags = ["manage_works", "manage_events", "manage_trails", "view_analytics", "manage_scanner", "manage_chat_ai", "manage_guestbook", "manage_shop"];
+    const allowedFlags = ["manage_works", "manage_events", "manage_trails", "view_analytics", "manage_scanner", "manage_chat_ai", "manage_guestbook", "manage_shop", "manage_gamification", "manage_institutional", "manage_operations", "manage_marketing", "manage_roadmap"];
     const sanitizedPermissions: any = {};
     if (permissions && typeof permissions === 'object') {
       Object.keys(permissions).forEach(key => {
@@ -214,7 +214,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), valid
     }
 
     // Sanitise permissions
-    const allowedFlags = ["manage_works", "manage_events", "manage_trails", "view_analytics", "manage_scanner", "manage_chat_ai", "manage_guestbook", "manage_shop"];
+    const allowedFlags = ["manage_works", "manage_events", "manage_trails", "view_analytics", "manage_scanner", "manage_chat_ai", "manage_guestbook", "manage_shop", "manage_gamification", "manage_institutional", "manage_operations", "manage_marketing", "manage_roadmap"];
     const sanitizedPermissions: any = {};
     if (permissions !== undefined && typeof permissions === 'object') {
       Object.keys(permissions).forEach(key => {
