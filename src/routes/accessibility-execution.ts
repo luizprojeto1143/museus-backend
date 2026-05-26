@@ -214,4 +214,32 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
     }
 });
 
+// Upload Nota Fiscal
+router.put("/:id/nota-fiscal", authMiddleware, async (req, res) => {
+    try {
+        const { notaFiscalUrl, notaFiscalNumber, notaFiscalDate } = req.body;
+        const updated = await prisma.accessibilityExecution.update({
+            where: { id: req.params.id },
+            data: { notaFiscalUrl, notaFiscalNumber, notaFiscalDate: notaFiscalDate ? new Date(notaFiscalDate) : null }
+        });
+        return res.json(updated);
+    } catch (err) {
+        return res.status(500).json({ message: "Erro ao atualizar Nota Fiscal" });
+    }
+});
+
+// Upload Recibo de Pagamento (Comprovante)
+router.put("/:id/payment-receipt", authMiddleware, async (req, res) => {
+    try {
+        const { paymentReceiptUrl } = req.body;
+        const updated = await prisma.accessibilityExecution.update({
+            where: { id: req.params.id },
+            data: { paymentReceiptUrl }
+        });
+        return res.json(updated);
+    } catch (err) {
+        return res.status(500).json({ message: "Erro ao atualizar Comprovante" });
+    }
+});
+
 export default router;

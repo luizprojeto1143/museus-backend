@@ -74,9 +74,15 @@ router.get("/me/stats", authMiddleware, async (req, res) => {
             return res.status(404).json({ message: "Perfil de prestador não encontrado" });
         }
 
+        const faturamentoAgg = await prisma.accessibilityExecution.aggregate({
+            _sum: { approvedBudget: true },
+            where: { providerId: provider.id, status: "VALIDATED" } // ou "DELIVERED"/"VALIDATED" etc, vamos considerar as finalizadas
+        });
+
         const stats = {
             totalExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id } }),
             completedExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id, status: "VALIDATED" } }),
+            totalFaturamento: Number(faturamentoAgg._sum.approvedBudget || 0),
             activeConversations: await prisma.conversation.count({
                 where: {
                     providerId: provider.id,

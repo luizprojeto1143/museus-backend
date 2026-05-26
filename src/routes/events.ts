@@ -7,6 +7,7 @@ import { z } from "zod";
 import { createAuditLog } from "./audit.js";
 import { validate } from "../middleware/validate.js";
 import { createEventSchema, updateEventSchema } from "../schemas/event.schema.js";
+import { stripe } from "../services/stripeService.js";
 
 const router = Router();
 
@@ -39,7 +40,11 @@ router.get("/", softAuthMiddleware, async (req, res) => {
       if (!tenantId) {
         return res.status(400).json({ message: "tenantId é obrigatório (ou use ?discovery=true)" });
       }
-      whereClause.tenantId = tenantId;
+      // Se for listagem do tenant, deve incluir ele e os filhos (para secretarias visualizarem tudo)
+      whereClause.OR = [
+        { tenantId: tenantId as string },
+        { tenant: { parentId: tenantId as string } }
+      ];
       if (equipamentoId) whereClause.equipamentoId = equipamentoId as string;
 
       // PRIVILEGED ACCESS (Admin/Producer seeing their own tenant)
@@ -236,6 +241,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         certificateBackgroundUrl,
         certificateText,
         minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
+        producer: user.role === "PRODUCER" ? { connect: { id: user.id } } : undefined,
 
         // New fields
         type: type || "OTHER",
@@ -804,6 +810,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
 
       // 3. Create Registration
       const code = `TKT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+      const isPaid = Number(ticket.price) > 0;
 
       const registration = await tx.registration.create({
         data: {
@@ -813,7 +820,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
           guestName: visitor.name || "Visitante",
           guestEmail: visitor.email || user.email,
           code,
-          status: "CONFIRMED",
+          status: isPaid ? "PENDING" : "CONFIRMED",
           pricePaid: Number(ticket.price),
           customFormData: customFormData || undefined
         }
@@ -825,10 +832,49 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         data: { sold: { increment: quantity } }
       });
 
-      return registration;
+      return { registration, isPaid, ticketName: ticket.name, eventTitle: event.title, totalAmount: Number(ticket.price) * quantity };
     });
 
-    return res.status(201).json({ message: "Inscrição realizada!", registration: result });
+    if (result.isPaid) {
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+      // Criar sessão Stripe
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card', 'pix'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'brl',
+              product_data: {
+                name: `Ingresso: ${result.eventTitle} - ${result.ticketName}`,
+              },
+              unit_amount: Math.round(result.totalAmount * 100),
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${frontendUrl}/meus-ingressos?success=true`,
+        cancel_url: `${frontendUrl}/meus-ingressos?canceled=true`,
+        metadata: {
+          registrationId: result.registration.id,
+          eventId: id
+        }
+      });
+
+      // Update registration with Stripe Intent/Session ID
+      await prisma.registration.update({
+        where: { id: result.registration.id },
+        data: { stripePaymentIntentId: session.id }
+      });
+
+      return res.status(201).json({
+        message: "Inscrição pendente de pagamento",
+        registration: result.registration,
+        payment: { checkoutUrl: session.url }
+      });
+    }
+
+    return res.status(201).json({ message: "Inscrição realizada!", registration: result.registration });
 
   } catch (err: unknown) {
     console.error("Erro inscrição evento", err);
@@ -1020,6 +1066,108 @@ router.get("/:id/report", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
   } catch (error) {
     console.error("Error generating report:", error);
     res.status(500).json({ error: "Erro ao gerar relatório" });
+  }
+});
+
+// ========== OMNICHANNEL BOX OFFICE (BILHETERIA GLOBAL) ==========
+
+// 1. Fetch All Active Events (Theater + General) for POS
+router.get("/pos/sessions", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenantId = user.tenantId;
+
+    if (!tenantId && user.role !== "MASTER") {
+      return res.status(400).json({ message: "TenantId não identificado para PDV" });
+    }
+
+    const whereClause: any = { deletedAt: null, status: "PUBLISHED" };
+    if (tenantId && user.role !== "MASTER") {
+      whereClause.OR = [
+        { tenantId: tenantId },
+        { tenant: { parentId: tenantId } }
+      ];
+    }
+
+    const events = await prisma.event.findMany({
+      where: whereClause,
+      include: {
+        space: true,
+        _count: {
+          select: { registrations: true, seatReservations: true }
+        }
+      },
+      orderBy: { startDate: "asc" }
+    });
+
+    return res.json(events);
+  } catch (err) {
+    console.error("Erro fetching POS sessions", err);
+    return res.status(500).json({ message: "Erro ao buscar sessões do PDV" });
+  }
+});
+
+// 2. Process POS Sale for Standard Events (No Seats, No Stripe)
+router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODUCER, Role.COLLABORATOR, Role.MASTER]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { ticketId, quantity, paymentMethod } = req.body;
+    const user = req.user!;
+
+    if (!ticketId || !quantity || !paymentMethod) {
+      return res.status(400).json({ message: "Faltam parâmetros obrigatórios." });
+    }
+
+    const event = await prisma.event.findUnique({ where: { id } });
+    if (!event) return res.status(404).json({ message: "Evento não encontrado" });
+
+    // Validate Authorization
+    if (user.role !== "MASTER" && event.tenantId !== user.tenantId) {
+      return res.status(403).json({ message: "Sem permissão para vender neste evento" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const ticket = await tx.ticket.findUnique({ where: { id: ticketId } });
+      if (!ticket) throw new Error("Ingresso não encontrado");
+      if (ticket.eventId !== id) throw new Error("Ingresso inválido para este evento");
+      
+      if (ticket.sold + quantity > ticket.quantity) {
+        throw new Error("Estoque de ingressos insuficiente.");
+      }
+
+      // Generate tickets
+      const registrations = [];
+      for (let i = 0; i < quantity; i++) {
+        const code = `PDV-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+        
+        const registration = await tx.registration.create({
+          data: {
+            eventId: id,
+            ticketId,
+            guestName: "Visitante PDV", // PDV tickets are anonymous initially
+            guestEmail: "pdv@local",
+            code,
+            status: "CONFIRMED", // Confirmed automatically since payment is physically received
+            pricePaid: Number(ticket.price)
+          }
+        });
+        registrations.push(registration);
+      }
+
+      // Update Stock
+      await tx.ticket.update({
+        where: { id: ticketId },
+        data: { sold: { increment: quantity } }
+      });
+
+      return { registrations, total: Number(ticket.price) * quantity };
+    });
+
+    return res.json({ success: true, ...result });
+
+  } catch (err: any) {
+    console.error("Erro no PDV Sell", err);
+    return res.status(400).json({ message: err.message || "Erro na venda física." });
   }
 });
 

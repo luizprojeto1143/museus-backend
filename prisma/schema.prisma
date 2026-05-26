@@ -241,6 +241,8 @@ model Tenant {
   featureCuratorNotes Boolean @default(false) // Notas de curador nas obras
   featureNPS          Boolean @default(false) // Net Promoter Score
   featureSponsorship  Boolean @default(false) // Patrocínio de obras
+  sponsorSharedPrice    Float?  @default(250.0) // Valor do patrocínio compartilhado
+  sponsorExclusivePrice Float?  @default(500.0) // Valor do patrocínio exclusivo
 
   // Terms & Privacy (LGPD)
   termsOfUse    String? // Texto dos termos de uso (Markdown/HTML)
@@ -262,7 +264,8 @@ model Tenant {
   stripeConnectId  String? @unique
 
   // Mode: Museum or City
-  isCityMode Boolean @default(false) // false = Museu, true = Cidade/Roteiro Turístico
+  isCityMode          Boolean @default(false) // false = Museu, true = Cidade/Roteiro Turístico
+  isPublicInstitution Boolean @default(false) // Instituição pública vinculada à prefeitura
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -302,129 +305,129 @@ model Tenant {
   npsResponses          NPSResponse[]
   sponsorships          WorkSponsorship[]
   sentimentAnalyses     SentimentAnalysis[]
-  inPersonServices      InPersonService[]      // Serviços criados por este tenant (Master)
+  inPersonServices      InPersonService[] // Serviços criados por este tenant (Master)
   enabledServices       TenantInPersonService[] // Serviços que este tenant ativou (Qualquer museu)
-  
+
   // roadmap 2026
-  communityPosts  CommunityPost[]
-  quizzes         Quiz[]
-  routes          Route[]
+  communityPosts CommunityPost[]
+  quizzes        Quiz[]
+  routes         Route[]
 
   // Municipal Features Relations
   publicNotices           PublicNotice[]
   culturalProjects        CulturalProject[]
   accessibilityExecutions AccessibilityExecution[]
   accessibilityProviders  AccessibilityProvider[]
-  skins                  Skin[]
-  badgeRequests          BadgeRequest[]
-  characterBases         CharacterBase[]
-  equipamentos           EquipamentoCultural[]
-  vestigeAlerts          VestigeAlert[]
-  theaterMembers         TheaterMember[]
+  skins                   Skin[]
+  badgeRequests           BadgeRequest[]
+  characterBases          CharacterBase[]
+  equipamentos            EquipamentoCultural[]
+  vestigeAlerts           VestigeAlert[]
+  theaterMembers          TheaterMember[]
 
   @@index([parentId])
 }
 
 model TheaterSeatReservation {
-  id        String   @id @default(uuid())
-  eventId   String
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  
-  seatId    String   // Format: "row-num" e.g., "A-1"
-  status    String   @default("RESERVED") // RESERVED, SOLD, BLOCKED
-  
+  id      String @id @default(uuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  seatId String // Format: "row-num" e.g., "A-1"
+  status String @default("RESERVED") // RESERVED, SOLD, BLOCKED
+
   visitorId String?
   visitor   Visitor? @relation(fields: [visitorId], references: [id])
-  
-  ticketId  String?
-  ticket    Ticket?  @relation(fields: [ticketId], references: [id])
-  
+
+  ticketId String?
+  ticket   Ticket? @relation(fields: [ticketId], references: [id])
+
   expiresAt DateTime? // For temporary cart reservations
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@unique([eventId, seatId])
   @@index([eventId])
 }
 
 model EquipamentoCultural {
-  id               String    @id @default(cuid())
-  tenantId         String
- 
+  id       String @id @default(cuid())
+  tenantId String
+
   // Identidade
-  nome             String
-  slug             String    @unique  // ex: 'casa-da-cultura-betim'
-  tipo             String    // museu|teatro|biblioteca|centro_cultural|galeria|arquivo|outdoor
-  descricao        String?   @db.Text
-  missao           String?   @db.Text  // 'Sobre este espaco'
- 
+  nome      String
+  slug      String  @unique // ex: 'casa-da-cultura-betim'
+  tipo      String // museu|teatro|biblioteca|centro_cultural|galeria|arquivo|outdoor
+  descricao String? @db.Text
+  missao    String? @db.Text // 'Sobre este espaco'
+
   // Localizacao fisica
-  endereco         String
-  cidade           String
-  estado           String    @default("MG")
-  lat              Float?    // coordenadas GPS
-  lng              Float?
-  raioCheckinMetros Int      @default(50)  // raio valido para check-in GPS
- 
+  endereco          String
+  cidade            String
+  estado            String @default("MG")
+  lat               Float? // coordenadas GPS
+  lng               Float?
+  raioCheckinMetros Int    @default(50) // raio valido para check-in GPS
+
   // Identidade visual
-  fotoCapaUrl      String?
-  fotoGaleriaUrls  String[]  // ate 8 fotos do espaco
-  corPrimaria      String?   // hex — white label por espaco
-  logoUrl          String?
- 
+  fotoCapaUrl     String?
+  fotoGaleriaUrls String[] // ate 8 fotos do espaco
+  corPrimaria     String? // hex — white label por espaco
+  logoUrl         String?
+
   // Acesso fisico e digital
-  qrCodeEntrada    String    @unique @default(cuid())
-  qrCodeUrl        String?   // URL da imagem do QR para impressao
-  urlPublica       String?   // ex: culturaviva.betim.mg.gov.br/casa-da-cultura
- 
+  qrCodeEntrada String  @unique @default(cuid())
+  qrCodeUrl     String? // URL da imagem do QR para impressao
+  urlPublica    String? // ex: culturaviva.betim.mg.gov.br/casa-da-cultura
+
   // Funcionamento
-  horarios         Json?     // { seg:'9-17', ter:'9-17', sab:'9-13', dom:null }
-  telefone         String?
-  email            String?
-  site             String?
- 
+  horarios Json? // { seg:'9-17', ter:'9-17', sab:'9-13', dom:null }
+  telefone String?
+  email    String?
+  site     String?
+
   // Acessibilidade
-  acessivelCadeira Boolean  @default(false)
-  acessivelLibras  Boolean  @default(false)
-  acessivelAudio   Boolean  @default(false)
- 
+  acessivelCadeira Boolean @default(false)
+  acessivelLibras  Boolean @default(false)
+  acessivelAudio   Boolean @default(false)
+
   // Plano e limites (por equipamento)
-  planId           String?
-  maxWorks         Int       @default(50)
-  maxTrails        Int       @default(10)
-  maxEvents        Int       @default(20)
-  ativo            Boolean   @default(true)
- 
+  planId    String?
+  maxWorks  Int     @default(50)
+  maxTrails Int     @default(10)
+  maxEvents Int     @default(20)
+  ativo     Boolean @default(true)
+
   // Timestamps
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
- 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relacoes
-  tenant           Tenant    @relation(fields:[tenantId], references:[id], onDelete: Cascade)
-  spaces           Space[]
-  works            Work[]
-  trails           Trail[]
-  events           Event[]
-  checkins         EquipamentoCheckin[]
-  plantaUrl        String?   // imagem da planta baixa
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  spaces    Space[]
+  works     Work[]
+  trails    Trail[]
+  events    Event[]
+  checkins  EquipamentoCheckin[]
+  plantaUrl String? // imagem da planta baixa
 
   @@index([tenantId])
 }
 
 model EquipamentoCheckin {
-  id               String    @id @default(cuid())
-  equipamentoId    String
-  visitorId        String
-  method           String    // 'qr_entrada' | 'gps' | 'manual'
-  lat              Float?
-  lng              Float?
-  xpGanho          Int       @default(20)
-  createdAt        DateTime  @default(now())
- 
-  equipamento      EquipamentoCultural @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
-  visitor          Visitor             @relation(fields: [visitorId], references: [id], onDelete: Cascade)
- 
-  @@unique([equipamentoId, visitorId, createdAt])  // permite revisitas
+  id            String   @id @default(cuid())
+  equipamentoId String
+  visitorId     String
+  method        String // 'qr_entrada' | 'gps' | 'manual'
+  lat           Float?
+  lng           Float?
+  xpGanho       Int      @default(20)
+  createdAt     DateTime @default(now())
+
+  equipamento EquipamentoCultural @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  visitor     Visitor             @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([equipamentoId, visitorId, createdAt]) // permite revisitas
 }
 
 model User {
@@ -460,9 +463,11 @@ model User {
 
   // Stripe Data
   stripeCustomerId String? @unique
+  stripeConnectId  String? @unique
 
   // Enterprise Features
   producerConversations Conversation[]         @relation("ProducerConversations")
+  producerEvents        Event[]                @relation("ProducerEvents")
   providerProfile       AccessibilityProvider?
   culturalProjects      CulturalProject[]
   communityPosts        CommunityPost[]
@@ -573,14 +578,14 @@ model Work {
   sealImageUrl  String? // Imagem do carimbo/selo para o passaporte (legado)
 
   // === NOVO: Sistema de Vestígios ===
-  lat              Float?     // coordenada GPS da obra
-  lng              Float?     // coordenada GPS da obra
-  captureRadiusM   Int        @default(15)  // raio de captura em metros
-  vestigeActive    Boolean    @default(false) // false = Relíquia (não capturável)
-  vestigeType      String     @default("WORK") // WORK | STREET_ART | INSTALLATION
-  vestigeExpiresAt DateTime?  // data de encerramento da exposição
-  vestigeTotalCapturas Int    @default(0)   // contador global de capturas
-  vestigeImageUrl  String?    // imagem do carimbo (diferente da imageUrl da obra)
+  lat                  Float? // coordenada GPS da obra
+  lng                  Float? // coordenada GPS da obra
+  captureRadiusM       Int       @default(15) // raio de captura em metros
+  vestigeActive        Boolean   @default(false) // false = Relíquia (não capturável)
+  vestigeType          String    @default("WORK") // WORK | STREET_ART | INSTALLATION
+  vestigeExpiresAt     DateTime? // data de encerramento da exposição
+  vestigeTotalCapturas Int       @default(0) // contador global de capturas
+  vestigeImageUrl      String? // imagem do carimbo (diferente da imageUrl da obra)
 
   metadata Json? // Usado para traduções e outros metadados flexíveis
 
@@ -627,13 +632,13 @@ model Trail {
 
   equipamentoId String?
   equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
-  tipoPercurso  String              @default("indoor") // indoor | outdoor | hibrido
+  tipoPercurso  String               @default("indoor") // indoor | outdoor | hibrido
 
   visits    VisitorVisit[]
   favorites Favorite[]
-  
-  ownerId   String?
-  owner     Visitor? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  ownerId String?
+  owner   Visitor? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -726,6 +731,9 @@ model Event {
   coverImageUrl       String?
   coverUrl            String? // Alias for cover image (used in projects-\u003eevents)
 
+  producerId          String?
+  producer            User?   @relation("ProducerEvents", fields: [producerId], references: [id])
+
   // Certificate Settings
   certificateBackgroundUrl String?
   certificateText          String?
@@ -765,9 +773,9 @@ model Event {
   surveyQuestions           SurveyQuestion[]
   certificateRequiresSurvey Boolean           @default(false)
 
-  isTheaterSession          Boolean           @default(false)
-  seatReservations          TheaterSeatReservation[]
-  theaterCues               TheaterCue[]
+  isTheaterSession Boolean                  @default(false)
+  seatReservations TheaterSeatReservation[]
+  theaterCues      TheaterCue[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -845,8 +853,8 @@ model Ticket {
   salesEndDate   DateTime?
   status         TicketStatus @default(ACTIVE)
 
-  event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  registrations Registration[]
+  event                   Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registrations           Registration[]
   theaterSeatReservations TheaterSeatReservation[]
 
   createdAt DateTime @default(now())
@@ -871,13 +879,13 @@ model Registration {
   guestName  String
   guestEmail String
 
-  status             RegistrationStatus @default(PENDING)
-  checkInDate        DateTime?
-  pricePaid          Decimal            @default(0.0)
-  platformFee        Decimal?           @db.Decimal(10, 2)
-  asaasPaymentId     String?
-  asaasPaymentStatus String?
-  stripePaymentIntentId String? @unique
+  status                RegistrationStatus @default(PENDING)
+  checkInDate           DateTime?
+  pricePaid             Decimal            @default(0.0)
+  platformFee           Decimal?           @db.Decimal(10, 2)
+  asaasPaymentId        String?
+  asaasPaymentStatus    String?
+  stripePaymentIntentId String?            @unique
 
   // Sympla Killer Features 🚀
   customFormData Json? // { questionId: answer }
@@ -888,8 +896,8 @@ model Registration {
   visitor Visitor? @relation(fields: [visitorId], references: [id])
 
   deletedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([eventId])
   @@index([visitorId])
@@ -911,27 +919,27 @@ model Visitor {
   isFake    Boolean @default(false)
   isTeacher Boolean @default(false)
 
-  visits                 VisitorVisit[]
-  achievements           VisitorAchievement[]
-  stamps                 PassportStamp[]
-  attendances            EventAttendance[]
-  guestbookEntries       GuestbookEntry[]
-  certificates           Certificate[]
-  registrations          Registration[]
-  favorites              Favorite[]
-  reviews                Review[]
-  notificationPreference NotificationPreference?
-  orders                 Order[]
-  challengeCompletions   DailyChallengeCompletion[]
-  huntParticipations     ScavengerHuntParticipation[]
-  deviceTokens           DeviceToken[]
-  coupons                VisitorCoupon[]
-  vRPGs                  VisitorRPG[]
-  vSkins                 VisitorSkin[]
-  badgeRequests          BadgeRequest[]
-  equipamentoCheckins    EquipamentoCheckin[]
-  trails                 Trail[]
-  avatarCaches           VisitorAvatarCache[]
+  visits                  VisitorVisit[]
+  achievements            VisitorAchievement[]
+  stamps                  PassportStamp[]
+  attendances             EventAttendance[]
+  guestbookEntries        GuestbookEntry[]
+  certificates            Certificate[]
+  registrations           Registration[]
+  favorites               Favorite[]
+  reviews                 Review[]
+  notificationPreference  NotificationPreference?
+  orders                  Order[]
+  challengeCompletions    DailyChallengeCompletion[]
+  huntParticipations      ScavengerHuntParticipation[]
+  deviceTokens            DeviceToken[]
+  coupons                 VisitorCoupon[]
+  vRPGs                   VisitorRPG[]
+  vSkins                  VisitorSkin[]
+  badgeRequests           BadgeRequest[]
+  equipamentoCheckins     EquipamentoCheckin[]
+  trails                  Trail[]
+  avatarCaches            VisitorAvatarCache[]
   theaterSeatReservations TheaterSeatReservation[]
 
   createdAt DateTime @default(now())
@@ -955,8 +963,8 @@ model VisitorVisit {
   trail   Trail?  @relation(fields: [trailId], references: [id], onDelete: Cascade)
   event   Event?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  tenantId  String?
-  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -996,46 +1004,46 @@ model VisitorAchievement {
 }
 
 model PassportStamp {
-  id               String    @id @default(uuid())
-  visitorId        String
-  workId           String
-  
+  id        String @id @default(uuid())
+  visitorId String
+  workId    String
+
   // Metadados da Conquista
-  raridade         String    // PIONEER | RARE | EPIC | LEGENDARY | RELIC
-  numeroCaptura    Int       // qual o numero desta captura global (ex: 42 de 500)
-  xpGanho          Int       @default(50)
-  
+  raridade      String // PIONEER | RARE | EPIC | LEGENDARY | RELIC
+  numeroCaptura Int // qual o numero desta captura global (ex: 42 de 500)
+  xpGanho       Int    @default(50)
+
   // Localizacao da Captura (para prova de presenca)
-  latCaptura       Float?
-  lngCaptura       Float?
-  accuracyMetros   Float?
-  
+  latCaptura     Float?
+  lngCaptura     Float?
+  accuracyMetros Float?
+
   // Status de Reliquia
-  isRelic          Boolean   @default(false)
-  convertidoEm     DateTime? // data que virou reliquia (exposicao acabou)
-  
-  stampedAt        DateTime  @default(now())
+  isRelic      Boolean   @default(false)
+  convertidoEm DateTime? // data que virou reliquia (exposicao acabou)
 
-  visitor          Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  work             Work      @relation(fields: [workId], references: [id], onDelete: Cascade)
+  stampedAt DateTime @default(now())
 
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  work    Work    @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, workId]) // um vestigio por obra por visitante
   @@index([visitorId])
   @@index([workId])
-  @@unique([visitorId, workId]) // um vestigio por obra por visitante
 }
 
 // Alertas urgentes ou novidades globais da cidade/museu
 model VestigeAlert {
-  id               String    @id @default(uuid())
-  tenantId         String
-  titulo           String
-  mensagem         String
-  tipo             String    @default("URGENTE") // URGENTE | NOVIDADE | EXPIRANDO
-  link             String?   // rota interna do pwa (ex: /vestiges/42)
-  expiresAt        DateTime?
-  
-  createdAt        DateTime  @default(now())
-  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid())
+  tenantId  String
+  titulo    String
+  mensagem  String
+  tipo      String    @default("URGENTE") // URGENTE | NOVIDADE | EXPIRANDO
+  link      String? // rota interna do pwa (ex: /vestiges/42)
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model QRCode {
@@ -1118,15 +1126,15 @@ model Space {
 
   bookings Booking[]
   events   Event[]
-  
+
   timelineEvents  TimelineEvent[]
   workSubmissions WorkSubmission[]
   familyProfiles  FamilyProfile[]
 
-  categoryId      String?
-  category        Category? @relation(fields: [categoryId], references: [id])
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
 
-  theaterLayout   Json?     // { rows: [{ name: 'A', seats: 10, type: 'VIP' }, ...] }
+  theaterLayout Json? // { rows: [{ name: 'A', seats: 10, type: 'VIP' }, ...] }
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1135,35 +1143,35 @@ model Space {
 }
 
 model InPersonService {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
-  active      Boolean  @default(true)
+  active      Boolean @default(true)
 
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  bookings    Booking[]
-  enabledBy   TenantInPersonService[]
+  bookings  Booking[]
+  enabledBy TenantInPersonService[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([tenantId])
 }
 
 model TenantInPersonService {
-  id                String   @id @default(uuid())
-  active            Boolean  @default(true)
+  id     String  @id @default(uuid())
+  active Boolean @default(true)
 
-  tenantId          String
-  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   inPersonServiceId String
-  inPersonService   InPersonService  @relation(fields: [inPersonServiceId], references: [id], onDelete: Cascade)
+  inPersonService   InPersonService @relation(fields: [inPersonServiceId], references: [id], onDelete: Cascade)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([tenantId, inPersonServiceId])
   @@index([tenantId])
@@ -1340,8 +1348,8 @@ model Donation {
   message    String?
   anonymous  Boolean @default(false)
 
-  status    String  @default("PENDING") // PENDING, COMPLETED, FAILED
-  paymentId String? // Legacy Asaas ID
+  status                String  @default("PENDING") // PENDING, COMPLETED, FAILED
+  paymentId             String? // Legacy Asaas ID
   stripePaymentIntentId String? @unique
 
   tenantId String
@@ -1424,13 +1432,13 @@ model Order {
   shippingCost    Decimal? @db.Decimal(10, 2)
 
   // Payment
-  paymentMethod String?
-  paymentId     String? // Legacy Asaas ID
+  paymentMethod         String?
+  paymentId             String? // Legacy Asaas ID
   stripePaymentIntentId String? @unique
-  invoiceUrl    String?
-  bankSlipUrl   String?
-  pixQrCode     String? // Base64 image
-  pixPayload    String? // Copy and paste code
+  invoiceUrl            String?
+  bankSlipUrl           String?
+  pixQrCode             String? // Base64 image
+  pixPayload            String? // Copy and paste code
 
   visitorId String?
   visitor   Visitor? @relation(fields: [visitorId], references: [id])
@@ -1764,6 +1772,11 @@ model CulturalProject {
 
   accessibilityExecutions AccessibilityExecution[]
 
+  // NF fields
+  notaFiscalUrl        String?
+  notaFiscalNumber     String?
+  notaFiscalDate       DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1802,8 +1815,13 @@ model AccessibilityExecution {
   validationStatus String?
   validationNotes  String?
 
-  status String @default("PENDING")
+  status                String  @default("PENDING")
   stripePaymentIntentId String? @unique
+
+  notaFiscalUrl     String?
+  notaFiscalNumber  String?
+  notaFiscalDate    DateTime?
+  paymentReceiptUrl String?
 
   // Vínculos
   projectId String?
@@ -1850,10 +1868,10 @@ model AccessibilityProvider {
   user   User?   @relation(fields: [userId], references: [id])
 
   // Financial Data (for Splits)
-  asaasWalletId    String? // ID da Carteira Asaas do Prestador (Legacy)
-  stripeCustomerId String? @unique
-  stripeConnectId  String? @unique
-  subscriptionStatus String @default("INACTIVE") // INACTIVE, ACTIVE, PAST_DUE, CANCELED
+  asaasWalletId      String? // ID da Carteira Asaas do Prestador (Legacy)
+  stripeCustomerId   String? @unique
+  stripeConnectId    String? @unique
+  subscriptionStatus String  @default("INACTIVE") // INACTIVE, ACTIVE, PAST_DUE, CANCELED
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2063,12 +2081,20 @@ model SentimentAnalysis {
 model WorkSponsorship {
   id String @id @default(uuid())
 
-  sponsorName String
-  sponsorLogo String?
-  sponsorUrl  String?
-  message     String?
+  tier                 SponsorshipTier   @default(SHARED)
+  status               SponsorshipStatus @default(PENDING)
+  monthlyAmount        Decimal           @db.Decimal(10, 2)
+  platformFeePercent   Int               @default(15)
+  stripeSubscriptionId String?           @unique
+  stripeCustomerId     String?
 
-  amount    Decimal?  @db.Decimal(10, 2)
+  sponsorName  String
+  sponsorCNPJ  String?
+  sponsorEmail String?
+  sponsorLogo  String?
+  sponsorUrl   String?
+  message      String?
+
   active    Boolean   @default(true)
   startDate DateTime  @default(now())
   endDate   DateTime?
@@ -2084,6 +2110,18 @@ model WorkSponsorship {
 
   @@index([workId])
   @@index([tenantId])
+}
+
+enum SponsorshipTier {
+  EXCLUSIVE
+  SHARED
+}
+
+enum SponsorshipStatus {
+  PENDING
+  ACTIVE
+  CANCELLED
+  EXPIRED
 }
 
 // ========== PHASE 2 — EDUCATION & GROUPS ==========
@@ -2526,19 +2564,19 @@ model GroupTicket {
 
 // Base characters for visitors to choose from
 model CharacterBase {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
   imageUrl    String
-  active      Boolean  @default(true)
-  tenantId    String?  // null = global character
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  
+  active      Boolean @default(true)
+  tenantId    String? // null = global character
+  tenant      Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   visitorRPGs VisitorRPG[]
   skins       Skin[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([tenantId])
 }
@@ -2567,16 +2605,16 @@ model VisitorRPG {
   selectedCharacter   CharacterBase? @relation(fields: [selectedCharacterId], references: [id])
 
   equippedSkinId String?
-  equippedSkin   Skin? @relation(fields: [equippedSkinId], references: [id])
+  equippedSkin   Skin?   @relation(fields: [equippedSkinId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // === NOVO: Sistema de Avatar com IA ===
-  selfieUrl          String?   // URL da selfie original no R2
-  baseAvatarUrl      String?   // URL do avatar cartoon gerado (sem skin)
-  avatarStatus       String    @default("NONE") // NONE, GENERATING, READY, ERROR
-  avatarGeneratedAt  DateTime? // quando o avatar base ficou pronto
+  selfieUrl         String? // URL da selfie original no R2
+  baseAvatarUrl     String? // URL do avatar cartoon gerado (sem skin)
+  avatarStatus      String    @default("NONE") // NONE, GENERATING, READY, ERROR
+  avatarGeneratedAt DateTime? // quando o avatar base ficou pronto
 
   @@unique([visitorId, selectedCharacterId])
   @@index([level])
@@ -2650,9 +2688,9 @@ model TimelineEvent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([spaceId, year])
   @@index([tenantId])
 }
@@ -2679,11 +2717,11 @@ model RouteStop {
   routeId String
   route   Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
   order   Int
-  
+
   // Can be a Space or a Work
   targetType String
   targetId   String
-  
+
   latitude  Float
   longitude Float
 
@@ -2699,13 +2737,13 @@ model WorkSubmission {
   description String?
   imageUrl    String?
   status      String  @default("PENDING") // PENDING, APPROVED, REJECTED
-  
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  
-  spaceId   String?
-  space     Space?   @relation(fields: [spaceId], references: [id])
-  
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  spaceId String?
+  space   Space?  @relation(fields: [spaceId], references: [id])
+
   reviewedBy String?
   reviewedAt DateTime?
 
@@ -2740,15 +2778,15 @@ model FamilyProfile {
 }
 
 model FamilyEvent {
-  id              String @id @default(uuid())
+  id              String        @id @default(uuid())
   familyProfileId String
   familyProfile   FamilyProfile @relation(fields: [familyProfileId], references: [id], onDelete: Cascade)
-  
+
   year        Int
   title       String
   description String?
   imageUrl    String?
-  type        String @default("OTHER") // BIRTH, DEATH, MARRIAGE, ACHIEVEMENT, OTHER
+  type        String  @default("OTHER") // BIRTH, DEATH, MARRIAGE, ACHIEVEMENT, OTHER
   people      Json? // Array of strings
 
   createdAt DateTime @default(now())
@@ -2760,97 +2798,96 @@ model FamilyEvent {
 // ========== SKINS & ENGAGEMENT ==========
 
 model Skin {
-  id          String   @id @default(uuid())
-  tenantId    String?  // null = global skin (Master only)
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  imageUrl    String
-  xpCost      Int
-  rarity      SkinRarity @default(COMMON)
+  id              String         @id @default(uuid())
+  tenantId        String? // null = global skin (Master only)
+  tenant          Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  imageUrl        String
+  xpCost          Int
+  rarity          SkinRarity     @default(COMMON)
   characterBaseId String?
   characterBase   CharacterBase? @relation(fields: [characterBaseId], references: [id])
-  
+
   aiDescription String? @db.Text
   aiPrompt      String? @db.Text
 
-  active      Boolean  @default(true)
-  eventOnly   Boolean  @default(false)
-  spaceId     String?                      // Vinculada a um espaço específico
-  createdAt   DateTime @default(now())
-  owners      VisitorSkin[]
-  equipping   VisitorRPG[]
+  active       Boolean              @default(true)
+  eventOnly    Boolean              @default(false)
+  spaceId      String? // Vinculada a um espaço específico
+  createdAt    DateTime             @default(now())
+  owners       VisitorSkin[]
+  equipping    VisitorRPG[]
   avatarCaches VisitorAvatarCache[]
 }
 
 model VisitorSkin {
-  id          String   @id @default(uuid())
-  visitorId   String
-  skinId      String
-  acquiredAt  DateTime @default(now())
-  visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  skin        Skin     @relation(fields: [skinId],    references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  visitorId  String
+  skinId     String
+  acquiredAt DateTime @default(now())
+  visitor    Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  skin       Skin     @relation(fields: [skinId], references: [id], onDelete: Cascade)
 
-  generatedAvatarUrl String?  // ← NOVO: URL do avatar gerado com esta skin
+  generatedAvatarUrl String? // ← NOVO: URL do avatar gerado com esta skin
 
   @@unique([visitorId, skinId])
 }
 
 model BadgeRequest {
-  id              String      @id @default(uuid())
-  visitorId       String
-  tenantId        String
-  level           Int         // 1=Bronze, 2=Prata, 3=Ouro, 4=Platina
-  skinImageUrl    String      // snapshot da skin no momento
-  xpAtRequest     Int
-  status          BadgeStatus @default(PENDING)
-  addressName     String
-  addressStreet   String
-  addressCity     String
-  addressState    String
-  addressZip      String
-  trackingCode    String?
-  pdfUrl          String?
-  requestedAt     DateTime    @default(now())
-  approvedAt      DateTime?
-  shippedAt       DateTime?
-  deliveredAt     DateTime?
-  visitor         Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String      @id @default(uuid())
+  visitorId     String
+  tenantId      String
+  level         Int // 1=Bronze, 2=Prata, 3=Ouro, 4=Platina
+  skinImageUrl  String // snapshot da skin no momento
+  xpAtRequest   Int
+  status        BadgeStatus @default(PENDING)
+  addressName   String
+  addressStreet String
+  addressCity   String
+  addressState  String
+  addressZip    String
+  trackingCode  String?
+  pdfUrl        String?
+  requestedAt   DateTime    @default(now())
+  approvedAt    DateTime?
+  shippedAt     DateTime?
+  deliveredAt   DateTime?
+  visitor       Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 // NOVO: Cache de avatares gerados por IA por combinação visitante + skin
 model VisitorAvatarCache {
-  id          String    @id @default(uuid())
-  visitorId   String
-  skinId      String?   // null = avatar base sem skin
-  imageUrl    String    // URL no R2 da imagem gerada
-  status      String    @default("GENERATING") // GENERATING, READY, ERROR
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String  @id @default(uuid())
+  visitorId String
+  skinId    String? // null = avatar base sem skin
+  imageUrl  String // URL no R2 da imagem gerada
+  status    String  @default("GENERATING") // GENERATING, READY, ERROR
 
-  visitor     Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  skin        Skin?     @relation(fields: [skinId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  skin    Skin?   @relation(fields: [skinId], references: [id], onDelete: Cascade)
 
   @@unique([visitorId, skinId])
 }
 
-
 model TheaterMember {
-  id        String   @id @default(uuid())
-  name      String
-  role      String   // e.g., "Ator Principal", "Diretor de Cena", "Iluminação"
-  status    String   @default("READY") // READY, REHEARSING, AWAY
-  rating    Int      @default(5)
-  tags      String[] // ["Barítono", "Drama"]
-  
-  phone     String?
-  email     String?
-  
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  
+  id     String   @id @default(uuid())
+  name   String
+  role   String // e.g., "Ator Principal", "Diretor de Cena", "Iluminação"
+  status String   @default("READY") // READY, REHEARSING, AWAY
+  rating Int      @default(5)
+  tags   String[] // ["Barítono", "Drama"]
+
+  phone String?
+  email String?
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2858,18 +2895,19 @@ model TheaterMember {
 }
 
 model TheaterCue {
-  id        String   @id @default(uuid())
-  eventId   String
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  
-  type      String   // LIGHT, SOUND, CURTAIN, OTHER
-  label     String
-  desc      String?
-  time      String   // Format: "HH:mm:ss" relative to start
-  order     Int      @default(0)
-  
+  id      String @id @default(uuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  type  String // LIGHT, SOUND, CURTAIN, OTHER
+  label String
+  desc  String?
+  time  String // Format: "HH:mm:ss" relative to start
+  order Int     @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([eventId])
 }
+

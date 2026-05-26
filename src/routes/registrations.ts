@@ -22,7 +22,7 @@ router.post('/', authMiddleware, async (req, res) => {
         // 1. Verify Ticket Stock and Get Event/Tenant Info
         const ticket = await prisma.ticket.findUnique({
             where: { id: ticketId },
-            include: { event: { select: { tenantId: true } } }
+            include: { event: { select: { tenantId: true, producerId: true } } }
         });
 
         if (!ticket) return res.status(404).json({ error: 'Ingresso não encontrado' });
@@ -39,15 +39,35 @@ router.post('/', authMiddleware, async (req, res) => {
             try {
                 const { stripeService } = await import('../services/stripeService.js');
                 
-                // Fetch Tenant Stripe Connect ID
-                const tenant = await prisma.tenant.findUnique({
-                    where: { id: tenantId },
-                    select: { stripeConnectId: true, name: true }
-                });
+                let connectedAccountId = '';
+                let payeeName = 'Evento';
+                
+                if (ticket.event.producerId) {
+                    const producer = await prisma.user.findUnique({
+                        where: { id: ticket.event.producerId },
+                        select: { stripeConnectId: true, name: true }
+                    });
+                    if (producer?.stripeConnectId) {
+                        connectedAccountId = producer.stripeConnectId;
+                        payeeName = producer.name;
+                    }
+                }
+                
+                // Fallback to Tenant if producer has no connect ID or event is not from a producer
+                if (!connectedAccountId) {
+                    const tenant = await prisma.tenant.findUnique({
+                        where: { id: tenantId },
+                        select: { stripeConnectId: true, name: true }
+                    });
+                    if (tenant?.stripeConnectId) {
+                        connectedAccountId = tenant.stripeConnectId;
+                        payeeName = tenant.name;
+                    }
+                }
 
-                if (!tenant?.stripeConnectId) {
+                if (!connectedAccountId) {
                     return res.status(400).json({ 
-                        error: 'Este museu ainda não configurou os recebimentos via Stripe Connect. Entre em contato com a administração.' 
+                        error: 'O recebedor deste evento ainda não configurou pagamentos via Stripe Connect. Entre em contato com a administração.' 
                     });
                 }
 
@@ -66,8 +86,8 @@ router.post('/', authMiddleware, async (req, res) => {
                 const session = await stripeService.createSplitPaymentSession({
                     customerId: stripeCustomerId,
                     amount: amountCents,
-                    description: `Ingresso: ${ticket.name} - ${tenant?.name || 'Evento'}`,
-                    connectedAccountId: tenant?.stripeConnectId || '', 
+                    description: `Ingresso: ${ticket.name} - ${payeeName}`,
+                    connectedAccountId, 
                     applicationFeeAmount: platformFeeCents,
                     successUrl: `${frontendUrl}/tickets/success?code=${code}`,
                     cancelUrl: `${frontendUrl}/tickets/cancel?code=${code}`

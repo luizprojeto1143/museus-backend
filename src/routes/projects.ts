@@ -589,4 +589,41 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
     }
 });
 
+// Anexar Nota Fiscal
+router.post("/:id/invoice", authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { notaFiscalUrl, notaFiscalNumber, notaFiscalDate } = req.body;
+        const user = req.user!;
+
+        const project = await prisma.culturalProject.findUnique({
+            where: { id }
+        });
+
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+
+        const isOwner = project.proponentId === user.id;
+        const isAdmin = user.role === Role.ADMIN && project.tenantId === user.tenantId;
+        const isMaster = user.role === Role.MASTER;
+
+        if (!isOwner && !isAdmin && !isMaster) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
+        const updated = await prisma.culturalProject.update({
+            where: { id },
+            data: {
+                notaFiscalUrl,
+                notaFiscalNumber,
+                notaFiscalDate: notaFiscalDate ? new Date(notaFiscalDate) : new Date()
+            }
+        });
+
+        return res.json({ message: "Nota Fiscal anexada com sucesso", project: updated });
+    } catch (err) {
+        console.error("Erro ao anexar NF:", err);
+        return res.status(500).json({ message: "Erro ao anexar NF" });
+    }
+});
+
 export default router;

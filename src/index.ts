@@ -145,7 +145,7 @@ app.use(helmet({
       // C6: Removed 'unsafe-inline' — scripts must be loaded from trusted origins only.
       // If inline scripts are needed in the future, use per-request nonces instead.
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      styleSrc: ["'self'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "http:"],
       connectSrc: ["'self'", "https:", "http:"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
@@ -176,11 +176,29 @@ app.use((req, res, next) => {
   next();
 });
 
+// C1: CSRF Protection Middleware
+// Require 'X-Requested-With: XMLHttpRequest' for mutating requests when auth is present
+app.use((req, res, next) => {
+  const mutatingMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
+  if (mutatingMethods.includes(req.method)) {
+    // We allow stripe webhooks to bypass CSRF because they authenticate via webhook signatures
+    if (req.path.startsWith('/stripe/webhook') || req.path.startsWith('/webhooks')) {
+      return next();
+    }
+    const requestedWith = req.headers['x-requested-with'];
+    if (requestedWith !== 'XMLHttpRequest') {
+      return res.status(403).json({ message: "CSRF token missing or incorrect." });
+    }
+  }
+  next();
+});
+
 app.get("/", (_req, res) => {
   res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.4.3" });
 });
 
-app.use("/auth", authRoutes);
+import sponsorPortalRoutes from "./routes/sponsor-portal.js";
+app.use("/sponsor-portal", sponsorPortalRoutes);
 app.use("/tenants", tenantRoutes);
 app.use("/works", worksRoutes);
 app.use("/trails", trailsRoutes);

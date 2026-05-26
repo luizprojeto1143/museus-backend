@@ -518,7 +518,11 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
 
       // Financial
       asaasWalletId: z.string().nullable().optional(),
-      stripeConnectId: z.string().nullable().optional()
+      stripeConnectId: z.string().nullable().optional(),
+
+      // Sponsorship
+      sponsorSharedPrice: z.coerce.number().min(250).optional(),
+      sponsorExclusivePrice: z.coerce.number().min(250).optional()
     });
 
     const result = settingsSchema.safeParse(req.body);
@@ -559,7 +563,9 @@ router.put("/:id/settings", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         termsOfUse: data.termsOfUse,
         privacyPolicy: data.privacyPolicy,
         asaasWalletId: data.asaasWalletId,
-        stripeConnectId: data.stripeConnectId
+        stripeConnectId: data.stripeConnectId,
+        sponsorSharedPrice: data.sponsorSharedPrice,
+        sponsorExclusivePrice: data.sponsorExclusivePrice
       }
     });
 
