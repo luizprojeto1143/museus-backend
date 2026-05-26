@@ -21,8 +21,8 @@ const ACCESS_TOKEN_EXPIRES_IN = "15m";
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "strict" as const,
+  secure: true,
+  sameSite: "none" as const,
   maxAge: REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
 };
 
@@ -246,8 +246,8 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
         data: { revoked: true }
       });
     }
-    res.clearCookie("museus_token");
-    res.clearCookie("museus_refresh_token");
+    res.clearCookie("museus_token", { sameSite: "none", secure: true });
+    res.clearCookie("museus_refresh_token", { sameSite: "none", secure: true });
     return res.status(200).json({ message: "Logout realizado com sucesso" });
   } catch (err) {
     console.error("Erro logout", err);
