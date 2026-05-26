@@ -166,8 +166,8 @@ async function main() {
     console.log("👤 Garantindo usuário Master (Rescue)...");
     try {
       // Usamos node direto no arquivo compilado se disponível, ou ts-node com limite de memória
-      execSync("npx ts-node --transpile-only scripts/rescue_master.ts", { 
-        env: { ...process.env, DATABASE_URL: poolerUrl, NODE_OPTIONS: "--max-old-space-size=300" },
+      execSync("node scripts/rescue_master.js", { 
+        env: { ...process.env, DATABASE_URL: poolerUrl },
         stdio: "inherit",
         timeout: 60000
       });
