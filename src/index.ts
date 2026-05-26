@@ -199,6 +199,7 @@ app.get("/", (_req, res) => {
 
 import sponsorPortalRoutes from "./routes/sponsor-portal.js";
 app.use("/sponsor-portal", sponsorPortalRoutes);
+app.use("/auth", authRoutes);
 app.use("/tenants", tenantRoutes);
 app.use("/works", worksRoutes);
 app.use("/trails", trailsRoutes);
