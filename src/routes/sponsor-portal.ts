@@ -167,9 +167,6 @@ router.post("/subscribe", authMiddleware, async (req: Request, res: Response) =>
         },
       ],
       mode: 'subscription',
-      subscription_data: {
-        payment_behavior: 'default_incomplete'
-      },
       success_url: `${frontendUrl}/patrocinar/sucesso?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}/patrocinar/obras/${workId}`,
       metadata: {
