@@ -8,7 +8,7 @@ import { loginSchema, registerSchema, switchTenantSchema, recoverPasswordSchema,
 import { authMiddleware } from "../middleware/auth.js";
 import { authLimiter, passwordRecoveryLimiter } from "../middleware/rateLimiter.js";
 import crypto from "crypto";
-import { createAuditLog } from "./audit.js";
+import { createAuditLog } from '../domains/governance/audit.js';
 
 const router = Router();
 

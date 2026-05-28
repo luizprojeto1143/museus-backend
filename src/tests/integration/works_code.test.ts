@@ -3,7 +3,7 @@ import express from 'express';
 import { prisma } from '../../prisma';
 import bcrypt from 'bcrypt';
 import { Role, QRType } from '@prisma/client';
-import worksRoutes from '../../routes/works.js';
+import worksRoutes from '../../domains/cultural/works.js';
 import qrRoutes from '../../routes/qr.js';
 import authRoutes from '../../routes/auth.js';
 

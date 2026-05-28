@@ -10,4 +10,13 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: museus-redis
+          property: connectionString
     autoDeploy: true
+
+  - type: redis
+    name: museus-redis
+    plan: starter # Altere para 'free' se aplicável na sua conta Render

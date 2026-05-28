@@ -10,49 +10,54 @@ import swaggerUi from 'swagger-ui-express';
 import { specs } from './config/swagger.js';
 
 import authRoutes from "./routes/auth.js";
-import tenantRoutes from "./routes/tenants.js";
-import worksRoutes from "./routes/works.js";
-import trailsRoutes from "./routes/trails.js";
-import eventsRoutes from "./routes/events.js";
+import tenantRoutes from "./domains/governance/tenants.js";
+import worksRoutes from "./domains/cultural/works.js";
+import trailsRoutes from "./domains/cultural/trails.js";
+import eventsRoutes from "./domains/cultural/events.js";
 import visitorsRoutes from "./routes/visitors.js";
+import { correlationIdMiddleware } from "./infrastructure/logger/correlationId.middleware.js";
+import "./infrastructure/queue/workers/background.worker.js"; // Inicializa o worker do BullMQ
 import uploadRoutes from "./routes/upload.js";
-import inPersonServicesRoutes from "./routes/in-person-services.js";
-import tenantServicesRoutes from "./routes/tenant-services.js";
+import inPersonServicesRoutes from "./domains/commerce/in-person-services.js";
+import tenantServicesRoutes from "./domains/governance/tenant-services.js";
 import aiRoutes from "./routes/ai.js";
 import qrRoutes from "./routes/qr.js";
 import qrcodesRoutes from "./routes/qrcodes.js";
-import analyticsRoutes from "./routes/analytics.js";
+import analyticsRoutes from "./domains/governance/analytics.js";
 import personaRoutes from "./routes/persona.js";
-import achievementsRoutes from "./routes/achievements.js";
-import stampsRoutes from "./routes/stamps.js";
+import achievementsRoutes from "./domains/experience/achievements.js";
+import stampsRoutes from "./domains/experience/stamps.js";
 import usersRoutes from "./routes/users.js";
 import categoriesRoutes from "./routes/categories.js";
-import bookingsRoutes from "./routes/bookings.js";
+import bookingsRoutes from "./domains/commerce/bookings.js";
 import guestbookRoutes from "./routes/guestbook.js";
-import leaderboardRoutes from "./routes/leaderboard.js";
+import leaderboardRoutes from "./domains/experience/leaderboard.js";
 import searchRoutes from "./routes/search.js";
-import cluesRoutes from "./routes/clues.js";
-import certificatesRoutes from "./routes/certificates.js";
-import certificateTemplatesRoutes from "./routes/certificate-templates.js";
-import certificateRulesRoutes from "./routes/certificate-rules.js";
+import cluesRoutes from "./domains/experience/clues.js";
+import certificatesRoutes from "./domains/trust-safety/certificates.js";
+import certificateTemplatesRoutes from "./domains/trust-safety/certificate-templates.js";
+import certificateRulesRoutes from "./domains/trust-safety/certificate-rules.js";
 import seederRoutes from "./routes/master/seeder.js";
-import { ticketsRouter } from "./routes/tickets.js";
+import { ticketsRouter } from "./domains/commerce/tickets.js";
 import { registrationsRouter } from "./routes/registrations.js";
 import favoritesRoutes from "./routes/favorites.js";
-import reviewsRoutes from "./routes/reviews.js";
+import reviewsRoutes from "./domains/trust-safety/reviews.js";
 import healthRoutes from "./routes/health.js";
 import newsletterRoutes from "./routes/newsletter.js";
-import donationsRoutes from "./routes/donations.js";
-import auditRoutes from "./routes/audit.js";
-import shopRoutes from "./routes/shop.js";
-import challengesRoutes from "./routes/challenges.js";
+import donationsRoutes from "./domains/commerce/donations.js";
+import auditRoutes from "./domains/governance/audit.js";
+import shopRoutes from "./domains/commerce/shop.js";
+import challengesRoutes from "./domains/experience/challenges.js";
 import backupRoutes from "./routes/backup.js";
-import floorPlansRoutes from "./routes/floorPlans.js";
-import { financeRouter } from "./routes/finance.js";
-import { couponsRouter } from "./routes/coupons.js";
-import skinsRoutes from "./routes/skins.js";
-import marketplaceRoutes from "./routes/marketplace.js";
-import badgeRoutes from "./routes/badgeRoutes.js";
+import floorPlansRoutes from "./domains/cultural/floorPlans.js";
+import { financeRouter } from "./domains/commerce/finance.js";
+import { couponsRouter } from "./domains/commerce/coupons.js";
+import skinsRoutes from "./domains/experience/skins.js";
+import marketplaceRoutes from "./domains/commerce/marketplace.js";
+import badgeRoutes from "./domains/experience/badgeRoutes.js";
+import { roteiroRoutes } from "./domains/cultural/roteiro.routes.js";
+import providerRoutes from "./domains/commerce/provider.routes.js";
+import masterEcosystemRoutes from "./domains/governance/master-ecosystem.routes.js";
 
 import navigationRoutes from "./routes/navigation.js";
 import publicPassportRoutes from "./routes/public/passport.js";
@@ -66,41 +71,41 @@ import noticesRoutes from "./routes/notices.js";
 import projectsRoutes from "./routes/projects.js";
 import accessibilityExecutionRoutes from "./routes/accessibility-execution.js";
 import providersRoutes from "./routes/providers.js";
-import equipamentalRoutes from "./routes/equipamentos.js";
+import equipamentalRoutes from "./domains/cultural/equipamentos.js";
 
 // Governance Routes
-import plansRoutes from "./routes/plans.js";
-import executiveReportsRoutes from "./routes/executive-reports.js";
-import secretaryRoutes from "./routes/secretary.js";
+import plansRoutes from "./domains/governance/plans.js";
+import executiveReportsRoutes from "./domains/governance/executive-reports.js";
+import secretaryRoutes from "./domains/governance/secretary.js";
 import aiCostsRoutes from "./routes/ai-costs.js";
 import institutionalExportRoutes from "./routes/institutional-export.js";
 import inboxRoutes from "./routes/inbox.js";
-import curatorNotesRoutes from "./routes/curator-notes.js";
+import curatorNotesRoutes from "./domains/cultural/curator-notes.js";
 import npsRoutes from "./routes/nps.js";
 import sentimentRoutes from "./routes/sentiment.js";
 import teachersRoutes from "./routes/teachers.js";
-import ticketTransfersRoutes from "./routes/ticket-transfers.js";
+import ticketTransfersRoutes from "./domains/commerce/ticket-transfers.js";
 import membershipsRoutes from "./routes/memberships.js";
 import volunteersRoutes from "./routes/volunteers.js";
-import conservationRoutes from "./routes/conservation.js";
-import ppaRoutes from "./routes/ppa.js";
-import collectiblesRoutes from "./routes/collectibles.js";
+import conservationRoutes from "./domains/cultural/conservation.js";
+import ppaRoutes from "./domains/governance/ppa.js";
+import collectiblesRoutes from "./domains/experience/collectibles.js";
 import translationsRoutes from "./routes/translations.js";
-import museumBattleRoutes from "./routes/museum-battle.js";
-import moderationRoutes from "./routes/moderation.js";
-import heritageRoutes from "./routes/heritage.js";
-import socialCheckinRoutes from "./routes/social-checkin.js";
-import groupTicketsRoutes from "./routes/group-tickets.js";
-import rpgRoutes from "./routes/rpg.js";
+import museumBattleRoutes from "./domains/experience/museum-battle.js";
+import moderationRoutes from "./domains/trust-safety/moderation.js";
+import heritageRoutes from "./domains/cultural/heritage.js";
+import socialCheckinRoutes from "./domains/experience/social-checkin.js";
+import groupTicketsRoutes from "./domains/commerce/group-tickets.js";
+import rpgRoutes from "./domains/experience/rpg.js";
 import communityRoutes from "./routes/community.js";
 import quizRoutes from "./routes/quiz.js";
-import extraRoutes from "./routes/roadmap-extra.js";
-import familyRoutes from "./routes/roadmap-family.js";
+import extraRoutes from "./domains/governance/roadmap-extra.js";
+import familyRoutes from "./domains/governance/roadmap-family.js";
 import charactersRoutes from "./routes/characters.js";
-import vestigesRoutes from "./routes/vestiges.js";
-import vestigeAlertsRoutes from "./routes/vestige-alerts.js";
+import vestigesRoutes from "./domains/cultural/vestiges.js";
+import vestigeAlertsRoutes from "./domains/cultural/vestige-alerts.js";
 import webhooksRoutes from "./routes/webhooks.js";
-import { stripeRouter } from "./routes/stripe.js";
+import { stripeRouter } from "./domains/commerce/stripe.js";
 import theaterRoutes from "./routes/theater.js";
 import { validateEnv } from "./config/validateEnv.js";
 import { limiter } from "./middleware/rateLimiter.js";
@@ -164,7 +169,11 @@ app.use(compression());
 app.use(limiter);
 
 app.use(express.json({ limit: "2mb" })); // Reduced from 10mb for general security. Upload routes have their own multer limit.
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// --- Observability (Logging Estruturado e Rastreio) ---
+app.use(correlationIdMiddleware);
+
 app.use(tenantMiddleware);
 
 app.use((req, res, next) => {
@@ -222,7 +231,7 @@ app.use("/guestbook", guestbookRoutes);
 app.use("/leaderboard", leaderboardRoutes);
 app.use("/finance", financeRouter);
 app.use("/coupons", couponsRouter);
-import gamificationRoutes from "./routes/gamification.js";
+import gamificationRoutes from "./domains/experience/gamification.js";
 
 app.use("/gamification", gamificationRoutes);
 app.use("/search", searchRoutes);
@@ -245,6 +254,9 @@ app.use("/marketplace", marketplaceRoutes);
 app.use("/badges", badgeRoutes);
 app.use("/backup", backupRoutes);
 app.use("/floor-plans", floorPlansRoutes);
+app.use("/roteiro", roteiroRoutes);
+app.use("/:tenantSlug/provider", providerRoutes);
+app.use("/:tenantSlug/master-ecosystem", masterEcosystemRoutes);
 
 app.use("/navigation", navigationRoutes);
 app.use("/accessibility", accessibilityRoutes);
@@ -254,7 +266,7 @@ import publicCertificateRoutes from "./routes/public/certificates.js";
 
 app.use("/public/certificates", publicCertificateRoutes);
 
-import opsRoutes from "./routes/ops.js";
+import opsRoutes from "./domains/governance/ops.js";
 app.use("/ops", opsRoutes);
 app.use("/notifications", notificationsRoutes);
 app.use("/contact", contactRoutes);
@@ -266,10 +278,10 @@ app.use("/accessibility-execution", accessibilityExecutionRoutes);
 app.use("/providers", providersRoutes);
 app.use("/equipamentos", equipamentalRoutes);
 
-import spacesRoutes from "./routes/spaces.js";
+import spacesRoutes from "./domains/cultural/spaces.js";
 app.use("/spaces", spacesRoutes);
 
-import reportsRoutes from "./routes/reports.js";
+import reportsRoutes from "./domains/governance/reports.js";
 app.use("/reports", reportsRoutes);
 
 // Governance Routes

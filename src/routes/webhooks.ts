@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../prisma.js";
 import { mailService } from "../services/email.js";
-import { stripeService, stripe } from "../services/stripeService.js";
+import { stripeService, stripe } from "../../services/stripeService.js";
 
 const router = Router();
 

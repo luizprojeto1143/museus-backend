@@ -238,9 +238,9 @@ model Tenant {
   featureGroupRoadmap       Boolean @default(true)
 
   // Phase 1 Features
-  featureCuratorNotes Boolean @default(false) // Notas de curador nas obras
-  featureNPS          Boolean @default(false) // Net Promoter Score
-  featureSponsorship  Boolean @default(false) // Patrocínio de obras
+  featureCuratorNotes   Boolean @default(false) // Notas de curador nas obras
+  featureNPS            Boolean @default(false) // Net Promoter Score
+  featureSponsorship    Boolean @default(false) // Patrocínio de obras
   sponsorSharedPrice    Float?  @default(250.0) // Valor do patrocínio compartilhado
   sponsorExclusivePrice Float?  @default(500.0) // Valor do patrocínio exclusivo
 
@@ -324,6 +324,11 @@ model Tenant {
   equipamentos            EquipamentoCultural[]
   vestigeAlerts           VestigeAlert[]
   theaterMembers          TheaterMember[]
+
+  // Roteiro Cultural
+  serviceProviders ServiceProvider[]
+  ProviderProduct  ProviderProduct[]
+  B2BBundle        B2BBundle[]
 
   @@index([parentId])
 }
@@ -472,6 +477,9 @@ model User {
   culturalProjects      CulturalProject[]
   communityPosts        CommunityPost[]
   workSubmissions       WorkSubmission[]
+
+  // Roteiro Cultural
+  providerBusinesses ServiceProvider[] @relation("ProviderOwner")
 }
 
 model RefreshToken {
@@ -731,8 +739,8 @@ model Event {
   coverImageUrl       String?
   coverUrl            String? // Alias for cover image (used in projects-\u003eevents)
 
-  producerId          String?
-  producer            User?   @relation("ProducerEvents", fields: [producerId], references: [id])
+  producerId String?
+  producer   User?   @relation("ProducerEvents", fields: [producerId], references: [id])
 
   // Certificate Settings
   certificateBackgroundUrl String?
@@ -942,8 +950,10 @@ model Visitor {
   avatarCaches            VisitorAvatarCache[]
   theaterSeatReservations TheaterSeatReservation[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  ProviderReview   ProviderReview[]
+  CulturalPassport CulturalPassport?
 
   @@unique([email, tenantId])
   @@index([tenantId, xp])
@@ -1098,6 +1108,10 @@ model Booking {
   // Novas adições para Serviços Presenciais e Agendamentos
   inPersonServiceId String?
   inPersonService   InPersonService? @relation(fields: [inPersonServiceId], references: [id])
+
+  // Roteiro Cultural: Marketplace de Serviços (Guias, Hotéis)
+  serviceProviderId String?
+  serviceProvider   ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
   participants      Int?
   eventId           String?
   event             Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1773,9 +1787,9 @@ model CulturalProject {
   accessibilityExecutions AccessibilityExecution[]
 
   // NF fields
-  notaFiscalUrl        String?
-  notaFiscalNumber     String?
-  notaFiscalDate       DateTime?
+  notaFiscalUrl    String?
+  notaFiscalNumber String?
+  notaFiscalDate   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2701,6 +2715,12 @@ model Route {
   description String?
   imageUrl    String?
 
+  // Roteiro Cultural Gamificado e IA
+  isAIGenerated Boolean @default(false)
+  estimatedTime Int? // tempo estimado em minutos
+  difficulty    String? // EASY, MEDIUM, HARD
+  xpReward      Int     @default(50) // XP por completar o roteiro
+
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -2911,3 +2931,140 @@ model TheaterCue {
   @@index([eventId])
 }
 
+// ==========================================
+// Roteiro Cultural & Marketplace de Serviços
+// ==========================================
+
+enum ServiceProviderType {
+  TOUR_GUIDE
+  RESTAURANT
+  HOTEL
+  TRANSPORT
+  EXPERIENCE
+}
+
+model ServiceProvider {
+  id          String              @id @default(uuid())
+  type        ServiceProviderType
+  name        String
+  description String?
+
+  // Contatos
+  phone   String?
+  email   String?
+  website String?
+
+  // Localização
+  address   String?
+  latitude  Float?
+  longitude Float?
+
+  // Financeiro (Stripe Connect Split)
+  stripeAccountId String? // Conta conectada para receber o split do Booking
+  feePercentage   Float?  @default(10.0) // Taxa retida pela plataforma Cultura Viva
+
+  active   Boolean @default(true)
+  verified Boolean @default(false) // Trust & Safety: KYC aprovado
+
+  // Vinculado a uma Cidade (Tenant)
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Dono do serviço (usuário que acessa o painel de parceiro)
+  ownerId String?
+  owner   User?   @relation("ProviderOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  // Imagens
+  coverUrl    String?
+  galleryUrls String[]
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  providerProducts ProviderProduct[]
+  providerReviews  ProviderReview[]
+  bundles          B2BBundle[]
+
+  @@index([tenantId])
+  @@index([type])
+}
+
+// ---------------------------------------------------------
+// ECOSSISTEMA DOMINANTE (TURISMO & COMÉRCIO LOCAL)
+// ---------------------------------------------------------
+
+model ProviderProduct {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal @db.Decimal(10, 2)
+  imageUrl    String?
+  active      Boolean @default(true)
+
+  serviceProviderId String
+  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProviderReview {
+  id       String  @id @default(uuid())
+  rating   Int // 1-5 estrelas
+  comment  String?
+  videoUrl String? // Review no estilo TikTok/Reels
+
+  visitorId String
+  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  serviceProviderId String
+  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model CulturalPassport {
+  id           String @id @default(uuid())
+  culturaCoins Int    @default(0) // Moeda virtual gamificada
+  level        Int    @default(1)
+
+  visitorId String  @unique
+  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  xpTransactions XPTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model XPTransaction {
+  id     String @id @default(uuid())
+  amount Int // +XP ou -XP
+  reason String // "Visitou Museu X", "Comeu no Restaurante Y"
+
+  passportId String
+  passport   CulturalPassport @relation(fields: [passportId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model B2BBundle {
+  id          String  @id @default(uuid())
+  name        String // ex: "Tour Histórico + Almoço Mineiro"
+  description String?
+  totalPrice  Decimal @db.Decimal(10, 2)
+
+  primaryProviderId String
+  primaryProvider   ServiceProvider @relation(fields: [primaryProviderId], references: [id], onDelete: Cascade)
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}

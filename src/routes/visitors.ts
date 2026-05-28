@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { z } from "zod";
 import { Role } from "@prisma/client";
-import { CertificateEngine } from "../services/certificate-engine.js";
+import { CertificateEngine } from "../../services/certificate-engine.js";
 
 const router = Router();
 

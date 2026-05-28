@@ -179,7 +179,7 @@ async function main() {
     console.log("🚀 [Render-Boost] Iniciando servidor...");
     process.env.DATABASE_URL = poolerUrl;
     
-    const appProcess = spawn('node', ['dist/index.js'], {
+    const appProcess = spawn(/^win/.test(process.platform) ? 'npx.cmd' : 'npx', ['tsx', 'src/index.ts'], {
         stdio: 'inherit',
         env: process.env
     });

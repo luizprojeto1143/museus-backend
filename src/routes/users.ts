@@ -5,7 +5,7 @@ import { validate } from "../middleware/validate.js";
 import { createUserSchema, updateUserSchema } from "../schemas/user.schema.js";
 import { Role } from "@prisma/client";
 import bcrypt from "bcrypt";
-import { createAuditLog } from "./audit.js";
+import { createAuditLog } from '../domains/governance/audit.js';
 
 const router = Router();
 
