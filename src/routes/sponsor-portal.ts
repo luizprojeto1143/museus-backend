@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, softAuthMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
-import { stripe } from "../../services/stripeService.js";
+import { stripe } from "../services/stripeService.js";
 
 const router = Router();
 
