@@ -57,7 +57,7 @@ router.post('/products', authMiddleware, requireRole(['ADMIN', 'MASTER']), async
     const { tenantId } = req.body;
     const result = productSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ message: 'Erro de validação', errors: result.error.errors });
-    const product = await prisma.product.create({ data: { ...result.data, tenantId } });
+    const product = await prisma.product.create({ data: { ...result.data, tenantId } as any });
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ message: 'Erro ao criar produto' });
@@ -127,7 +127,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
                 select: { stripeConnectId: true, name: true }
             });
 
-            const { stripeService } = await import('../services/stripeService.js');
+            const { stripeService } = await import('../../services/stripeService.js');
             const amountCents = Math.round(total * 100);
             const platformFeeCents = Math.round(amountCents * 0.05);
 

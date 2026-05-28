@@ -64,7 +64,7 @@ router.get("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
 router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
     try {
         const data = planSchema.parse(req.body);
-        const plan = await prisma.contractPlan.create({ data });
+        const plan = await prisma.contractPlan.create({ data: data as any });
         
         await createAuditLog(
             'CREATE',
@@ -97,7 +97,7 @@ router.put("/:id", authMiddleware, requireRole([Role.MASTER]), async (req, res) 
         const existing = await prisma.contractPlan.findUnique({ where: { id } });
         if (!existing) return res.status(404).json({ message: "Plano não encontrado" });
 
-        const plan = await prisma.contractPlan.update({ where: { id }, data });
+        const plan = await prisma.contractPlan.update({ where: { id }, data: data as any });
 
         await createAuditLog(
             'UPDATE',

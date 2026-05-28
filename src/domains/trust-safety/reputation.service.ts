@@ -1,5 +1,5 @@
 import { prisma } from '../../prisma.js';
-import { logger } from '../../logger/pino.logger.js';
+import { logger } from '../../infrastructure/logger/pino.logger.js';
 
 export class ReputationService {
   /**

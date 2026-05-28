@@ -236,7 +236,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLL
       data: {
         ...data,
         tenantId
-      }
+      } as any
     });
 
     await createAuditLog('CREATE', 'EquipamentoCultural', equipment.id, user.id, user.email, tenantId, null, equipment, req);

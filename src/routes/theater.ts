@@ -197,13 +197,13 @@ router.post("/members", authMiddleware, async (req, res) => {
         if (data.id) {
             const updated = await prisma.theaterMember.update({
                 where: { id: data.id },
-                data: { ...data, tenantId: tenantId as string }
+                data: { ...data, tenantId: tenantId as string } as any
             });
             return res.json(updated);
         }
 
         const member = await prisma.theaterMember.create({
-            data: { ...data, tenantId: tenantId as string }
+            data: { ...data, tenantId: tenantId as string } as any
         });
         return res.status(201).json(member);
     } catch (err) {
@@ -245,13 +245,13 @@ router.post("/sessions/:id/cues", authMiddleware, async (req, res) => {
         if (data.id) {
             const updated = await prisma.theaterCue.update({
                 where: { id: data.id },
-                data: { ...data, eventId: id }
+                data: { ...data, eventId: id } as any
             });
             return res.json(updated);
         }
 
         const cue = await prisma.theaterCue.create({
-            data: { ...data, eventId: id }
+            data: { ...data, eventId: id } as any
         });
         return res.status(201).json(cue);
     } catch (err) {

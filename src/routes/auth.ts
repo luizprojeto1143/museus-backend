@@ -42,15 +42,17 @@ const generateTokens = async (userId: string, email: string, role: Role, tenantI
 
   // 3. Salva Refresh Token no Banco (Resiliente)
   try {
+    const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
     await prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        token: hashedToken,
         userId: userId,
         expiresAt: expiresAt
       }
     });
   } catch (err) {
-    console.error("[AUTH] Failed to store refresh token in DB, continuing anyway:", err);
+    console.error("[AUTH] Failed to store refresh token in DB:", err);
+    throw new Error("Falha ao criar sessão segura.");
   }
 
   return { accessToken, refreshToken };
@@ -107,8 +109,6 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     }
 
     const responseData = {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
       role: user.role,
       tenantId: user.tenantId,
       cityId: user.tenant?.parentId || null,
@@ -178,8 +178,9 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
     }
 
     // 1. Busca token no banco
+    const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
     const storedToken = await prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
+      where: { token: hashedToken },
       include: { user: { include: { tenant: true } } }
     });
 
@@ -225,10 +226,7 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
     res.cookie("museus_token", newTokens.accessToken, COOKIE_OPTIONS);
     res.cookie("museus_refresh_token", newTokens.refreshToken, COOKIE_OPTIONS);
 
-    return res.json({
-      accessToken: newTokens.accessToken,
-      refreshToken: newTokens.refreshToken
-    });
+    return res.json({ message: "Sessão renovada com sucesso" });
 
   } catch (err) {
     console.error("Erro no refresh", err);
@@ -239,10 +237,15 @@ router.post("/refresh", async (req: Request, res: Response): Promise<any> => {
 // Logout (Revoke)
 router.post("/logout", async (req: Request, res: Response): Promise<any> => {
   try {
-    const { refreshToken } = req.body;
+    let { refreshToken } = req.body;
+    if (!refreshToken && req.headers.cookie) {
+      const match = req.headers.cookie.match(new RegExp('(^| )museus_refresh_token=([^;]+)'));
+      if (match) refreshToken = match[2];
+    }
     if (refreshToken) {
+      const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
       await prisma.refreshToken.updateMany({
-        where: { token: refreshToken },
+        where: { token: hashedToken },
         data: { revoked: true }
       });
     }
@@ -484,8 +487,6 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
     }
 
     return res.status(201).json({
-      accessToken,
-      refreshToken,
       role: user.role,
       tenantId: user.tenantId,
       user: {
@@ -640,8 +641,6 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
     });
 
     return res.json({
-      accessToken,
-      refreshToken,
       role: user.role,
       tenantId: targetTenantId,
       cityId: tenant.parentId || null,

@@ -107,7 +107,7 @@ router.post('/events/:eventId/tickets', authMiddleware, requireRole(['ADMIN', 'M
                 eventId,
                 salesStartDate: data.salesStartDate ? new Date(data.salesStartDate) : null,
                 salesEndDate: data.salesEndDate ? new Date(data.salesEndDate) : null,
-            }
+            } as any
         });
         res.status(201).json(ticket);
     } catch (error) {

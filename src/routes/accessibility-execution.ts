@@ -90,7 +90,7 @@ router.post("/request", authMiddleware, async (req, res) => {
         if (!targetTenantId) return res.status(400).json({ message: "Tenant ID não encontrado" });
 
         const execution = await prisma.accessibilityExecution.create({
-            data: { ...data, requestedBy: req.user!.id, tenantId: targetTenantId, status: "PENDING" }
+            data: { ...data, requestedBy: req.user!.id, tenantId: targetTenantId, status: "PENDING" } as any
         });
         return res.status(201).json(execution);
     } catch (err) {

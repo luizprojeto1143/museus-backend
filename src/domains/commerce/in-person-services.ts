@@ -50,7 +50,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER]), async (req, res) =>
         const data = createSchema.parse(req.body);
 
         const service = await prisma.inPersonService.create({
-            data
+            data: data as any
         });
 
         return res.status(201).json(service);

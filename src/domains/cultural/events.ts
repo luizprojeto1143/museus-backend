@@ -236,9 +236,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         location, // Used as venue name
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
-        categoryId: categoryId && categoryId !== "" ? categoryId : null,
-        certificateBackgroundUrl,
-        certificateText,
+        category: categoryId && categoryId !== "" ? { connect: { id: String(categoryId) } } : undefined,
+        certificateBackgroundUrl: certificateBackgroundUrl ? String(certificateBackgroundUrl) : null,
+        certificateText: certificateText ? String(certificateText) : null,
         minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
         producer: user.role === "PRODUCER" ? { connect: { id: user.id } } : undefined,
 
@@ -271,13 +271,13 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         certificateRequiresSurvey: Boolean(certificateRequiresSurvey),
 
         // Media - Audio Guide
-        audioUrl,
-        videoUrl,
+        audioUrl: audioUrl ? String(audioUrl) : null,
+        videoUrl: videoUrl ? String(videoUrl) : null,
 
-        spaceId: spaceId || null,
-        equipamentoId: equipamentoId || null,
+        space: spaceId ? { connect: { id: String(spaceId) } } : undefined,
+        equipamento: equipamentoId ? { connect: { id: String(equipamentoId) } } : undefined,
 
-        tenant: { connect: { id: tenantId } }
+        tenant: { connect: { id: String(tenantId) } }
       }
     });
 
@@ -589,7 +589,7 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
 
       // Hook: Event Attended
       try {
-        const { CertificateEngine } = await import('../services/certificate-engine.js');
+        const { CertificateEngine } = await import('../../services/certificate-engine.js');
         await CertificateEngine.evaluate('EVENT_ATTENDED', {
           tenantId: event.tenantId,
           visitorId: targetVisitorId,

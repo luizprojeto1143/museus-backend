@@ -136,29 +136,28 @@ async function main() {
     let migrationSuccess = false;
 
     try {
-      console.log("📡 Tentando Sincronização via URL Direta (Porta 5432)...");
-      execSync("npx prisma db push --skip-generate --accept-data-loss", { 
+      console.log("📡 Tentando Migração via URL Direta (Porta 5432)...");
+      execSync("npx prisma migrate deploy", { 
         env: { ...process.env, DATABASE_URL: finalDirectUrl },
         stdio: "inherit",
         timeout: 90000 
       });
       migrationSuccess = true;
-      console.log("✅ Sincronização concluída via URL Direta.");
+      console.log("✅ Migração concluída via URL Direta.");
     } catch (error) {
       console.warn("⚠️ Falha na URL Direta. Tentando via URL de Conexão Principal...");
       try {
-        execSync("npx prisma db push --skip-generate --accept-data-loss", { 
+        execSync("npx prisma migrate deploy", { 
           env: { ...process.env, DATABASE_URL: poolerUrl },
           stdio: "inherit",
           timeout: 90000 
         });
         migrationSuccess = true;
-        console.log("✅ Sincronização concluída via URL Principal.");
+        console.log("✅ Migração concluída via URL Principal.");
       } catch (error2) {
-        console.error("❌ ERRO CRÍTICO: Não foi possível sincronizar o banco de dados em nenhuma porta.");
+        console.error("❌ ERRO CRÍTICO: Não foi possível aplicar migrações no banco de dados.");
         console.error("Erro Direto:", error.message);
         console.error("Erro Principal:", error2.message);
-        console.log("⚠️ O app pode apresentar erros 500 se houver colunas faltando.");
       }
     }
 
@@ -179,7 +178,7 @@ async function main() {
     console.log("🚀 [Render-Boost] Iniciando servidor...");
     process.env.DATABASE_URL = poolerUrl;
     
-    const appProcess = spawn(/^win/.test(process.platform) ? 'npx.cmd' : 'npx', ['tsx', 'src/index.ts'], {
+    const appProcess = spawn('node', ['dist/index.js'], {
         stdio: 'inherit',
         env: process.env
     });

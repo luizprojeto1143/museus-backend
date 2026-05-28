@@ -17,11 +17,11 @@ export const correlationIdMiddleware = (req: Request, res: Response, next: NextF
   res.on('finish', () => {
     const duration = Date.now() - start;
     logger.info({ correlationId, statusCode: res.statusCode, durationMs: duration } as any, 'Response Context');
-    logger.info(`[${req.method}] ${req.originalUrl} - Completed`, { 
+    logger.info({ 
       correlationId, 
       statusCode: res.statusCode,
       durationMs: duration 
-    });
+    } as any, `[${req.method}] ${req.originalUrl} - Completed`);
   });
 
   next();
