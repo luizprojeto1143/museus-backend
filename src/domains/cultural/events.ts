@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createAuditLog } from "../governance/audit.js";
 import { validate } from "../../middleware/validate.js";
 import { createEventSchema, updateEventSchema } from "../../schemas/event.schema.js";
-import { stripe } from "../../services/stripeService.js";
+import { stripe, stripeService } from "../../services/stripeService.js";
 import { dispatchEvent, backgroundQueue } from "../../infrastructure/queue/bullmq.setup.js";
 
 const router = Router();
@@ -836,31 +836,50 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
 
     if (result.isPaid) {
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-      // Criar sessão Stripe
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card', 'pix'],
-        line_items: [
-          {
-            price_data: {
-              currency: 'brl',
-              product_data: {
-                name: `Ingresso: ${result.eventTitle} - ${result.ticketName}`,
-              },
-              unit_amount: Math.round(result.totalAmount * 100),
-            },
-            quantity: 1,
-          },
-        ],
-        mode: 'payment',
-        success_url: `${frontendUrl}/meus-ingressos?success=true`,
-        cancel_url: `${frontendUrl}/meus-ingressos?canceled=true`,
+      
+      // 1. Identify recipient Stripe Connect Account (either producer or tenant)
+      let stripeConnectId: string | null = null;
+      if (event.producerId) {
+        const prod = await prisma.user.findUnique({ where: { id: event.producerId } });
+        if (prod?.stripeConnectId) stripeConnectId = prod.stripeConnectId;
+      }
+      if (!stripeConnectId) {
+        const tenant = await prisma.tenant.findUnique({ where: { id: event.tenantId } });
+        if (tenant?.stripeConnectId) stripeConnectId = tenant.stripeConnectId;
+      }
+
+      if (!stripeConnectId) {
+        return res.status(400).json({ 
+          message: "Este evento não possui uma conta Stripe Connect vinculada para receber pagamentos." 
+        });
+      }
+
+      // 2. Create/Retrieve Stripe Customer for the buyer
+      const customerId = await stripeService.createCustomer({
+        name: user.name,
+        email: user.email,
+        userId: user.id
+      });
+
+      const amountInCents = Math.round(result.totalAmount * 100);
+      const appFeeInCents = Math.round(amountInCents * 0.05); // 5% platform fee
+
+      // 3. Create Stripe Checkout session with Connect Split
+      const session = await stripeService.createSplitPaymentSession({
+        customerId,
+        amount: amountInCents,
+        description: `Ingresso: ${result.eventTitle} - ${result.ticketName}`,
+        connectedAccountId: stripeConnectId,
+        applicationFeeAmount: appFeeInCents,
+        successUrl: `${frontendUrl}/meus-ingressos?success=true`,
+        cancelUrl: `${frontendUrl}/meus-ingressos?canceled=true`,
         metadata: {
           registrationId: result.registration.id,
           eventId: id
         }
       });
 
-      // Update registration with Stripe Intent/Session ID
+      // Update registration with Stripe Session ID
       await prisma.registration.update({
         where: { id: result.registration.id },
         data: { stripePaymentIntentId: session.id }

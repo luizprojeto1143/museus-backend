@@ -152,4 +152,71 @@ router.get('/balance', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * POST /stripe/payout
+ * Realiza a transferência de saques (payout) de uma conta conectada Express (real ou simulada) para seu banco vinculado.
+ */
+router.post('/payout', authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const { type, id } = req.query; // type: 'PRODUCER' | 'MUSEUM' | 'PROVIDER'
+        
+        let connectedId = '';
+        if (type === 'MUSEUM') {
+            const tenantId = (id as string || user.tenantId) as string;
+            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+            connectedId = tenant?.stripeConnectId || '';
+        } else if (type === 'PRODUCER') {
+            const producer = await prisma.user.findUnique({ where: { id: user.id } });
+            connectedId = producer?.stripeConnectId || '';
+        } else {
+            const provider = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
+            connectedId = provider?.stripeConnectId || '';
+        }
+
+        if (!connectedId) {
+            return res.status(400).json({ message: 'Conta de recebimentos Stripe não configurada.' });
+        }
+
+        // Simulação
+        if (connectedId.startsWith('acct_dummy_')) {
+            console.log(`💳 [STRIPE SIMULATION] Payout de saque simulado com sucesso para ${connectedId}`);
+            return res.json({ 
+                success: true, 
+                message: 'Saque simulado processado com sucesso! Em ambiente real, os fundos estarão em sua conta bancária em até 24h.' 
+            });
+        }
+
+        // Real
+        const balance = await stripe.balance.retrieve({}, { stripeAccount: connectedId });
+        const availableBrl = balance.available.find(b => b.currency === 'brl');
+        const availableAmount = availableBrl ? availableBrl.amount : 0;
+
+        if (availableAmount <= 0) {
+            return res.status(400).json({ message: 'Não há saldo disponível suficiente para saque no momento.' });
+        }
+
+        const payout = await stripe.payouts.create(
+            {
+                amount: availableAmount,
+                currency: 'brl',
+            },
+            {
+                stripeAccount: connectedId,
+            }
+        );
+
+        res.json({
+            success: true,
+            message: 'Saque manual solicitado com sucesso! Os fundos foram enviados para sua conta cadastrada.',
+            payoutId: payout.id,
+            amount: availableAmount
+        });
+
+    } catch (error: any) {
+        console.error('Payout Error:', error);
+        res.status(500).json({ message: error.message || 'Erro ao processar a transferência do saldo' });
+    }
+});
+
 export const stripeRouter = router;

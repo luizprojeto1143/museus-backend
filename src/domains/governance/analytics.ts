@@ -852,4 +852,124 @@ router.get("/funnel", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
   }
 });
 
+// GET /territorial-gaps - Rota de agregação geográfica municipal de vazios/cobertura cultural
+router.get("/territorial-gaps", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req: any, res: any, next: any) => {
+  try {
+    const user = req.user!;
+    const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string || user.tenantId) : user.tenantId;
+
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId obrigatório" });
+    }
+
+    // Buscar todos os tenants filhos (equipamentos da cidade)
+    const childTenants = await prisma.tenant.findMany({
+      where: { parentId: tenantId },
+      select: { id: true, name: true, latitude: true, longitude: true }
+    });
+
+    const tenantIds = [tenantId, ...childTenants.map(t => t.id)];
+
+    // 1. Equipamentos Culturais do município
+    const equipments = await prisma.equipamentoCultural.findMany({
+      where: { tenantId: { in: tenantIds } },
+      select: { id: true, nome: true, lat: true, lng: true, tipo: true }
+    });
+
+    // 2. Eventos ativos
+    const events = await prisma.event.findMany({
+      where: {
+        tenantId: { in: tenantIds },
+        status: "PUBLISHED",
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        title: true,
+        startDate: true,
+        location: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            latitude: true,
+            longitude: true
+          }
+        }
+      }
+    });
+
+    // 3. Check-ins de visitantes (densidade populacional)
+    const checkins = await prisma.equipamentoCheckin.findMany({
+      where: {
+        equipamento: {
+          tenantId: { in: tenantIds }
+        }
+      },
+      select: {
+        id: true,
+        lat: true,
+        lng: true,
+        createdAt: true,
+        equipamentoId: true,
+        equipamento: {
+          select: {
+            nome: true
+          }
+        }
+      }
+    });
+
+    // Mapear eventos com geolocalização dos seus respectivos Tenants
+    const mappedEvents = events.map(e => ({
+      id: e.id,
+      title: e.title,
+      startDate: e.startDate,
+      location: e.location,
+      lat: e.tenant?.latitude ?? null,
+      lng: e.tenant?.longitude ?? null,
+      tenantName: e.tenant?.name ?? null
+    })).filter(e => e.lat !== null && e.lng !== null);
+
+    // Mapear todos os equipamentos culturais e museus municipais
+    const mappedEquipments = [
+      ...equipments.map(eq => ({
+        id: eq.id,
+        name: eq.nome,
+        lat: eq.lat,
+        lng: eq.lng,
+        type: eq.tipo,
+        source: "equipamento"
+      })),
+      ...childTenants.filter(t => t.latitude !== null && t.longitude !== null).map(t => ({
+        id: t.id,
+        name: t.name,
+        lat: t.latitude,
+        lng: t.longitude,
+        type: "MUSEU",
+        source: "tenant"
+      }))
+    ].filter(eq => eq.lat !== null && eq.lng !== null);
+
+    // Mapear checkins geolocalizados
+    const mappedCheckins = checkins.map(c => ({
+      id: c.id,
+      lat: c.lat,
+      lng: c.lng,
+      createdAt: c.createdAt,
+      equipmentName: c.equipamento?.nome || "Equipamento"
+    })).filter(c => c.lat !== null && c.lng !== null);
+
+    return res.json({
+      equipments: mappedEquipments,
+      events: mappedEvents,
+      checkins: mappedCheckins,
+      municipalityId: tenantId
+    });
+
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

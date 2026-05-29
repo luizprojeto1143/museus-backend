@@ -19,10 +19,11 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 const ACCESS_TOKEN_EXPIRES_IN = "15m";
 // Refresh Token: 7 dias (Longa duração para UX)
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
+const isProd = process.env.NODE_ENV === "production";
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,
-  sameSite: "none" as const,
+  secure: isProd,
+  sameSite: isProd ? ("none" as const) : ("lax" as const),
   maxAge: REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
 };
 
@@ -249,8 +250,8 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
         data: { revoked: true }
       });
     }
-    res.clearCookie("museus_token", { sameSite: "none", secure: true });
-    res.clearCookie("museus_refresh_token", { sameSite: "none", secure: true });
+    res.clearCookie("museus_token", { sameSite: isProd ? "none" : "lax", secure: isProd });
+    res.clearCookie("museus_refresh_token", { sameSite: isProd ? "none" : "lax", secure: isProd });
     return res.status(200).json({ message: "Logout realizado com sucesso" });
   } catch (err) {
     console.error("Erro logout", err);

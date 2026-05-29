@@ -98,6 +98,7 @@ export const stripeService = {
         applicationFeeAmount: number; // Your fee in cents
         successUrl: string;
         cancelUrl: string;
+        metadata?: Record<string, string>;
     }) {
         if (IS_PLACEHOLDER) {
             console.log("💳 [STRIPE SIMULATION] Skipping split payment session, redirecting to successUrl.");
@@ -128,6 +129,7 @@ export const stripeService = {
                 },
                 success_url: data.successUrl,
                 cancel_url: data.cancelUrl,
+                metadata: data.metadata,
             });
 
             return session;

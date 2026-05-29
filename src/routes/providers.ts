@@ -62,6 +62,43 @@ router.get("/me", authMiddleware, async (req, res) => {
     }
 });
 
+// Get executions assigned to the current provider
+router.get("/me/executions", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const provider = await prisma.accessibilityProvider.findUnique({
+            where: { userId: user.id }
+        });
+
+        if (!provider) {
+            return res.status(404).json({ message: "Perfil de prestador não encontrado" });
+        }
+
+        const executions = await prisma.accessibilityExecution.findMany({
+            where: { providerId: provider.id },
+            include: {
+                project: {
+                    select: {
+                        id: true,
+                        title: true,
+                        proponent: {
+                            select: {
+                                name: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: { requestedAt: "desc" }
+        });
+
+        return res.json(executions);
+    } catch (err) {
+        console.error("Erro ao buscar execuções do prestador", err);
+        return res.status(500).json({ message: "Erro ao buscar execuções LBI" });
+    }
+});
+
 // Get current provider stats
 router.get("/me/stats", authMiddleware, async (req, res) => {
     try {
