@@ -2,6 +2,48 @@ import { Router } from "express";
 import { prisma } from "../../prisma.js";
 import { authMiddleware, requireRole } from "../../middleware/auth.js";
 import { Role } from "@prisma/client";
+import fs from "fs";
+import path from "path";
+
+const settingsFilePath = path.resolve(process.cwd(), "src/config/pulse_hub_settings.json");
+
+const getPulseHubSettings = () => {
+  const defaultSettings = {
+    title: "Pulse Hub",
+    subtitle: "Conecte-se com a cultura. Explore. Descubra. Viva experiências únicas.",
+    imageUrl: "https://images.unsplash.com/photo-1572120360610-d971b9d7767c?q=80&w=1200"
+  };
+
+  try {
+    const dir = path.dirname(settingsFilePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    if (!fs.existsSync(settingsFilePath)) {
+      fs.writeFileSync(settingsFilePath, JSON.stringify(defaultSettings, null, 2), "utf-8");
+      return defaultSettings;
+    }
+    const data = fs.readFileSync(settingsFilePath, "utf-8");
+    return JSON.parse(data);
+  } catch (err) {
+    console.error("Erro ao ler pulse_hub_settings.json, usando defaults:", err);
+    return defaultSettings;
+  }
+};
+
+const savePulseHubSettings = (settings: { title: string; subtitle: string; imageUrl: string }) => {
+  try {
+    const dir = path.dirname(settingsFilePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(settingsFilePath, JSON.stringify(settings, null, 2), "utf-8");
+    return true;
+  } catch (err) {
+    console.error("Erro ao salvar pulse_hub_settings.json:", err);
+    return false;
+  }
+};
 
 const router = Router();
 import { Request, Response, NextFunction } from "express";
@@ -849,6 +891,257 @@ router.get("/funnel", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
   } catch (err) {
     console.error("Error generating funnel:", err);
     return res.status(500).json({ message: "Erro ao gerar funil" });
+  }
+});
+
+// GET /municipal-pwa/summary - Resumo agregador da Netflix da Cultura para o visitante
+router.get("/municipal-pwa/summary", authMiddleware, async (req: any, res: any, next: any) => {
+  try {
+    const user = req.user!;
+    
+    // 1. Achar o visitante correspondente pelo e-mail
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: user.email.toLowerCase() },
+      include: {
+        visits: true,
+        achievements: true,
+        stamps: true
+      }
+    });
+
+    const visitorId = visitor?.id || null;
+    const visitorXp = visitor?.xp || 0;
+    const unlockedAchievements = visitor?.achievements?.length || 0;
+    const totalStamps = visitor?.stamps?.length || 0;
+
+    // 2. Buscar todas as cidades (Tenants principais com parentId === null e do tipo CITY)
+    const cities = await prisma.tenant.findMany({
+      where: { parentId: null, type: "CITY" },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        coverImageUrl: true,
+        latitude: true,
+        longitude: true,
+        children: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            coverImageUrl: true,
+            latitude: true,
+            longitude: true,
+            _count: {
+              select: {
+                works: true,
+                events: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Se nenhuma cidade principal existir, faz fallback com todos os tenants ou cria mock
+    const finalCities = cities.length > 0 ? cities : await prisma.tenant.findMany({
+      where: { type: "CITY" },
+      take: 5,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        coverImageUrl: true,
+        latitude: true,
+        longitude: true,
+        children: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            coverImageUrl: true,
+            latitude: true,
+            longitude: true,
+            _count: {
+              select: {
+                works: true,
+                events: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const processedCities = await Promise.all(finalCities.map(async (city) => {
+      const childrenIds = city.children.map(c => c.id);
+      const allTenantIds = [city.id, ...childrenIds];
+
+      // Total de obras (experiências) no município
+      const totalWorks = await prisma.work.count({
+        where: { tenantId: { in: allTenantIds } }
+      });
+
+      // Total de trilhas (roteiros) no município
+      const totalTrails = await prisma.trail.count({
+        where: { tenantId: { in: allTenantIds } }
+      });
+
+      const totalExperiences = totalWorks + totalTrails;
+
+      // Progresso do visitante nesta cidade
+      let visitedWorksCount = 0;
+      let visitedEquipmentsCount = 0;
+      if (visitorId) {
+        const visits = await prisma.visitorVisit.groupBy({
+          by: ["workId"],
+          where: {
+            visitorId: visitorId,
+            workId: { not: null },
+            work: { tenantId: { in: allTenantIds } }
+          }
+        });
+        visitedWorksCount = visits.length;
+
+        if (childrenIds.length > 0) {
+          const eqVisits = await prisma.visitorVisit.groupBy({
+            by: ["tenantId"],
+            where: {
+              visitorId: visitorId,
+              tenantId: { in: childrenIds }
+            }
+          });
+          visitedEquipmentsCount = eqVisits.length;
+        }
+      }
+
+      // Nível de exploração da cidade
+      const totalToExplore = totalExperiences > 0 ? totalExperiences : 10;
+      const exploredCount = visitedWorksCount;
+      const explorationPercent = Math.min(Math.round((exploredCount / totalToExplore) * 100), 100);
+
+      // Eventos ativos
+      const activeEventsCount = await prisma.event.count({
+        where: {
+          tenantId: { in: allTenantIds },
+          status: "PUBLISHED",
+          deletedAt: null
+        }
+      });
+
+      // Eventos participados (registrados) pelo visitante
+      let registeredEventsCount = 0;
+      if (user.email) {
+        registeredEventsCount = await prisma.registration.count({
+          where: {
+            guestEmail: user.email.toLowerCase(),
+            event: { tenantId: { in: allTenantIds } }
+          }
+        });
+      }
+
+      // Roteiros (trails) concluídos
+      let completedTrailsCount = 0;
+      if (visitorId) {
+        const completedTrails = await prisma.visitorVisit.groupBy({
+          by: ["trailId"],
+          where: {
+            visitorId: visitorId,
+            trailId: { not: null },
+            trail: { tenantId: { in: allTenantIds } }
+          }
+        });
+        completedTrailsCount = completedTrails.length;
+      }
+
+      // Determinar Medalha / Status do Explorador
+      let explorerTitle = "Iniciante";
+      let explorerBadge = "🏅 Cultural Rookie";
+      if (explorationPercent >= 80) {
+        explorerTitle = "Explorador Lendário";
+        explorerBadge = "👑 Explorador Mítico";
+      } else if (explorationPercent >= 50) {
+        explorerTitle = "Explorador Avançado";
+        explorerBadge = "🏆 Explorador de Elite";
+      } else if (explorationPercent >= 20) {
+        explorerTitle = "Explorador Local";
+        explorerBadge = "🏅 Explorador Ativo";
+      }
+
+      return {
+        id: city.id,
+        name: city.name,
+        slug: city.slug,
+        coverImageUrl: city.coverImageUrl || "https://images.unsplash.com/photo-1596436889106-be35e843f974?q=80&w=1000",
+        logoUrl: city.logoUrl || null,
+        totalExperiences,
+        explorationPercent,
+        activeEventsCount,
+        explorerTitle,
+        explorerBadge,
+        equipments: city.children.map(child => ({
+          id: child.id,
+          name: child.name,
+          slug: child.slug,
+          logoUrl: child.logoUrl,
+          coverImageUrl: child.coverImageUrl,
+          worksCount: child._count.works,
+          eventsCount: child._count.events
+        })),
+        visitedEquipmentsCount,
+        totalEquipmentsCount: city.children.length,
+        registeredEventsCount,
+        completedTrailsCount,
+        totalTrailsCount: totalTrails
+      };
+    }));
+
+    return res.json({
+      visitor: {
+        xp: visitorXp,
+        achievements: unlockedAchievements,
+        stamps: totalStamps,
+        name: user.name,
+        email: user.email
+      },
+      cities: processedCities.filter(c => c.name !== "MASTER"),
+      hubSettings: getPulseHubSettings()
+    });
+
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /municipal-pwa/settings - Obter configurações gerais do banner do Pulse Hub
+router.get("/municipal-pwa/settings", authMiddleware, async (req: any, res: any, next: any) => {
+  try {
+    const settings = getPulseHubSettings();
+    return res.json(settings);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /municipal-pwa/settings - Salvar configurações gerais do banner do Pulse Hub (Apenas Master)
+router.put("/municipal-pwa/settings", authMiddleware, requireRole([Role.MASTER]), async (req: any, res: any, next: any) => {
+  try {
+    const { title, subtitle, imageUrl } = req.body;
+    if (!title || !subtitle) {
+      return res.status(400).json({ error: "Título e Subtítulo são obrigatórios" });
+    }
+    const success = savePulseHubSettings({ title, subtitle, imageUrl: imageUrl || "" });
+    if (success) {
+      return res.json({ message: "Configurações do Pulse Hub salvas com sucesso!" });
+    } else {
+      return res.status(500).json({ error: "Erro interno ao salvar as configurações." });
+    }
+  } catch (err) {
+    next(err);
   }
 });
 
