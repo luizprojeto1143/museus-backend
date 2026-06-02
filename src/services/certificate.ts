@@ -40,10 +40,7 @@ export class CertificateService {
         const buffers: Buffer[] = [];
         doc.on('data', buffers.push.bind(buffers));
 
-        return new Promise(async (resolve, reject) => {
-            doc.on('end', () => resolve(Buffer.concat(buffers)));
-            doc.on('error', reject);
-
+        const buildPdf = async () => {
             try {
                 // Check for Template
                 if (cert.template) {
@@ -168,9 +165,19 @@ export class CertificateService {
                 doc.end();
 
             } catch (err) {
-                reject(err);
+                doc.emit('error', err);
             }
+        };
+
+        const promise = new Promise<Buffer>((resolve, reject) => {
+            doc.on('end', () => resolve(Buffer.concat(buffers)));
+            doc.on('error', reject);
         });
+
+        // Initiate async generation
+        buildPdf();
+
+        return promise;
     }
 
     /**

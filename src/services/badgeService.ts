@@ -33,10 +33,19 @@ export class BadgeService {
             margin: 0
         });
 
+        const avatarUrl = request.skinImageUrl || 'https://museus.app/default_avatar.png';
+        let avatarData: any = null;
+        try {
+            const avatarRes = await axios.get(avatarUrl, { responseType: 'arraybuffer' });
+            avatarData = avatarRes.data;
+        } catch (e) {
+            console.error("Failed to load badge avatar", e);
+        }
+
         const buffers: Buffer[] = [];
         doc.on('data', buffers.push.bind(buffers));
 
-        return new Promise(async (resolve, reject) => {
+        return new Promise((resolve, reject) => {
             doc.on('end', () => resolve(Buffer.concat(buffers)));
             doc.on('error', reject);
 
@@ -53,14 +62,11 @@ export class BadgeService {
                 doc.rect(0, 0, 153, 5).fill(accentColor);
 
                 // 3. Visitor Avatar
-                const avatarUrl = request.skinImageUrl || 'https://museus.app/default_avatar.png';
-                try {
-                    const avatarRes = await axios.get(avatarUrl, { responseType: 'arraybuffer' });
+                if (avatarData) {
                     // Avatar Box
                     doc.roundedRect(26.5, 30, 100, 100, 20).fill('#1e293b');
-                    doc.image(avatarRes.data, 31.5, 35, { width: 90, height: 90 });
-                } catch (e) {
-                    console.error("Failed to load badge avatar", e);
+                    doc.image(avatarData, 31.5, 35, { width: 90, height: 90 });
+                } else {
                     doc.roundedRect(26.5, 30, 100, 100, 20).fill('#1e293b');
                     doc.fontSize(30).fillColor('#475569').text('👤', 60, 65);
                 }

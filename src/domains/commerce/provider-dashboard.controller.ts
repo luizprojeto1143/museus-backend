@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../prisma.js';
-
+import Stripe from 'stripe';
 export const ProviderDashboardController = {
   // --- Dashboard & Analytics ---
   async getDashboardStats(req: Request, res: Response) {
@@ -12,13 +12,43 @@ export const ProviderDashboardController = {
         return res.status(400).json({ error: 'Provider ID is required' });
       }
 
-      // Mock Analytics data for now. In reality, we'd query Bookings/Purchases.
+      // Receita total baseada em transações concluídas
+      const transactions = await prisma.transaction.aggregate({
+        where: {
+          payeeId: providerId,
+          status: { in: ['PAID', 'RELEASED'] }
+        },
+        _sum: {
+          amount: true
+        }
+      });
+      const totalRevenue = transactions._sum.amount ? Number(transactions._sum.amount) : 0;
+
+      // Média real de avaliações
+      const reviews = await prisma.providerReview.aggregate({
+        where: { serviceProviderId: providerId },
+        _avg: { rating: true },
+        _count: { id: true }
+      });
+      const averageRating = reviews._avg.rating ? Number(reviews._avg.rating.toFixed(1)) : 0;
+      const totalReviews = reviews._count.id;
+
+      // Agendamentos de hoje (substitui o 'viewsToday' mockado)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const bookingsToday = await prisma.booking.count({
+        where: {
+          serviceProviderId: providerId,
+          createdAt: { gte: today }
+        }
+      });
+
       const stats = {
-        totalRevenue: 4500.50,
-        activeProducts: await prisma.providerProduct.count({ where: { serviceProviderId: providerId } }),
-        averageRating: 4.8,
-        totalReviews: await prisma.providerReview.count({ where: { serviceProviderId: providerId } }),
-        viewsToday: 142 // Mocked heatmap/views metric
+        totalRevenue,
+        activeProducts: await prisma.providerProduct.count({ where: { serviceProviderId: providerId, active: true } }),
+        averageRating,
+        totalReviews,
+        viewsToday: bookingsToday 
       };
 
       return res.json(stats);
@@ -74,24 +104,50 @@ export const ProviderDashboardController = {
       const { tenantSlug } = req.params;
       const { providerId } = req.body;
 
-      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId } });
-      if (!provider) return res.status(404).json({ error: 'Provider not found' });
+      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId }, include: { owner: true } });
+      if (!provider || !provider.owner) return res.status(404).json({ error: 'Provider or owner not found' });
 
-      // In a real scenario, we would call:
-      // const account = await stripe.accounts.create({ type: 'express' });
-      // const accountLink = await stripe.accountLinks.create({ account: account.id, ... });
-      // We simulate the flow here.
+      // Se não temos a chave do Stripe configurada, retornamos um erro claro ao invés de um mock
+      if (!process.env.STRIPE_SECRET_KEY) {
+        return res.status(500).json({ error: 'Stripe is not configured on the server.' });
+      }
 
-      // Mock setting the stripeAccountId
-      const updatedProvider = await prisma.serviceProvider.update({
-        where: { id: providerId },
-        data: { stripeAccountId: `acct_simulated_${Date.now()}` }
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+      let accountId = provider.stripeAccountId;
+
+      // Cria a conta conectada se ainda não existir
+      if (!accountId) {
+        const account = await stripe.accounts.create({
+          type: 'express',
+          email: provider.owner.email,
+          business_type: 'individual',
+          business_profile: {
+            name: provider.name,
+            product_description: provider.description || 'Cultural Services'
+          }
+        });
+        
+        accountId = account.id;
+
+        await prisma.serviceProvider.update({
+          where: { id: providerId },
+          data: { stripeAccountId: accountId }
+        });
+      }
+
+      // Gera o link de onboarding
+      const accountLink = await stripe.accountLinks.create({
+        account: accountId,
+        refresh_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/master/dashboard/finances`,
+        return_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/master/dashboard/finances`,
+        type: 'account_onboarding',
       });
 
       return res.json({ 
         message: 'Stripe Onboarding URL Generated', 
-        url: `https://connect.stripe.com/express/oauth/authorize?simulated=true`,
-        provider: updatedProvider
+        url: accountLink.url,
+        provider: { ...provider, stripeAccountId: accountId }
       });
     } catch (error) {
       console.error('Error in Stripe onboarding:', error);

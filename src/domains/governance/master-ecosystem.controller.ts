@@ -14,9 +14,39 @@ export const MasterEcosystemController = {
       const totalProducts = await prisma.providerProduct.count({ where: { tenantId: tenant.id } });
       const totalPassports = await prisma.culturalPassport.count();
       
-      // Mocks for financial data since we don't have a fully populated Booking/Payment table specifically for Roteiro yet
-      const ecosystemVolume = 125430.00; 
-      const platformRevenue = ecosystemVolume * 0.10; // 10% fee
+      // Busca dados financeiros reais baseados nas vendas e pedidos concluídos
+      const ordersAggr = await prisma.order.aggregate({
+        where: {
+          tenantId: tenant.id,
+          status: { in: ['PAID', 'DELIVERED'] }
+        },
+        _sum: {
+          total: true,
+          platformFee: true
+        }
+      });
+
+      const ecosystemVolume = ordersAggr._sum.total ? Number(ordersAggr._sum.total) : 0; 
+      const platformRevenue = ordersAggr._sum.platformFee ? Number(ordersAggr._sum.platformFee) : (ecosystemVolume * 0.10); // fallback para 10% se não houver taxa explicitada
+      
+      // Puxa as 3 últimas transações reais como "Atividades Recentes"
+      const recentOrders = await prisma.order.findMany({
+        where: { tenantId: tenant.id, status: 'PAID' },
+        orderBy: { updatedAt: 'desc' },
+        take: 3,
+        include: { visitor: true }
+      });
+
+      const recentActivity = recentOrders.map(order => ({
+        type: 'ORDER_PAID',
+        text: `Pedido de R$ ${Number(order.total).toFixed(2)} pago por ${order.customerName}`,
+        time: order.updatedAt.toISOString()
+      }));
+
+      // Caso não existam ordens recentes, mostramos um histórico genérico para não quebrar a UI
+      if (recentActivity.length === 0) {
+        recentActivity.push({ type: 'SYSTEM_START', text: 'Sistema inicializado sem transações recentes.', time: new Date().toISOString() });
+      }
       
       return res.json({
         totalProviders,
@@ -24,11 +54,7 @@ export const MasterEcosystemController = {
         totalPassports,
         ecosystemVolume,
         platformRevenue,
-        recentActivity: [
-          { type: 'NEW_PROVIDER', text: 'Restaurante Sabor Mineiro conectado ao Stripe.', time: '10 min atrás' },
-          { type: 'BUNDLE_SOLD', text: 'Pacote "Tour Histórico + Almoço" vendido por R$ 150,00', time: '1h atrás' },
-          { type: 'VIDEO_REVIEW', text: 'Nova avaliação em vídeo recebida para Guia Turístico.', time: '2h atrás' }
-        ]
+        recentActivity
       });
     } catch (error) {
       console.error('Error fetching global stats:', error);
@@ -39,11 +65,28 @@ export const MasterEcosystemController = {
   // Moderação de Vídeos (Reviews TikTok style)
   async getPendingVideoReviews(req: Request, res: Response) {
     try {
-      // Mocked pending reviews for moderation
-      const reviews = [
-        { id: 'rev-1', providerName: 'Maria Guia', videoUrl: 'https://example.com/video1.mp4', rating: 5, status: 'PENDING' }
-      ];
-      return res.json(reviews);
+      // Busca avaliações reais que têm vídeo e ainda não foram processadas na moderação
+      const reviews = await prisma.providerReview.findMany({
+        where: {
+          videoUrl: { not: null }
+        },
+        include: {
+          serviceProvider: true
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
+
+      // Como o DB de ReviewModeration pode não estar pareado com ProviderReview por chave estrangeira, fazemos o mapeamento básico
+      const formattedReviews = reviews.map(r => ({
+        id: r.id,
+        providerName: r.serviceProvider.name,
+        videoUrl: r.videoUrl,
+        rating: r.rating,
+        status: 'PENDING'
+      }));
+
+      return res.json(formattedReviews);
     } catch (error) {
       console.error(error);
       return res.status(500).json({ error: 'Internal Server Error' });

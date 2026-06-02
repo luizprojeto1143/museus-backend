@@ -59,7 +59,7 @@ const isSupabasePooler = urlObj.hostname.includes('pooler.supabase.com');
 async function resolveBestUrl() {
     console.log("🛠️ Analisando DATABASE_URL e testando conectividade...");
     
-    let urlToProcess = DB_URL;
+    const urlToProcess = DB_URL;
     const finalUrl = new URL(urlToProcess);
     const host = finalUrl.hostname;
     const originalPort = finalUrl.port || '5432';

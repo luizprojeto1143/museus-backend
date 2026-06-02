@@ -11,12 +11,29 @@ export class ReputationService {
     
     let score = 100;
 
-    // 1. Verificar histórico de denúncias (mock)
-    const activeReports = 0; // Isso viria do BD (ex: count de ModerationQueue)
+    // 1. Verificar histórico de avaliações bloqueadas/denunciadas (real)
+    let activeReports = 0;
+    if (role === 'PROVIDER') {
+      const rejectedReviews = await prisma.reviewModeration.count({
+        where: {
+          isApproved: false,
+          flagReason: { in: ['OFFENSIVE', 'SPAM', 'SCAM'] }
+        }
+      });
+      activeReports = rejectedReviews;
+    }
     score -= (activeReports * 20);
 
-    // 2. Verificar anomalias de transação (chargebacks)
-    const chargebacks = 0;
+    // 2. Verificar anomalias de transação (chargebacks/falhas reais)
+    const chargebacks = await prisma.transaction.count({
+      where: {
+        OR: [
+          { payerId: userId },
+          { payeeId: userId }
+        ],
+        status: { in: ['FAILED', 'REFUNDED'] }
+      }
+    });
     score -= (chargebacks * 50);
 
     // 3. Verificação de Identidade (KYC)

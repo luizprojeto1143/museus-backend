@@ -130,10 +130,8 @@ router.delete("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (r
 router.post("/unlock", authMiddleware, async (req, res) => {
   try {
     const user = req.user!;
-    let { visitorId, achievementId } = req.body as {
-      visitorId?: string;
-      achievementId?: string;
-    };
+    let { visitorId } = req.body as { visitorId?: string };
+    const { achievementId } = req.body as { achievementId?: string };
 
     if (!achievementId) {
       return res.status(400).json({ message: "achievementId é obrigatório" });

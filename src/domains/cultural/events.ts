@@ -612,7 +612,7 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
 
     } catch (err: unknown) {
       // Prisma P2002: Unique constraint violation
-      // @ts-ignore - Prisma error types are tricky to import generically without dedicated helper
+      // @ts-expect-error - Prisma error types are tricky to import generically without dedicated helper
       if (err?.code === 'P2002') {
         const existing = await prisma.eventAttendance.findFirst({
           where: { eventId: id, visitorId: targetVisitorId }
@@ -790,8 +790,9 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
 
     // Race Condition Fix: Use Transaction! 🛡️
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Re-fetch ticket inside transaction to get latest state
-      const ticket = await tx.ticket.findUnique({ where: { id: ticketId } });
+      // 1. Re-fetch ticket inside transaction to get latest state (Pessimistic Lock)
+      const tickets = await tx.$queryRaw<any[]>`SELECT * FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
+      const ticket = tickets[0];
       if (!ticket) throw new Error("Ingresso não encontrado");
 
       if (ticket.eventId !== id) throw new Error("Ingresso inválido para este evento");
@@ -854,9 +855,8 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         });
       }
 
-      // 2. Create/Retrieve Stripe Customer for the buyer
       const customerId = await stripeService.createCustomer({
-        name: user.name,
+        name: user.name || "Visitante",
         email: user.email,
         userId: user.id
       });
