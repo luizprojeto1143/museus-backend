@@ -28,6 +28,26 @@ router.post("/stripe", async (req: Request, res: Response) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // Idempotency Check: Prevent duplicate processing of the same Stripe event
+  try {
+    const existingEvent = await prisma.stripeWebhookEvent.findUnique({
+      where: { id: event.id }
+    });
+    if (existingEvent) {
+      console.log(`[Stripe Webhook] Event ${event.id} already processed. Skipping.`);
+      return res.status(200).send({ received: true, duplicate: true });
+    }
+    await prisma.stripeWebhookEvent.create({
+      data: {
+        id: event.id,
+        type: event.type
+      }
+    });
+  } catch (err) {
+    console.error(`[Stripe Webhook] Idempotency check failed:`, err);
+    // Proceeding even if this fails to avoid blocking payment confirmation, but ideally we return 500
+  }
+
   console.log(`[Stripe Webhook] Received event: ${event.type}`);
 
   try {

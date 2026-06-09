@@ -49,7 +49,9 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
   documents: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 };
 
-const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_DOC_SIZE = 10 * 1024 * 1024; // 10MB
 
 function createFileFilter(category: string) {
   return (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
@@ -62,10 +64,10 @@ function createFileFilter(category: string) {
   };
 }
 
-const uploadImage = multer({ storage, fileFilter: createFileFilter('images'), limits: { fileSize: MAX_FILE_SIZE } });
-const uploadAudio = multer({ storage, fileFilter: createFileFilter('audio'), limits: { fileSize: MAX_FILE_SIZE } });
-const uploadVideo = multer({ storage, fileFilter: createFileFilter('video'), limits: { fileSize: MAX_FILE_SIZE } });
-const uploadDocument = multer({ storage, fileFilter: createFileFilter('documents'), limits: { fileSize: MAX_FILE_SIZE } });
+const uploadImage = multer({ storage, fileFilter: createFileFilter('images'), limits: { fileSize: MAX_IMAGE_SIZE } });
+const uploadAudio = multer({ storage, fileFilter: createFileFilter('audio'), limits: { fileSize: MAX_VIDEO_SIZE } });
+const uploadVideo = multer({ storage, fileFilter: createFileFilter('video'), limits: { fileSize: MAX_VIDEO_SIZE } });
+const uploadDocument = multer({ storage, fileFilter: createFileFilter('documents'), limits: { fileSize: MAX_DOC_SIZE } });
 
 // R2 HELPERS
 function hasR2Config() {
@@ -319,6 +321,17 @@ router.get("/proxy", async (req, res) => {
     const imageUrl = req.query.url as string;
     if (!imageUrl) return res.status(400).send("URL is required");
 
+    // SSRF Protection: Allowlist specific domains
+    const allowedDomains = ["images.unsplash.com", "firebasestorage.googleapis.com", "s3.amazonaws.com"];
+    try {
+        const urlObj = new URL(imageUrl);
+        if (!allowedDomains.includes(urlObj.hostname)) {
+            return res.status(403).send("Forbidden: Unrecognized image source");
+        }
+    } catch(e) {
+        return res.status(400).send("Invalid URL");
+    }
+
     // Fetch the image from the external URL using https or http
     const httpModule = imageUrl.startsWith("https") ? https : http;
 
@@ -327,9 +340,9 @@ router.get("/proxy", async (req, res) => {
       if (response.headers['content-type']) {
         res.setHeader('Content-Type', response.headers['content-type']);
       }
-      // Add CORS headers so the canvas in the frontend can read the data
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      
+      // Forward caching headers to optimize proxy
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // 24 hours
 
       // Pipe the external image stream directly to our response
       response.pipe(res);

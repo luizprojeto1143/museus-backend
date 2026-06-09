@@ -1,2868 +1,163 @@
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
-enum Role {
-  MASTER
-  ADMIN
-  PRODUCER
-  VISITOR
-  COLLABORATOR
-}
-
-enum QRType {
-  WORK
-  TRAIL
-  EVENT
-  SPACE
-  TENANT // QR Code para um Museu ou Ponto Histórico
-  EQUIPAMENTO // NOVO: QR Code de entrada do equipamento cultural
-  CUSTOM
-}
-
-enum CategoryType {
-  WORK
-  TRAIL
-  EVENT
-  GENERAL
-  SPACE
-}
-
-enum CertificateType {
-  EVENT
-  TRAIL
-  VISIT
-  COURSE
-  CUSTOM
-}
-
-enum CertificateStatus {
-  VALID
-  REVOKED
-}
-
-enum TriggerType {
-  TRAIL_COMPLETED
-  EVENT_ATTENDED
-  XP_THRESHOLD
-  MANUAL
-}
-
-enum TenantType {
-  MUSEUM
-  PRODUCER
-  SECRETARIA // Secretaria de Cultura Municipal
-  CULTURAL_SPACE // Centro Cultural, Biblioteca, Arquivo, etc.
-  CITY // Cidade/Prefeitura (tenant pai)
-  ARCHITECTURAL_LANDMARK // Ponto de interesse arquitetônico/histórico
-}
-
-enum SkinRarity {
-  COMMON
-  RARE
-  EPIC
-  LEGENDARY
-  EXCLUSIVE
-}
-
-enum BadgeStatus {
-  PENDING
-  APPROVED
-  PRINTING
-  SHIPPED
-  DELIVERED
-  REJECTED
-}
-
-// ========== GOVERNANCE / CONTRACT PLANS ==========
-
-enum AITier {
-  BASIC // Sem IA ou IA limitada
-  CONTINUOUS // IA com cotas mensais
-  ADVANCED // IA ilimitada
-}
-
-enum SLATier {
-  STANDARD // 48h resposta
-  EXTENDED // 24h resposta
-  DEDICATED // 4h resposta + suporte dedicado
-}
-
-model ContractPlan {
-  id          String  @id @default(uuid())
-  name        String  @unique // "Start", "Pro", "Enterprise"
-  description String?
-
-  // Limites de Uso
-  maxActiveProjects    Int @default(10)
-  maxAccessibilityReqs Int @default(5) // por mês
-  maxReportsPerMonth   Int @default(10)
-  maxAIAnalyses        Int @default(100) // por mês
-  maxWorks             Int @default(50)
-  maxEvents            Int @default(20)
-  maxChildTenants      Int @default(0) // equipamentos filhos
-  maxUsers             Int @default(5)
-
-  // Tiers
-  aiTier               AITier  @default(BASIC)
-  slaTier              SLATier @default(STANDARD)
-  supportResponseHours Int     @default(48)
-
-  // Preço (referência interna)
-  monthlyPrice Decimal? @db.Decimal(10, 2)
-
-  // Features extras
-  hasExecutiveReports Boolean @default(false)
-  hasLegalCompliance  Boolean @default(false)
-  hasAPIAccess        Boolean @default(false)
-  hasWhiteLabel       Boolean @default(false)
-
-  tenants Tenant[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model AIUsage {
-  id       String @id @default(uuid())
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  month Int // 1-12
-  year  Int
-
-  analysesCount Int     @default(0)
-  tokensUsed    Int     @default(0)
-  estimatedCost Decimal @default(0) @db.Decimal(8, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id
+  tenantId      String
+  month         Int
+  year          Int
+  analysesCount Int      @default(0)
+  tokensUsed    Int      @default(0)
+  estimatedCost Decimal  @default(0) @db.Decimal(8, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+  Tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, month, year])
   @@index([tenantId])
 }
 
-model Tenant {
-  id   String     @id @default(uuid())
-  type TenantType @default(MUSEUM)
-  name String
-  slug String     @unique
+model AccessibilityExecution {
+  id                    String                   @id
+  serviceType           AccessibilityServiceType
+  requestedAt           DateTime                 @default(now())
+  requestedBy           String?
+  requestNotes          String?
+  approvedAt            DateTime?
+  approvedBy            String?
+  approvedBudget        Decimal?                 @db.Decimal(8, 2)
+  providerId            String?
+  executedAt            DateTime?
+  executionNotes        String?
+  deliverables          Json?
+  validatedAt           DateTime?
+  validatedBy           String?
+  validationStatus      String?
+  validationNotes       String?
+  status                String                   @default("PENDING")
+  projectId             String?
+  eventId               String?
+  tenantId              String
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime
+  stripePaymentIntentId String?                  @unique
+  notaFiscalDate        DateTime?
+  notaFiscalNumber      String?
+  notaFiscalUrl         String?
+  paymentReceiptUrl     String?
+  CulturalProject       CulturalProject?         @relation(fields: [projectId], references: [id])
+  AccessibilityProvider AccessibilityProvider?   @relation(fields: [providerId], references: [id])
+  Tenant                Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  deletedAt DateTime?
-
-  // Hierarchy - Permite Cidade ter Museus/Espaços filhos
-  parentId String? // ID do tenant pai (ex: Secretaria -> Museus)
-  parent   Tenant?  @relation("TenantHierarchy", fields: [parentId], references: [id])
-  children Tenant[] @relation("TenantHierarchy")
-
-  // Plan & Limits (Governance)
-  planId       String?
-  contractPlan ContractPlan? @relation(fields: [planId], references: [id])
-  aiUsage      AIUsage[]
-
-  // Legacy fields (for backward compatibility)
-  plan            String @default("START") // "START", "PRO", "ENTERPRISE"
-  maxWorks        Int    @default(50) // Limite de obras cadastradas
-  capacityPerHour Int    @default(50) // Capacidade máxima de visitantes por hora
-
-  // Settings
-  mission                  String?
-  address                  String?
-  openingHours             String?
-  whatsapp                 String?
-  email                    String?
-  website                  String?
-  logoUrl                  String?
-  coverImageUrl            String?
-  appIconUrl               String?
-  bannerUrl                String?
-  signatureUrl             String? // Assinatura do responsável para certificados
-  certificateBackgroundUrl String? // Imagem de fundo personalizada para certificados (A4 Paisagem)
-  frameUrl                 String? // Moldura personalizada para as telas do tenant
-
-  mapImageUrl String?
-  latitude    Float?
-  longitude   Float?
-
-  // Welcome Audio/Video (Boas-vindas)
-  welcomeAudioUrl String? // Áudio de boas-vindas ao museu
-  welcomeVideoUrl String? // Vídeo institucional de boas-vindas
-
-  // Theme
-  primaryColor   String  @default("#d4af37")
-  secondaryColor String  @default("#cd7f32")
-  theme          String  @default("dark") // "light" | "dark"
-  historicalFont Boolean @default(true)
-
-  // Feature Flags - Módulos habilitados por tenant
-  featureWorks         Boolean @default(true) // Catálogo de obras/artefatos
-  featureTrails        Boolean @default(true) // Trilhas e roteiros
-  featureEvents        Boolean @default(true) // Eventos e check-in
-  featureGamification  Boolean @default(true) // XP, conquistas, ranking, passaporte
-  featureQRCodes       Boolean @default(true) // QR codes e scanner
-  featureChatAI        Boolean @default(false) // Chat IA (premium)
-  featureShop          Boolean @default(false) // Loja virtual (premium)
-  featureDonations     Boolean @default(false) // Doações e mural de doadores (premium)
-  featureCertificates  Boolean @default(true) // Certificados de participação
-  featureReviews       Boolean @default(true) // Favoritos e avaliações
-  featureGuestbook     Boolean @default(true) // Livro de visitas
-  featureAccessibility Boolean @default(true) // Libras e acessibilidade
-  featureMinigames     Boolean @default(false) // Minigame (Art Run)
-  featureServices      Boolean @default(false) // Produtor: oferece serviços
-  featureTickets       Boolean @default(false) // Venda de ingressos
-
-  // Municipal Features - Gestão Pública
-  featureEditais              Boolean @default(false) // Editais públicos
-  featureProjects             Boolean @default(false) // Projetos culturais
-  featureAccessibilityMgmt    Boolean @default(false) // Gestão de acessibilidade pública
-  featureProviders            Boolean @default(false) // Cadastro de prestadores
-  featureInstitutionalReports Boolean @default(false) // Relatórios institucionais
-  featureEditaisSubmission    Boolean @default(false) // Produtores podem submeter a editais
-
-  // Módulos de Menu (Agrupadores)
-  featureGroupContent       Boolean @default(true)
-  featureGroupEvents        Boolean @default(true)
-  featureGroupEngagement    Boolean @default(true)
-  featureGroupGamification  Boolean @default(true)
-  featureGroupInstitutional Boolean @default(true)
-  featureGroupTools         Boolean @default(true)
-  featureGroupAnalytics     Boolean @default(true)
-  featureGroupSocial        Boolean @default(true)
-  featureGroupPreservation  Boolean @default(true)
-  featureGroupAI            Boolean @default(true)
-  featureGroupRoadmap       Boolean @default(true)
-
-  // Phase 1 Features
-  featureCuratorNotes   Boolean @default(false) // Notas de curador nas obras
-  featureNPS            Boolean @default(false) // Net Promoter Score
-  featureSponsorship    Boolean @default(false) // Patrocínio de obras
-  sponsorSharedPrice    Float?  @default(250.0) // Valor do patrocínio compartilhado
-  sponsorExclusivePrice Float?  @default(500.0) // Valor do patrocínio exclusivo
-
-  // Terms & Privacy (LGPD)
-  termsOfUse    String? // Texto dos termos de uso (Markdown/HTML)
-  privacyPolicy String? // Política de privacidade
-
-  // Institutional Data (Cultura Viva Reports)
-  cnpj                String?
-  legalNature         String? // "Publico Municipal", "Privado com fins lucrativos", etc.
-  foundationYear      Int?
-  typology            String? // "Museu", "Centro Cultural", "Arquivo", etc.
-  legalRepresentative String?
-
-  // Accessibility Data (LBI Compliance)
-  accessibilityResources Json? // { physical: [], sensory: [], content: [] }
-
-  // Financial Settings
-  asaasWalletId    String? // ID da Carteira Asaas para recebimento (Split) (Legacy)
-  stripeCustomerId String? @unique
-  stripeConnectId  String? @unique
-
-  // Mode: Museum or City
-  isCityMode          Boolean @default(false) // false = Museu, true = Cidade/Roteiro Turístico
-  isPublicInstitution Boolean @default(false) // Instituição pública vinculada à prefeitura
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users                 User[]
-  works                 Work[]
-  trails                Trail[]
-  events                Event[]
-  visitors              Visitor[]
-  visitorVisits         VisitorVisit[]
-  achievements          Achievement[]
-  qrcodes               QRCode[]
-  categories            Category[]
-  chatPersona           ChatPersona?
-  bookings              Booking[]
-  spaces                Space[]
-  timelineEvents        TimelineEvent[]
-  workSubmissions       WorkSubmission[]
-  familyProfiles        FamilyProfile[]
-  guestbookEntries      GuestbookEntry[]
-  clues                 Clue[]
-  certificates          Certificate[]
-  certificateTemplates  CertificateTemplate[]
-  certificateRules      CertificateRule[]
-  auditLogs             AuditLog[]
-  newsletters           NewsletterSubscription[]
-  donations             Donation[]
-  products              Product[]
-  orders                Order[]
-  dailyChallenges       DailyChallenge[]
-  scavengerHunts        ScavengerHunt[]
-  files                 File[]
-  floorPlans            FloorPlan[]
-  accessibilityRequests AccessibilityRequest[]
-  coupons               Coupon[]
-  curatorNotes          CuratorNote[]
-  npsResponses          NPSResponse[]
-  sponsorships          WorkSponsorship[]
-  sentimentAnalyses     SentimentAnalysis[]
-  inPersonServices      InPersonService[] // Serviços criados por este tenant (Master)
-  enabledServices       TenantInPersonService[] // Serviços que este tenant ativou (Qualquer museu)
-
-  // roadmap 2026
-  communityPosts CommunityPost[]
-  quizzes        Quiz[]
-  routes         Route[]
-
-  // Municipal Features Relations
-  publicNotices           PublicNotice[]
-  culturalProjects        CulturalProject[]
-  accessibilityExecutions AccessibilityExecution[]
-  accessibilityProviders  AccessibilityProvider[]
-  skins                   Skin[]
-  badgeRequests           BadgeRequest[]
-  characterBases          CharacterBase[]
-  equipamentos            EquipamentoCultural[]
-  vestigeAlerts           VestigeAlert[]
-  theaterMembers          TheaterMember[]
-
-  // Roteiro Cultural
-  serviceProviders ServiceProvider[]
-  ProviderProduct  ProviderProduct[]
-  B2BBundle        B2BBundle[]
-
-  @@index([parentId])
+  @@index([projectId])
+  @@index([providerId])
+  @@index([tenantId, status])
 }
 
-model TheaterSeatReservation {
-  id      String @id @default(uuid())
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+model AccessibilityProvider {
+  id                     String                     @id
+  name                   String
+  document               String?
+  email                  String?
+  phone                  String?
+  description            String?
+  services               AccessibilityServiceType[]
+  rating                 Float?
+  completedJobs          Int                        @default(0)
+  active                 Boolean                    @default(true)
+  verifiedAt             DateTime?
+  tenantId               String?
+  userId                 String?                    @unique
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime
+  asaasWalletId          String?
+  stripeConnectId        String?                    @unique
+  stripeCustomerId       String?                    @unique
+  subscriptionStatus     String                     @default("INACTIVE")
+  AccessibilityExecution AccessibilityExecution[]
+  Tenant                 Tenant?                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  User                   User?                      @relation(fields: [userId], references: [id])
+  Conversation           Conversation[]
 
-  seatId String // Format: "row-num" e.g., "A-1"
-  status String @default("RESERVED") // RESERVED, SOLD, BLOCKED
-
-  visitorId String?
-  visitor   Visitor? @relation(fields: [visitorId], references: [id])
-
-  ticketId String?
-  ticket   Ticket? @relation(fields: [ticketId], references: [id])
-
-  expiresAt DateTime? // For temporary cart reservations
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@unique([eventId, seatId])
-  @@index([eventId])
-}
-
-model EquipamentoCultural {
-  id       String @id @default(cuid())
-  tenantId String
-
-  // Identidade
-  nome      String
-  slug      String  @unique // ex: 'casa-da-cultura-betim'
-  tipo      String // museu|teatro|biblioteca|centro_cultural|galeria|arquivo|outdoor
-  descricao String? @db.Text
-  missao    String? @db.Text // 'Sobre este espaco'
-
-  // Localizacao fisica
-  endereco          String
-  cidade            String
-  estado            String @default("MG")
-  lat               Float? // coordenadas GPS
-  lng               Float?
-  raioCheckinMetros Int    @default(50) // raio valido para check-in GPS
-
-  // Identidade visual
-  fotoCapaUrl     String?
-  fotoGaleriaUrls String[] // ate 8 fotos do espaco
-  corPrimaria     String? // hex — white label por espaco
-  logoUrl         String?
-
-  // Acesso fisico e digital
-  qrCodeEntrada String  @unique @default(cuid())
-  qrCodeUrl     String? // URL da imagem do QR para impressao
-  urlPublica    String? // ex: culturaviva.betim.mg.gov.br/casa-da-cultura
-
-  // Funcionamento
-  horarios Json? // { seg:'9-17', ter:'9-17', sab:'9-13', dom:null }
-  telefone String?
-  email    String?
-  site     String?
-
-  // Acessibilidade
-  acessivelCadeira Boolean @default(false)
-  acessivelLibras  Boolean @default(false)
-  acessivelAudio   Boolean @default(false)
-
-  // Plano e limites (por equipamento)
-  planId    String?
-  maxWorks  Int     @default(50)
-  maxTrails Int     @default(10)
-  maxEvents Int     @default(20)
-  ativo     Boolean @default(true)
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relacoes
-  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  spaces    Space[]
-  works     Work[]
-  trails    Trail[]
-  events    Event[]
-  checkins  EquipamentoCheckin[]
-  plantaUrl String? // imagem da planta baixa
-
+  @@index([active])
   @@index([tenantId])
 }
 
-model EquipamentoCheckin {
-  id            String   @id @default(cuid())
-  equipamentoId String
-  visitorId     String
-  method        String // 'qr_entrada' | 'gps' | 'manual'
-  lat           Float?
-  lng           Float?
-  xpGanho       Int      @default(20)
-  createdAt     DateTime @default(now())
+model AccessibilityRequest {
+  id          String   @id
+  type        String
+  status      String   @default("PENDING")
+  notes       String?
+  masterNotes String?
+  workId      String
+  tenantId    String
+  requestedBy String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  Tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Work        Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
 
-  equipamento EquipamentoCultural @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
-  visitor     Visitor             @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  @@unique([equipamentoId, visitorId, createdAt]) // permite revisitas
-}
-
-model User {
-  id       String  @id @default(uuid())
-  email    String  @unique
-  password String
-  name     String
-  role     Role
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  permissions Json? // Granular flags: { manage_works: boolean, manage_events: boolean, etc }
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  active    Boolean   @default(true)
-  lastLogin DateTime?
-
-  termsAcceptedAt DateTime? // Data de aceite dos termos
-  termsAcceptedIp String? // IP do aceite
-
-  bookings     Booking[]
-  deviceTokens DeviceToken[]
-
-  // Producer Data
-  cpf           String?
-  phone         String?
-  bio           String?
-  website       String?
-  preferences   Json? // { emailNotifications: boolean, publicProfile: boolean, twoFactor: boolean, language: string }
-  refreshTokens RefreshToken[]
-
-  // Stripe Data
-  stripeCustomerId String? @unique
-  stripeConnectId  String? @unique
-
-  // Enterprise Features
-  producerConversations Conversation[]         @relation("ProducerConversations")
-  producerEvents        Event[]                @relation("ProducerEvents")
-  providerProfile       AccessibilityProvider?
-  culturalProjects      CulturalProject[]
-  communityPosts        CommunityPost[]
-  workSubmissions       WorkSubmission[]
-
-  // Roteiro Cultural
-  providerBusinesses ServiceProvider[] @relation("ProviderOwner")
-}
-
-model RefreshToken {
-  id     String @id @default(uuid())
-  token  String @unique
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  revoked   Boolean  @default(false)
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Audit
-  ipAddress String?
-  userAgent String?
-
-  @@index([userId])
-}
-
-// File - Gerencia uploads no sistema
-model File {
-  id           String @id @default(uuid())
-  filename     String
-  originalName String
-  url          String
-  type         String // image, audio, video, document
-  mimeType     String
-  size         Int // bytes
-
-  // Onde o arquivo é usado
-  usedIn   String? // work, trail, event, tenant, etc
-  usedInId String? // ID do registro onde é usado
-
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  uploadedBy String? // userId
-
-  useInAi Boolean @default(false) // Arquivo deve ser usado como contexto na IA?
-
-  createdAt DateTime @default(now())
-
-  @@index([tenantId])
-  @@index([usedIn, usedInId])
-}
-
-model Category {
-  id          String       @id @default(uuid())
-  name        String
-  type        CategoryType
-  description String?
-  active      Boolean      @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  works  Work[]
-  trails Trail[]
-  events Event[]
-  spaces Space[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Work {
-  id     String  @id @default(uuid())
-  title  String
-  artist String?
-  year   String?
-
-  deletedAt DateTime?
-
-  categoryId String?
-  category   Category? @relation(fields: [categoryId], references: [id])
-
-  room        String?
-  floor       String?
-  description String?
-  imageUrl    String?
-  audioUrl    String?
-  librasUrl   String?
-  videoUrl    String?
-
-  // Art metadata (Phase 1 — Timeline & Comparator)
-  technique   String? // Ex: "Óleo sobre tela", "Escultura em bronze"
-  period      String? // Ex: "Barroco", "Modernismo", "Contemporâneo"
-  medium      String? // Ex: "Pintura", "Escultura", "Gravura"
-  dimensions  String? // Ex: "120x80cm"
-  yearNumeric Int? // Ano numérico para ordenação na timeline
-
-  // Geo-fencing
-  latitude  Float?
-  longitude Float?
-  radius    Int     @default(5) // metros
-  published Boolean @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
-  sealImageUrl  String? // Imagem do carimbo/selo para o passaporte (legado)
-
-  // === NOVO: Sistema de Vestígios ===
-  lat                  Float? // coordenada GPS da obra
-  lng                  Float? // coordenada GPS da obra
-  captureRadiusM       Int       @default(15) // raio de captura em metros
-  vestigeActive        Boolean   @default(false) // false = Relíquia (não capturável)
-  vestigeType          String    @default("WORK") // WORK | STREET_ART | INSTALLATION
-  vestigeExpiresAt     DateTime? // data de encerramento da exposição
-  vestigeTotalCapturas Int       @default(0) // contador global de capturas
-  vestigeImageUrl      String? // imagem do carimbo (diferente da imageUrl da obra)
-
-  metadata Json? // Usado para traduções e outros metadados flexíveis
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Notificações e Push
-  visits                VisitorVisit[]
-  stamps                PassportStamp[]
-  clues                 Clue[]
-  favorites             Favorite[]
-  reviews               Review[]
-  accessibilityRequests AccessibilityRequest[]
-  curatorNotes          CuratorNote[]
-  sponsorships          WorkSponsorship[]
-  collectibleCards      CollectibleCard[]
-
-  @@index([tenantId, categoryId])
-  @@index([tenantId, room])
-  @@index([tenantId, published])
-}
-
-model Trail {
-  id          String   @id @default(uuid())
-  title       String
-  description String?
-  duration    Int? // minutos
-  workIds     String[] // lista de IDs de obras na ordem
-
-  deletedAt DateTime?
-
-  // Media
-  imageUrl String?
-  audioUrl String? // Áudio-guia de introdução da trilha
-  videoUrl String? // Vídeo de apresentação da trilha
-
-  active Boolean @default(true)
-
-  categoryId String?
-  category   Category? @relation(fields: [categoryId], references: [id])
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
-  tipoPercurso  String               @default("indoor") // indoor | outdoor | hibrido
-
-  visits    VisitorVisit[]
-  favorites Favorite[]
-
-  ownerId String?
-  owner   Visitor? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([categoryId])
-}
-
-model Clue {
-  id     String  @id @default(uuid())
-  riddle String // Charada
-  answer String // Resposta esperada
-  order  Int     @default(0)
-  active Boolean @default(true)
-
-  workId String?
-  work   Work?   @relation(fields: [workId], references: [id], onDelete: Cascade) // Pista pode levar a uma obra
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model EventAttendance {
-  id          String   @id @default(uuid())
-  eventId     String
-  visitorId   String
-  checkInTime DateTime @default(now())
-  status      String   @default("PRESENT") // PRESENT, REGISTERED
-
-  event   Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  visitor Visitor @relation(fields: [visitorId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([eventId, visitorId])
-}
-
-// Update Event model to support Online Events
-enum EventType {
-  WORKSHOP
-  EXHIBITION
-  SHOW
-  LECTURE
-  OTHER
-}
-
-model Event {
-  id          String  @id @default(uuid())
-  title       String
-  description String?
-
-  deletedAt DateTime?
-
-  // Type & Workshop Logic
-  type       EventType @default(OTHER)
-  instructor String? // Name of the instructor/facilitator
-  materials  String? // List of materials needed/provided
-
-  // Format & Visibility
-  format     String  @default("PRESENTIAL") // PRESENTIAL, ONLINE, HYBRID
-  visibility String  @default("PUBLIC") // PUBLIC, PRIVATE
-  isOnline   Boolean @default(false) // Keep for backward compatibility or computed
-
-  // Date & Time
-  startDate    DateTime
-  endDate      DateTime?
-  // Link to generated event
-  eventId      String?   @unique
-  originEvent  Event?    @relation("EventDerivation", fields: [eventId], references: [id])
-  derivedEvent Event?    @relation("EventDerivation")
-
-  // Location (Presential)
-  location     String? // Name of the place e.g. "Sítio Terra Prometida"
-  zipCode      String?
-  address      String?
-  number       String?
-  complement   String?
-  neighborhood String?
-  city         String?
-  state        String?
-
-  // Online
-  meetingLink String? // Zoom, Meet, etc.
-  platform    String? // ZOOM, YOUTUBE, MEET, OTHER
-
-  // Producer Info
-  producerName        String?
-  producerDescription String?
-  producerLogoUrl     String?
-  coverImageUrl       String?
-  coverUrl            String? // Alias for cover image (used in projects-\u003eevents)
-
-  producerId String?
-  producer   User?   @relation("ProducerEvents", fields: [producerId], references: [id])
-
-  // Certificate Settings
-  certificateBackgroundUrl String?
-  certificateText          String?
-  minMinutesForCertificate Int?
-
-  // Media
-  audioUrl String? // Áudio-guia de introdução do evento
-  videoUrl String? // Vídeo promocional do evento
-
-  views  Int    @default(0)
-  status String @default("DRAFT") // DRAFT, PUBLISHED, CANCELED, FINISHED
-
-  // Sympla Killer Features 🚀
-  customFormSchema Json? // Array of { id, label, type, required, options }
-  galleryUrls      String? // JSON array of strings (store as string for SQLite compat or Json if Postgres supports)
-  // Note: Using Json type is better if DB supports it. Prisma supports Json for SQLite.
-
-  categoryId String?
-  category   Category? @relation(fields: [categoryId], references: [id])
-
-  spaceId String?
-  space   Space?  @relation(fields: [spaceId], references: [id])
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
-
-  visits                    VisitorVisit[]
-  attendances               EventAttendance[]
-  tickets                   Ticket[]
-  bookings                  Booking[]
-  registrations             Registration[]
-  reviews                   Review[]
-  favorites                 Favorite[]
-  surveyQuestions           SurveyQuestion[]
-  certificateRequiresSurvey Boolean           @default(false)
-
-  isTheaterSession Boolean                  @default(false)
-  seatReservations TheaterSeatReservation[]
-  theaterCues      TheaterCue[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, startDate])
-}
-
-// ========== SURVEY / SATISFACTION POLL ==========
-
-enum SurveyQuestionType {
-  STARS // 1-5 stars rating
-  TEXT // Free text answer
-  CHOICE // Multiple choice (radio)
-  NPS // Net Promoter Score (0-10)
-}
-
-model SurveyQuestion {
-  id       String             @id @default(uuid())
-  eventId  String
-  question String
-  type     SurveyQuestionType @default(STARS)
-  options  Json? // Array of strings for CHOICE type
-  required Boolean            @default(true)
-  order    Int                @default(0)
-
-  event     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  responses SurveyResponse[]
-
-  createdAt DateTime @default(now())
-
-  @@index([eventId])
-}
-
-model SurveyResponse {
-  id         String  @id @default(uuid())
-  questionId String
-  visitorId  String?
-  guestEmail String?
-  answer     String // Text, number (1-5 or 0-10), or selected option
-
-  question SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([questionId, visitorId])
-  @@unique([questionId, guestEmail])
-  @@index([questionId])
-}
-
-enum TicketType {
-  FREE
-  PAID
-}
-
-enum TicketStatus {
-  ACTIVE
-  PAUSED
-  SOLD_OUT
-  EXPIRED
-}
-
-model Ticket {
-  id             String       @id @default(uuid())
-  eventId        String
-  name           String
-  description    String?
-  type           TicketType   @default(FREE)
-  price          Decimal      @default(0.0) @db.Decimal(10, 2) // 10.00
-  quantity       Int // Total available
-  sold           Int          @default(0) // Track sold count
-  absorbFee      Boolean      @default(false)
-  minBuy         Int          @default(1)
-  maxBuy         Int          @default(5)
-  salesStartDate DateTime?
-  salesEndDate   DateTime?
-  status         TicketStatus @default(ACTIVE)
-
-  event                   Event                    @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  registrations           Registration[]
-  theaterSeatReservations TheaterSeatReservation[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-enum RegistrationStatus {
-  PENDING
-  CONFIRMED
-  CANCELED
-  CHECKED_IN
-}
-
-model Registration {
-  id        String  @id @default(uuid())
-  code      String  @unique // Unique booking code e.g. "ABC-123"
-  eventId   String
-  ticketId  String
-  visitorId String? // If linked to a known visitor
-
-  // Guest Data (if not a registered visitor yet)
-  guestName  String
-  guestEmail String
-
-  status                RegistrationStatus @default(PENDING)
-  checkInDate           DateTime?
-  pricePaid             Decimal            @default(0.0)
-  platformFee           Decimal?           @db.Decimal(10, 2)
-  asaasPaymentId        String?
-  asaasPaymentStatus    String?
-  stripePaymentIntentId String?            @unique
-
-  // Sympla Killer Features 🚀
-  customFormData Json? // { questionId: answer }
-
-  // Relations
-  event   Event    @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  ticket  Ticket   @relation(fields: [ticketId], references: [id])
-  visitor Visitor? @relation(fields: [visitorId], references: [id])
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([eventId])
-  @@index([visitorId])
-  @@index([asaasPaymentId])
   @@index([status])
-}
-
-model Visitor {
-  id       String  @id @default(uuid())
-  name     String?
-  email    String?
-  age      Int?
-  photoUrl String?
-  xp       Int     @default(0)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  isFake    Boolean @default(false)
-  isTeacher Boolean @default(false)
-
-  visits                  VisitorVisit[]
-  achievements            VisitorAchievement[]
-  stamps                  PassportStamp[]
-  attendances             EventAttendance[]
-  guestbookEntries        GuestbookEntry[]
-  certificates            Certificate[]
-  registrations           Registration[]
-  favorites               Favorite[]
-  reviews                 Review[]
-  notificationPreference  NotificationPreference?
-  orders                  Order[]
-  challengeCompletions    DailyChallengeCompletion[]
-  huntParticipations      ScavengerHuntParticipation[]
-  deviceTokens            DeviceToken[]
-  coupons                 VisitorCoupon[]
-  vRPGs                   VisitorRPG[]
-  vSkins                  VisitorSkin[]
-  badgeRequests           BadgeRequest[]
-  equipamentoCheckins     EquipamentoCheckin[]
-  trails                  Trail[]
-  avatarCaches            VisitorAvatarCache[]
-  theaterSeatReservations TheaterSeatReservation[]
-
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  ProviderReview   ProviderReview[]
-  CulturalPassport CulturalPassport?
-
-  @@unique([email, tenantId])
-  @@index([tenantId, xp])
-}
-
-model VisitorVisit {
-  id        String  @id @default(uuid())
-  visitorId String
-  workId    String?
-  trailId   String?
-  eventId   String?
-  source    String? // "QR" | "APP"
-  xpGained  Int     @default(0)
-
-  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  work    Work?   @relation(fields: [workId], references: [id], onDelete: Cascade)
-  trail   Trail?  @relation(fields: [trailId], references: [id], onDelete: Cascade)
-  event   Event?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@index([visitorId])
-  @@index([workId])
-  @@index([eventId])
-  @@index([trailId])
   @@index([tenantId])
-  @@index([createdAt]) // For date range queries
 }
 
 model Achievement {
-  id          String  @id @default(uuid())
-  code        String  @unique
-  title       String
-  description String?
-  xpReward    Int     @default(100)
-  iconUrl     String?
-  condition   String?
-  autoTrigger Boolean @default(false)
-  active      Boolean @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  visitors VisitorAchievement[]
+  id                 String               @id
+  code               String               @unique
+  title              String
+  description        String?
+  xpReward           Int                  @default(100)
+  iconUrl            String?
+  condition          String?
+  autoTrigger        Boolean              @default(false)
+  active             Boolean              @default(true)
+  tenantId           String
+  Tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  VisitorAchievement VisitorAchievement[]
 }
 
-model VisitorAchievement {
-  id            String   @id @default(uuid())
-  visitorId     String
-  achievementId String
-  unlockedAt    DateTime @default(now())
-
-  visitor     Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
-}
-
-model PassportStamp {
-  id        String @id @default(uuid())
-  visitorId String
-  workId    String
-
-  // Metadados da Conquista
-  raridade      String // PIONEER | RARE | EPIC | LEGENDARY | RELIC
-  numeroCaptura Int // qual o numero desta captura global (ex: 42 de 500)
-  xpGanho       Int    @default(50)
-
-  // Localizacao da Captura (para prova de presenca)
-  latCaptura     Float?
-  lngCaptura     Float?
-  accuracyMetros Float?
-
-  // Status de Reliquia
-  isRelic      Boolean   @default(false)
-  convertidoEm DateTime? // data que virou reliquia (exposicao acabou)
-
-  stampedAt DateTime @default(now())
-
-  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  work    Work    @relation(fields: [workId], references: [id], onDelete: Cascade)
-
-  @@unique([visitorId, workId]) // um vestigio por obra por visitante
-  @@index([visitorId])
-  @@index([workId])
-}
-
-// Alertas urgentes ou novidades globais da cidade/museu
-model VestigeAlert {
-  id        String    @id @default(uuid())
-  tenantId  String
-  titulo    String
-  mensagem  String
-  tipo      String    @default("URGENTE") // URGENTE | NOVIDADE | EXPIRANDO
-  link      String? // rota interna do pwa (ex: /vestiges/42)
-  expiresAt DateTime?
-
-  createdAt DateTime @default(now())
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-}
-
-model QRCode {
-  id          String  @id @default(uuid())
-  code        String  @unique
-  type        QRType
-  referenceId String?
-  title       String
-  xpReward    Int     @default(5)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-}
-
-model ChatPersona {
-  id                String   @id @default(uuid())
-  tenantId          String   @unique
-  systemPrompt      String
-  tone              String?  @default("formal-educativo")
-  style             String?  @default("historico-cultural")
-  historicalContext String?
-  references        String[]
-  temperature       Float?   @default(0.7)
-  maxTokens         Int?     @default(500)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-}
-
-model Booking {
-  id       String   @id @default(uuid())
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenantId String
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  date     DateTime
-
-  // Space Management
-  spaceId   String?
-  space     Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  startTime DateTime?
-  endTime   DateTime?
-  purpose   String?
-
-  status    String   @default("CONFIRMED") // CONFIRMED, CANCELLED, PENDING
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Novas adições para Serviços Presenciais e Agendamentos
-  inPersonServiceId String?
-  inPersonService   InPersonService? @relation(fields: [inPersonServiceId], references: [id])
-
-  // Roteiro Cultural: Marketplace de Serviços (Guias, Hotéis)
-  serviceProviderId String?
-  serviceProvider   ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
-  participants      Int?
-  eventId           String?
-  event             Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId, date])
-  @@index([spaceId, date])
-  @@index([inPersonServiceId])
-  @@index([eventId])
-}
-
-model Space {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  capacity    Int     @default(10)
-  type        String  @default("ROOM") // ROOM, AUDITORIUM, LAB, STUDIO
-  resources   Json? // Array of strings e.g. ["Projector", "WiFi", "AC"]
-  isBookable  Boolean @default(true)
-  imageUrl    String?
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  equipamentoId String?
-  equipamento   EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
-
-  bookings Booking[]
-  events   Event[]
-
-  timelineEvents  TimelineEvent[]
-  workSubmissions WorkSubmission[]
-  familyProfiles  FamilyProfile[]
-
-  categoryId String?
-  category   Category? @relation(fields: [categoryId], references: [id])
-
-  theaterLayout Json? // { rows: [{ name: 'A', seats: 10, type: 'VIP' }, ...] }
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-model InPersonService {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  active      Boolean @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  bookings  Booking[]
-  enabledBy TenantInPersonService[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-model TenantInPersonService {
-  id     String  @id @default(uuid())
-  active Boolean @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  inPersonServiceId String
-  inPersonService   InPersonService @relation(fields: [inPersonServiceId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, inPersonServiceId])
-  @@index([tenantId])
-  @@index([inPersonServiceId])
-}
-
-model GuestbookEntry {
-  id        String  @id @default(uuid())
-  message   String
-  isVisible Boolean @default(true)
-
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id])
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-}
-
-model Certificate {
-  id          String            @id @default(uuid())
-  code        String            @unique
-  visitorId   String
-  tenantId    String
-  type        CertificateType
-  relatedId   String?
-  generatedAt DateTime          @default(now())
-  status      CertificateStatus @default(VALID)
-  metadata    Json?
-
-  visitor Visitor @relation(fields: [visitorId], references: [id])
-  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  templateId String?
-  template   CertificateTemplate? @relation(fields: [templateId], references: [id])
-}
-
-model CertificateTemplate {
-  id            String  @id @default(uuid())
-  name          String
-  backgroundUrl String?
-  elements      Json // Array of { field, x, y, style }
-  dimensions    Json? // { width, height }
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  certificates Certificate[]
-  rules        CertificateRule[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CertificateRule {
-  id          String      @id @default(uuid())
-  name        String
-  triggerType TriggerType
-  conditions  Json // Logic for trigger
-  active      Boolean     @default(true)
-
-  actionTemplateId String
-  actionTemplate   CertificateTemplate @relation(fields: [actionTemplateId], references: [id])
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// ========== NEW MODELS FOR WORLD-CLASS FEATURES ==========
-
-// Favorites - Save works to personal collection
-model Favorite {
-  id String @id @default(uuid())
-
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  workId String?
-  work   Work?   @relation(fields: [workId], references: [id], onDelete: Cascade)
-
-  trailId String?
-  trail   Trail?  @relation(fields: [trailId], references: [id], onDelete: Cascade)
-
-  eventId String?
-  event   Event?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([visitorId, workId])
-  @@unique([visitorId, trailId])
-  @@unique([visitorId, eventId])
-  @@index([workId]) // D-001 Reverse lookup
-}
-
-// Reviews - Star ratings and comments
-model Review {
-  id String @id @default(uuid())
-
-  rating  Int // 1-5 stars
-  comment String?
-
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  workId String?
-  work   Work?   @relation(fields: [workId], references: [id], onDelete: Cascade)
-
-  eventId String?
-  event   Event?  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  approved Boolean @default(false) // Moderation
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([visitorId, workId])
-  @@unique([visitorId, eventId])
-  @@index([workId]) // D-002 Sorting reviews by work
-  @@index([eventId])
-}
-
-// Audit Log - Track admin actions
 model AuditLog {
-  id String @id @default(uuid())
-
-  action   String // CREATE, UPDATE, DELETE, LOGIN, etc.
-  entity   String // Work, Event, Visitor, etc.
-  entityId String?
-
+  id        String   @id
+  action    String
+  entity    String
+  entityId  String?
   userId    String?
   userEmail String?
-
-  oldData Json?
-  newData Json?
-
+  oldData   Json?
+  newData   Json?
   ipAddress String?
   userAgent String?
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-}
-
-// Newsletter Subscription
-model NewsletterSubscription {
-  id     String  @id @default(uuid())
-  email  String
-  name   String?
-  active Boolean @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@unique([email, tenantId])
-}
-
-// Donation
-model Donation {
-  id String @id @default(uuid())
-
-  amount      Decimal  @db.Decimal(10, 2)
-  platformFee Decimal? @db.Decimal(10, 2)
-  currency    String   @default("BRL")
-
-  donorName  String?
-  donorEmail String?
-  message    String?
-  anonymous  Boolean @default(false)
-
-  status                String  @default("PENDING") // PENDING, COMPLETED, FAILED
-  paymentId             String? // Legacy Asaas ID
-  stripePaymentIntentId String? @unique
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-}
-
-// Notification Preferences
-model NotificationPreference {
-  id String @id @default(uuid())
-
-  visitorId String  @unique
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  emailEvents       Boolean @default(true)
-  emailNewsletter   Boolean @default(true)
-  pushNotifications Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// ========== E-COMMERCE MODULE ==========
-
-// Product - Museum shop items
-model Product {
-  id String @id @default(uuid())
-
-  name        String
-  description String?
-  price       Decimal @db.Decimal(10, 2)
-  sku         String?
-  imageUrl    String?
-  stock       Int     @default(0)
-  active      Boolean @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  orderItems OrderItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([sku, tenantId])
-}
-
-// Contact Requests (Landing Page)
-model ContactRequest {
-  id      String  @id @default(uuid())
-  name    String
-  email   String
-  subject String?
-  message String
-  status  String  @default("NEW") // NEW, READ, ARCHIVED, REPLIED
-
-  tenantId String? // Optional, if related to a specific tenant/project
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// Order - Shop purchases
-model Order {
-  id String @id @default(uuid())
-
-  status      String   @default("PENDING") // PENDING, PAID, SHIPPED, DELIVERED, CANCELLED
-  total       Decimal  @db.Decimal(10, 2)
-  platformFee Decimal? @db.Decimal(10, 2)
-
-  // Customer info
-  customerName  String
-  customerEmail String
-  customerPhone String?
-
-  // Shipping
-  shippingAddress String?
-  shippingMethod  String?
-  shippingCost    Decimal? @db.Decimal(10, 2)
-
-  // Payment
-  paymentMethod         String?
-  paymentId             String? // Legacy Asaas ID
-  stripePaymentIntentId String? @unique
-  invoiceUrl            String?
-  bankSlipUrl           String?
-  pixQrCode             String? // Base64 image
-  pixPayload            String? // Copy and paste code
-
-  visitorId String?
-  visitor   Visitor? @relation(fields: [visitorId], references: [id])
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-
-  items OrderItem[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([visitorId])
-  @@index([status])
-}
-
-model OrderItem {
-  id String @id @default(uuid())
-
-  quantity  Int
-  unitPrice Decimal @db.Decimal(10, 2)
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-}
-
-// ========== ADVANCED GAMIFICATION ==========
-
-// Daily Challenge
-model DailyChallenge {
-  id String @id @default(uuid())
-
-  title       String
-  description String
-  xpReward    Int    @default(50)
-
-  type       String // VISIT_WORK, ANSWER_QUIZ, SHARE_SOCIAL, etc.
-  target     Int    @default(1) // How many times to complete
-  conditions Json? // Additional conditions
-
-  activeDate DateTime // The day this challenge is active
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  completions DailyChallengeCompletion[]
-
-  createdAt DateTime @default(now())
-}
-
-model DailyChallengeCompletion {
-  id String @id @default(uuid())
-
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  challengeId String
-  challenge   DailyChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
-
-  progress  Int     @default(0)
-  completed Boolean @default(false)
-
-  createdAt DateTime @default(now())
-
-  @@unique([visitorId, challengeId])
-}
-
-// Scavenger Hunt - Treasure hunt game
-model ScavengerHunt {
-  id String @id @default(uuid())
-
-  title       String
-  description String?
-
-  xpReward    Int     @default(200)
-  badgeReward String? // Achievement code to unlock
-
-  active   Boolean   @default(true)
-  startsAt DateTime?
-  endsAt   DateTime?
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  steps        ScavengerHuntStep[]
-  participants ScavengerHuntParticipation[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model ScavengerHuntStep {
-  id String @id @default(uuid())
-
-  order  Int
-  clue   String // Hint to find the next step
-  answer String // Expected QR code or answer
-
-  huntId String
-  hunt   ScavengerHunt @relation(fields: [huntId], references: [id], onDelete: Cascade)
-
-  workId String? // Optional: step is at this work
-}
-
-model ScavengerHuntParticipation {
-  id String @id @default(uuid())
-
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  huntId String
-  hunt   ScavengerHunt @relation(fields: [huntId], references: [id], onDelete: Cascade)
-
-  currentStep Int       @default(0)
-  completed   Boolean   @default(false)
-  completedAt DateTime?
-
-  createdAt DateTime @default(now())
-
-  @@unique([visitorId, huntId])
-}
-
-// ========== FLOOR PLANS (MULTI-FLOOR MAPS) ==========
-
-model FloorPlan {
-  id       String @id @default(uuid())
-  name     String // "Térreo", "1º Andar", etc
-  floor    Int    @default(0) // 0 = térreo, 1, 2, etc
-  imageUrl String
-  order    Int    @default(0) // Ordem de exibição no seletor
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, order])
-}
-
-// ========== SERVICES REQUESTS ==========
-
-model AccessibilityRequest {
-  id String @id @default(uuid())
-
-  type   String // "LIBRAS", "AUDIO_DESC", "BOTH"
-  status String @default("PENDING") // PENDING, PROCESSING, COMPLETED, REJECTED
-
-  notes       String? // Admin notes
-  masterNotes String? // Master response/notes
-
-  workId String
-  work   Work   @relation(fields: [workId], references: [id], onDelete: Cascade)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  requestedBy String? // User ID or Name/Email
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([status])
-}
-
-// Push Notification Device Tokens
-model DeviceToken {
-  id        String  @id @default(uuid())
-  token     String  @unique // FCM token
-  platform  String  @default("web") // web, android, ios
-  userAgent String?
-
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  visitorId String?
-  visitor   Visitor? @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  tenantId String?
-
-  active   Boolean  @default(true)
-  lastUsed DateTime @default(now())
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([visitorId])
-  @@index([active])
-}
-
-// ========== GESTÃO PÚBLICA CULTURAL ==========
-
-enum ProjectStatus {
-  DRAFT
-  SUBMITTED
-  UNDER_REVIEW
-  APPROVED
-  REJECTED
-  IN_EXECUTION
-  COMPLETED
-  CANCELED
-}
-
-enum NoticeStatus {
-  DRAFT
-  PUBLISHED
-  INSCRIPTIONS_OPEN
-  INSCRIPTIONS_CLOSED
-  EVALUATION
-  RESULTS_PUBLISHED
-  FINISHED
-}
-
-enum AccessibilityServiceType {
-  LIBRAS_INTERPRETATION
-  AUDIO_DESCRIPTION
-  CAPTIONING
-  BRAILLE
-  TACTILE_MODEL
-  EASY_READING
-  OTHER
-}
-
-// Edital Público
-model PublicNotice {
-  id           String  @id @default(uuid())
-  title        String
-  description  String?
-  objectives   String?
-  requirements String?
-
-  // Datas
-  publishDate      DateTime?
-  inscriptionStart DateTime
-  inscriptionEnd   DateTime
-  evaluationEnd    DateTime?
-  resultsDate      DateTime?
-  executionEnd     DateTime?
-
-  // Valores
-  totalBudget   Decimal? @db.Decimal(12, 2)
-  maxPerProject Decimal? @db.Decimal(10, 2)
-  minPerProject Decimal? @db.Decimal(10, 2)
-
-  // Categorização
-  culturalCategories String[]
-  targetRegions      String[]
-
-  status      NoticeStatus @default(DRAFT)
-  documentUrl String?
-  attachments Json?
-
-  requiresAccessibilityPlan Boolean @default(true)
-  showScoresInResults       Boolean @default(true)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  projects CulturalProject[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, status])
-  @@index([inscriptionEnd])
-}
-
-// Projeto Cultural
-model CulturalProject {
-  id            String  @id @default(uuid())
-  title         String
-  summary       String?
-  description   String?
-  justification String?
-
-  // Categorização
-  culturalCategory String?
-  targetRegion     String?
-  targetAudience   String?
-
-  // Cronograma
-  startDate DateTime?
-  endDate   DateTime?
-
-  // Financeiro
-  requestedBudget Decimal? @db.Decimal(10, 2)
-  approvedBudget  Decimal? @db.Decimal(10, 2)
-
-  // Metas
-  expectedAudience Int?
-  actualAudience   Int?
-
-  status ProjectStatus @default(DRAFT)
-
-  // Documentos
-  proposalUrl String?
-  attachments Json?
-
-  // Plano de Acessibilidade
-  accessibilityPlan Json?
-
-  // Análise IA
-  aiAnalysis   Json?
-  aiAnalyzedAt DateTime?
-
-  // Avaliação (Secretaria/Admin)
-  reviewNotes String?
-  reviewedBy  String?
-  reviewedAt  DateTime?
-  humanScore  Float?
-  finalScore  Float?
-
-  // Vínculos
-  noticeId String?
-  notice   PublicNotice? @relation(fields: [noticeId], references: [id])
-
-  proponentId String
-  proponent   User   @relation(fields: [proponentId], references: [id])
-
-  // Evento gerado a partir deste projeto (quando publicado na Agenda)
-  eventId String?
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  accessibilityExecutions AccessibilityExecution[]
-
-  // NF fields
-  notaFiscalUrl    String?
-  notaFiscalNumber String?
-  notaFiscalDate   DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, status])
-  @@index([noticeId])
-  @@index([proponentId])
-}
-
-// Execução de Acessibilidade
-model AccessibilityExecution {
-  id String @id @default(uuid())
-
-  serviceType AccessibilityServiceType
-
-  // Solicitação
-  requestedAt  DateTime @default(now())
-  requestedBy  String?
-  requestNotes String?
-
-  // Aprovação
-  approvedAt     DateTime?
-  approvedBy     String?
-  approvedBudget Decimal?  @db.Decimal(8, 2)
-
-  // Execução
-  providerId String?
-  provider   AccessibilityProvider? @relation(fields: [providerId], references: [id])
-
-  executedAt     DateTime?
-  executionNotes String?
-  deliverables   Json?
-
-  // Validação
-  validatedAt      DateTime?
-  validatedBy      String?
-  validationStatus String?
-  validationNotes  String?
-
-  status                String  @default("PENDING")
-  stripePaymentIntentId String? @unique
-
-  notaFiscalUrl     String?
-  notaFiscalNumber  String?
-  notaFiscalDate    DateTime?
-  paymentReceiptUrl String?
-
-  // Vínculos
-  projectId String?
-  project   CulturalProject? @relation(fields: [projectId], references: [id])
-
-  eventId String?
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, status])
-  @@index([projectId])
-  @@index([providerId])
-}
-
-// Prestador de Acessibilidade
-model AccessibilityProvider {
-  id String @id @default(uuid())
-
-  name        String
-  document    String?
-  email       String?
-  phone       String?
-  description String?
-
-  services AccessibilityServiceType[]
-
-  rating        Float?
-  completedJobs Int       @default(0)
-  active        Boolean   @default(true)
-  verifiedAt    DateTime?
-
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  executions    AccessibilityExecution[]
-  conversations Conversation[]
-
-  // Link to Platform User (Login)
-  userId String? @unique
-  user   User?   @relation(fields: [userId], references: [id])
-
-  // Financial Data (for Splits)
-  asaasWalletId      String? // ID da Carteira Asaas do Prestador (Legacy)
-  stripeCustomerId   String? @unique
-  stripeConnectId    String? @unique
-  subscriptionStatus String  @default("INACTIVE") // INACTIVE, ACTIVE, PAST_DUE, CANCELED
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([active])
-  @@index([tenantId])
-}
-
-// ========== INBOX & NEGOTIATION SYSTEM ==========
-
-model Conversation {
-  id String @id @default(uuid())
-
-  producerId String
-  producer   User   @relation("ProducerConversations", fields: [producerId], references: [id], onDelete: Cascade)
-
-  providerId String
-  provider   AccessibilityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
-
-  status String @default("OPEN") // OPEN, CLOSED, ARCHIVED
-
-  lastMessageAt DateTime @default(now())
-
-  messages     Message[]
-  transactions Transaction[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([producerId, providerId])
-  @@index([producerId])
-  @@index([providerId])
-}
-
-enum MessageType {
-  TEXT
-  PROPOSAL
-  PAYMENT_REQUEST
-  SYSTEM_ALERT
-}
-
-model Message {
-  id String @id @default(uuid())
-
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  senderId   String // User ID (could be Producer or Provider's User)
-  senderType String // "PRODUCER" or "PROVIDER" or "SYSTEM"
-
-  content     String
-  type        MessageType @default(TEXT)
-  attachments Json? // Array of file URLs
-
-  readAt DateTime?
-
-  createdAt DateTime @default(now())
-
-  @@index([conversationId])
-}
-
-// ========== ASAAS PAYMENT SYSTEM ==========
-
-enum TransactionStatus {
-  PENDING
-  PAID
-  FAILED
-  REFUNDED
-  RELEASED // Funds released to provider
-}
-
-model Transaction {
-  id String @id @default(uuid())
-
-  amount      Decimal           @db.Decimal(10, 2)
-  status      TransactionStatus @default(PENDING)
-  description String?
-
-  // Relations
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-
-  payerId String // User (Producer)
-  payeeId String // Provider ID
-
-  // Stripe Data
-  stripePaymentIntentId String? @unique
-
-  paidAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([conversationId])
-  @@index([payerId])
-  @@index([status])
-}
-
-// ========== GAMIFIED REWARDS (CROSS-SELLING) ==========
-
-enum DiscountType {
-  PERCENTAGE
-  FIXED
-}
-
-model Coupon {
-  id       String @id @default(uuid())
-  code     String @unique
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  discountType  DiscountType @default(PERCENTAGE)
-  discountValue Decimal      @db.Decimal(10, 2) // Ex: 10 para 10%, ou 15.00 para R$ 15,00
-
-  xpCost   Int? // Custo em XP para o visitante comprar esse cupom (se nulo, cupom normal)
-  isActive Boolean @default(true)
-
-  description String?
-
-  visitorCoupons VisitorCoupon[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-model VisitorCoupon {
-  id        String  @id @default(uuid())
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  couponId String
-  coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
-
-  redeemedAt DateTime  @default(now()) // Quando usou XP para adquirir (ou quando ganhou)
-  usedAt     DateTime? // Quando de fato aplicou numa compra na Loja
-
-  @@unique([visitorId, couponId])
-  @@index([visitorId])
-  @@index([couponId])
-}
-
-// ========== PHASE 1 — ANALYTICS & UX ==========
-
-// Curator Notes — Admin publishes contextual notes on works
-model CuratorNote {
-  id String @id @default(uuid())
-
-  content String // Texto da nota do curador
-  author  String? // Nome do curador
-  pinned  Boolean @default(false)
-
-  workId String
-  work   Work   @relation(fields: [workId], references: [id], onDelete: Cascade)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([workId])
-  @@index([tenantId])
-}
-
-// NPS — Net Promoter Score responses
-model NPSResponse {
-  id String @id @default(uuid())
-
-  score   Int // 0-10
-  comment String?
-
-  visitorId String?
-  email     String? // For anonymous NPS
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@index([tenantId])
-  @@index([createdAt])
-}
-
-// Sentiment Analysis — AI-generated insights from reviews
-model SentimentAnalysis {
-  id String @id @default(uuid())
-
-  sentiment  String // POSITIVE, NEGATIVE, NEUTRAL
-  confidence Float // 0.0 - 1.0
-  keywords   String[] // Ex: ["iluminação", "audiodescrição", "limpeza"]
-  summary    String? // AI-generated summary
-
-  reviewCount Int     @default(0)
-  period      String? // Ex: "2026-03", "2026-Q1"
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  generatedAt DateTime @default(now())
-
-  @@index([tenantId])
-}
-
-// Work Sponsorship — Companies/people sponsor a work
-model WorkSponsorship {
-  id String @id @default(uuid())
-
-  tier                 SponsorshipTier   @default(SHARED)
-  status               SponsorshipStatus @default(PENDING)
-  monthlyAmount        Decimal           @db.Decimal(10, 2)
-  platformFeePercent   Int               @default(15)
-  stripeSubscriptionId String?           @unique
-  stripeCustomerId     String?
-
-  sponsorName  String
-  sponsorCNPJ  String?
-  sponsorEmail String?
-  sponsorLogo  String?
-  sponsorUrl   String?
-  message      String?
-
-  active    Boolean   @default(true)
-  startDate DateTime  @default(now())
-  endDate   DateTime?
-
-  workId String
-  work   Work   @relation(fields: [workId], references: [id], onDelete: Cascade)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([workId])
-  @@index([tenantId])
-}
-
-enum SponsorshipTier {
-  EXCLUSIVE
-  SHARED
-}
-
-enum SponsorshipStatus {
-  PENDING
-  ACTIVE
-  CANCELLED
-  EXPIRED
-}
-
-// ========== PHASE 2 — EDUCATION & GROUPS ==========
-
-model TeacherProfile {
-  id String @id @default(uuid())
-
-  name    String
-  email   String
-  phone   String?
-  school  String // Nome da escola
-  city    String?
-  subject String? // Disciplina principal
-
-  tenantId String
-
-  schoolVisits SchoolVisit[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([email, tenantId])
-  @@index([tenantId])
-}
-
-model SchoolVisit {
-  id String @id @default(uuid())
-
-  teacherId String
-  teacher   TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-
-  schoolName   String
-  grade        String? // "6º ano", "Ensino Médio", etc
-  studentCount Int     @default(0)
-  ageGroup     String? // "6-8", "9-12", "13-17", "18+"
-
-  visitDate       DateTime
-  selectedWorkIds String[] // IDs das obras selecionadas pelo professor
-
-  notes  String? // Roteiro / observações pedagógicas
-  status String  @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
-
-  certificateIssued Boolean @default(false)
-
-  tenantId String
-
-  activities PostVisitActivity[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([teacherId])
-}
-
-model PostVisitActivity {
-  id String @id @default(uuid())
-
-  title       String
-  description String?
-  questions   Json? // Array of { question, type, options }
-  ageGroup    String? // "6-8", "9-12", "13-17", "18+"
-  workIds     String[] // Obras relacionadas
-
-  autoSend Boolean   @default(true)
-  sentAt   DateTime?
-
-  schoolVisitId String?
-  schoolVisit   SchoolVisit? @relation(fields: [schoolVisitId], references: [id])
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-
-  @@index([tenantId])
-}
-
-// ========== PHASE 3 — MONETIZATION ==========
-
-model TicketTransfer {
-  id String @id @default(uuid())
-
-  registrationId String
-
-  fromEmail String
-  toName    String
-  toEmail   String
-
-  newCode String @unique // Novo QR code
-
-  status String @default("PENDING") // PENDING, COMPLETED, REJECTED
-
-  transferredAt DateTime?
-  createdAt     DateTime  @default(now())
-
-  @@index([registrationId])
-}
-
-model MembershipPlan {
-  id String @id @default(uuid())
-
-  name        String // "Amigo do Museu", "Patrono", etc
-  description String?
-
-  monthlyPrice Decimal  @db.Decimal(10, 2)
-  yearlyPrice  Decimal? @db.Decimal(10, 2)
-
-  benefits     Json? // Array of strings
-  badgeCode    String? // Achievement code for members
-  shopDiscount Int? // % de desconto na loja
-
-  active Boolean @default(true)
-
-  tenantId String
-
-  memberships Membership[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-model Membership {
-  id String @id @default(uuid())
-
-  planId String
-  plan   MembershipPlan @relation(fields: [planId], references: [id])
-
-  visitorEmail String
-  visitorName  String
-
-  status String @default("ACTIVE") // ACTIVE, PAUSED, CANCELLED, EXPIRED
-
-  startDate   DateTime  @default(now())
-  renewDate   DateTime?
-  cancelledAt DateTime?
-
-  paymentId String?
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([visitorEmail])
-}
-
-// ========== PHASE 4 — MUNICIPAL ADVANCED ==========
-
-model Volunteer {
-  id String @id @default(uuid())
-
-  name         String
-  email        String
-  phone        String?
-  skills       String[]
-  availability String? // "manhã", "tarde", "integral"
-
-  status     String @default("ACTIVE") // ACTIVE, INACTIVE
-  totalHours Float  @default(0)
-
-  tenantId String
-
-  shifts VolunteerShift[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([email, tenantId])
-  @@index([tenantId])
-}
-
-model VolunteerShift {
-  id String @id @default(uuid())
-
-  volunteerId String
-  volunteer   Volunteer @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
-
-  date      DateTime
-  startTime String // "08:00"
-  endTime   String // "12:00"
-  hours     Float    @default(0)
-
-  activity  String? // Descrição da atividade
-  confirmed Boolean @default(false)
-
-  createdAt DateTime @default(now())
-
-  @@index([volunteerId])
-}
-
-model ConservationRecord {
-  id String @id @default(uuid())
-
-  workId String
-
-  type            String // "LIMPEZA", "RESTAURO", "FUMIGACAO", "VISTORIA"
-  description     String?
-  responsibleName String
-
-  condition   String? // "BOM", "REGULAR", "RUIM", "CRITICO"
-  notes       String?
-  attachments Json? // Array of file URLs (laudos PDF)
-
-  performedAt   DateTime  @default(now())
-  nextScheduled DateTime?
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-
-  @@index([workId])
-  @@index([tenantId])
-}
-
-model WorkLoan {
-  id String @id @default(uuid())
-
-  workId String
-
-  borrowerName    String // Instituição que recebeu
-  borrowerContact String?
-
-  purpose String? // "Exposição temporária", "Restauro externo"
-
-  departureDate  DateTime
-  expectedReturn DateTime?
-  actualReturn   DateTime?
-
-  status String @default("ACTIVE") // ACTIVE, RETURNED, OVERDUE
-
-  conditions    String? // Condições do empréstimo
-  insuranceInfo String?
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([workId])
-  @@index([tenantId])
-}
-
-model PPAGoal {
-  id String @id @default(uuid())
-
-  title       String
-  description String?
-  metric      String // "visitantes", "eventos", "projetos", etc
-
-  targetValue  Int
-  currentValue Int @default(0)
-
-  year    Int
-  quarter Int? // 1-4 (null = annual)
-
-  status String @default("IN_PROGRESS") // IN_PROGRESS, ACHIEVED, MISSED
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, year])
-}
-
-// ========== PHASE 5 — GAMIFICATION, AI & i18n ==========
-
-// Collectible Cards — digital trading cards for works
-model CollectibleCard {
-  id String @id @default(uuid())
-
-  title       String
-  description String?
-  imageUrl    String?
-  rarity      String  @default("COMMON") // COMMON, RARE, EPIC, LEGENDARY
-
-  workId String? // Linked to a work (optional)
-  work   Work?   @relation(fields: [workId], references: [id])
-
-  totalMinted Int @default(100)
-
-  xpReward Int @default(10)
-
-  tenantId String
-
-  owners VisitorCard[]
-
-  createdAt DateTime @default(now())
-
-  @@index([tenantId])
-  @@index([rarity])
-}
-
-// Visitor's card collection
-model VisitorCard {
-  id String @id @default(uuid())
-
-  cardId String
-  card   CollectibleCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
-
-  visitorId String
-
-  earnedAt DateTime @default(now())
-
-  @@unique([cardId, visitorId])
-  @@index([visitorId])
-}
-
-// Review Moderation — AI-powered review moderation
-model ReviewModeration {
-  id String @id @default(uuid())
-
-  reviewId String @unique
-
-  isApproved Boolean?
-  flagReason String? // "SPAM", "OFFENSIVE", "LOW_QUALITY", "OK"
-
-  aiScore  Float? // 0-1 confidence
-  aiReason String?
-
-  moderatedBy String? // null = AI, user id = human
-  moderatedAt DateTime?
-
-  createdAt DateTime @default(now())
-
-  @@index([reviewId])
-}
-
-// Work Translations — multi-language support for artwork
-model WorkTranslation {
-  id String @id @default(uuid())
-
-  workId String
-
-  language    String // "en", "es", "fr", "de", "ja", etc
-  title       String?
-  description String?
-  audioUrl    String? // TTS generated audio in target language
-
-  isAutoGenerated Boolean @default(true)
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([workId, language])
-  @@index([tenantId])
-}
-
-// Museum Battle — competitive rankings between museums
-model MuseumBattle {
-  id String @id @default(uuid())
-
-  month String // "2026-03"
-
-  tenantId String
-
-  totalVisitors Int   @default(0)
-  totalEvents   Int   @default(0)
-  totalReviews  Int   @default(0)
-  avgRating     Float @default(0)
-
-  score Int  @default(0) // Calculated composite score
-  rank  Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([tenantId, month])
-  @@index([month, score])
-}
-
-// ========== FINAL BATCH — Remaining Features ==========
-
-// Intangible Heritage — patrimônio imaterial
-model IntangibleHeritage {
-  id String @id @default(uuid())
-
-  title       String
-  description String?
-  category    String? // "FESTEJO", "SABER", "CELEBRACAO", "EXPRESSAO", "LUGAR"
-  status      String  @default("ATIVO") // ATIVO, EM_ESTUDO, REGISTRADO
-
-  imageUrl String?
-  videoUrl String?
-
-  holders String? // Detentores do saber
-  region  String?
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-// Social Check-in
-model SocialCheckin {
-  id String @id @default(uuid())
-
-  visitorId String
   tenantId  String
-
-  message String?
-  emoji   String? @default("🏛️")
-
   createdAt DateTime @default(now())
-
-  @@index([tenantId])
-  @@index([visitorId])
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
-// Group Ticket — checkout de grupo
-model GroupTicket {
-  id String @id @default(uuid())
-
-  groupName    String
-  totalTickets Int
-
-  contactName  String
-  contactEmail String
-  contactPhone String?
-
-  eventId String?
-
-  status     String @default("PENDING") // PENDING, CONFIRMED, CANCELED
-  totalPrice Float  @default(0)
-
-  tenantId String
-
-  createdAt DateTime @default(now())
-
-  @@index([tenantId])
-}
-
-// Base characters for visitors to choose from
-model CharacterBase {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  imageUrl    String
-  active      Boolean @default(true)
-  tenantId    String? // null = global character
-  tenant      Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  visitorRPGs VisitorRPG[]
-  skins       Skin[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-// Visitor RPG — simple character evolution
-model VisitorRPG {
-  id String @id @default(uuid())
-
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  characterName  String @default("Explorador")
-  characterClass String @default("NOVATO") // NOVATO, APRENDIZ, MESTRE, LENDA
-  level          Int    @default(1)
-  currentXp      Int    @default(0)
-  nextLevelXp    Int    @default(100)
-
-  totalVisits Int @default(0)
-  totalWorks  Int @default(0)
-  totalCards  Int @default(0)
-
-  avatarUrl String?
-  isActive  Boolean @default(false)
-
-  selectedCharacterId String?
-  selectedCharacter   CharacterBase? @relation(fields: [selectedCharacterId], references: [id])
-
-  equippedSkinId String?
-  equippedSkin   Skin?   @relation(fields: [equippedSkinId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // === NOVO: Sistema de Avatar com IA ===
-  selfieUrl         String? // URL da selfie original no R2
-  baseAvatarUrl     String? // URL do avatar cartoon gerado (sem skin)
-  avatarStatus      String    @default("NONE") // NONE, GENERATING, READY, ERROR
-  avatarGeneratedAt DateTime? // quando o avatar base ficou pronto
-
-  @@unique([visitorId, selectedCharacterId])
-  @@index([level])
-  @@index([visitorId])
-}
-
-// ========== ROADMAP MARÇO 2026 ==========
-
-model CommunityPost {
-  id         String  @id @default(uuid())
-  content    String
-  mediaUrl   String?
-  status     String  @default("PENDING") // PENDING, APPROVED, REJECTED
-  targetType String // "SPACE" | "WORK"
-  targetId   String
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, status])
-  @@index([targetId])
-}
-
-model Quiz {
-  id         String @id @default(uuid())
-  title      String
-  targetType String // "SPACE" | "WORK"
-  targetId   String
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  questions QuizQuestion[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-  @@index([targetId])
-}
-
-model QuizQuestion {
-  id           String @id @default(uuid())
-  quizId       String
-  quiz         Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  question     String
-  options      Json // Array of strings
-  correctIndex Int
-  xpReward     Int    @default(50)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model TimelineEvent {
-  id          String  @id @default(uuid())
-  spaceId     String
-  space       Space   @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  year        Int
-  title       String
-  description String?
-  imageUrl    String?
-  people      Json? // Array of objects { name, role }
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([spaceId, year])
-  @@index([tenantId])
-}
-
-model Route {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  imageUrl    String?
-
-  // Roteiro Cultural Gamificado e IA
-  isAIGenerated Boolean @default(false)
-  estimatedTime Int? // tempo estimado em minutos
-  difficulty    String? // EASY, MEDIUM, HARD
-  xpReward      Int     @default(50) // XP por completar o roteiro
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  stops RouteStop[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-model RouteStop {
-  id      String @id @default(uuid())
-  routeId String
-  route   Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
-  order   Int
-
-  // Can be a Space or a Work
-  targetType String
-  targetId   String
-
-  latitude  Float
-  longitude Float
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([routeId, order])
-}
-
-model WorkSubmission {
-  id          String  @id @default(uuid())
-  title       String
-  description String?
-  imageUrl    String?
-  status      String  @default("PENDING") // PENDING, APPROVED, REJECTED
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  spaceId String?
-  space   Space?  @relation(fields: [spaceId], references: [id])
-
-  reviewedBy String?
-  reviewedAt DateTime?
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId, status])
-}
-
-model FamilyProfile {
-  id            String  @id @default(uuid())
-  familyName    String
-  description   String?
-  coverImageUrl String?
-  audioUrl      String?
-
-  spaceId String? // Associated with a Cemetery/Space
-  space   Space?  @relation(fields: [spaceId], references: [id])
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  events FamilyEvent[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([tenantId])
-}
-
-model FamilyEvent {
-  id              String        @id @default(uuid())
-  familyProfileId String
-  familyProfile   FamilyProfile @relation(fields: [familyProfileId], references: [id], onDelete: Cascade)
-
-  year        Int
-  title       String
-  description String?
-  imageUrl    String?
-  type        String  @default("OTHER") // BIRTH, DEATH, MARRIAGE, ACHIEVEMENT, OTHER
-  people      Json? // Array of strings
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([familyProfileId, year])
-}
-
-// ========== SKINS & ENGAGEMENT ==========
-
-model Skin {
-  id              String         @id @default(uuid())
-  tenantId        String? // null = global skin (Master only)
-  tenant          Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name            String
-  description     String?
-  imageUrl        String
-  xpCost          Int
-  rarity          SkinRarity     @default(COMMON)
-  characterBaseId String?
-  characterBase   CharacterBase? @relation(fields: [characterBaseId], references: [id])
-
-  aiDescription String? @db.Text
-  aiPrompt      String? @db.Text
-
-  active       Boolean              @default(true)
-  eventOnly    Boolean              @default(false)
-  spaceId      String? // Vinculada a um espaço específico
-  createdAt    DateTime             @default(now())
-  owners       VisitorSkin[]
-  equipping    VisitorRPG[]
-  avatarCaches VisitorAvatarCache[]
-}
-
-model VisitorSkin {
-  id         String   @id @default(uuid())
-  visitorId  String
-  skinId     String
-  acquiredAt DateTime @default(now())
-  visitor    Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  skin       Skin     @relation(fields: [skinId], references: [id], onDelete: Cascade)
-
-  generatedAvatarUrl String? // ← NOVO: URL do avatar gerado com esta skin
-
-  @@unique([visitorId, skinId])
+model B2BBundle {
+  id                String          @id
+  name              String
+  description       String?
+  totalPrice        Decimal         @db.Decimal(10, 2)
+  primaryProviderId String
+  tenantId          String
+  active            Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  ServiceProvider   ServiceProvider @relation(fields: [primaryProviderId], references: [id], onDelete: Cascade)
+  Tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model BadgeRequest {
-  id            String      @id @default(uuid())
+  id            String      @id
   visitorId     String
   tenantId      String
-  level         Int // 1=Bronze, 2=Prata, 3=Ouro, 4=Platina
-  skinImageUrl  String // snapshot da skin no momento
+  level         Int
+  skinImageUrl  String
   xpAtRequest   Int
   status        BadgeStatus @default(PENDING)
   addressName   String
@@ -2876,67 +171,2149 @@ model BadgeRequest {
   approvedAt    DateTime?
   shippedAt     DateTime?
   deliveredAt   DateTime?
-  visitor       Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Visitor       Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
 }
 
-// NOVO: Cache de avatares gerados por IA por combinação visitante + skin
-model VisitorAvatarCache {
-  id        String  @id @default(uuid())
-  visitorId String
-  skinId    String? // null = avatar base sem skin
-  imageUrl  String // URL no R2 da imagem gerada
-  status    String  @default("GENERATING") // GENERATING, READY, ERROR
+model Booking {
+  id                String           @id
+  userId            String
+  tenantId          String
+  date              DateTime
+  spaceId           String?
+  startTime         DateTime?
+  endTime           DateTime?
+  purpose           String?
+  status            String           @default("CONFIRMED")
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime
+  eventId           String?
+  inPersonServiceId String?
+  participants      Int?
+  serviceProviderId String?
+  Event             Event?           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  InPersonService   InPersonService? @relation(fields: [inPersonServiceId], references: [id])
+  ServiceProvider   ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
+  Space             Space?           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  Tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  User              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  skin    Skin?   @relation(fields: [skinId], references: [id], onDelete: Cascade)
-
-  @@unique([visitorId, skinId])
+  @@index([eventId])
+  @@index([inPersonServiceId])
+  @@index([spaceId, date])
+  @@index([tenantId, date])
 }
 
-model TheaterMember {
-  id     String   @id @default(uuid())
-  name   String
-  role   String // e.g., "Ator Principal", "Diretor de Cena", "Iluminação"
-  status String   @default("READY") // READY, REHEARSING, AWAY
-  rating Int      @default(5)
-  tags   String[] // ["Barítono", "Drama"]
+model Category {
+  id          String       @id
+  name        String
+  type        CategoryType
+  description String?
+  active      Boolean      @default(true)
+  tenantId    String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime
+  Tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Event       Event[]
+  Space       Space[]
+  Trail       Trail[]
+  Work        Work[]
+}
 
-  phone String?
-  email String?
+model Certificate {
+  id                  String               @id
+  code                String               @unique
+  visitorId           String
+  tenantId            String
+  type                CertificateType
+  relatedId           String?
+  generatedAt         DateTime             @default(now())
+  status              CertificateStatus    @default(VALID)
+  metadata            Json?
+  templateId          String?
+  CertificateTemplate CertificateTemplate? @relation(fields: [templateId], references: [id])
+  Tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Visitor             Visitor              @relation(fields: [visitorId], references: [id])
+}
 
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+model CertificateRule {
+  id                  String              @id
+  name                String
+  triggerType         TriggerType
+  conditions          Json
+  active              Boolean             @default(true)
+  actionTemplateId    String
+  tenantId            String
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime
+  CertificateTemplate CertificateTemplate @relation(fields: [actionTemplateId], references: [id])
+  Tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model CertificateTemplate {
+  id              String            @id
+  name            String
+  backgroundUrl   String?
+  elements        Json
+  dimensions      Json?
+  tenantId        String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime
+  Certificate     Certificate[]
+  CertificateRule CertificateRule[]
+  Tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model CharacterBase {
+  id          String       @id
+  name        String
+  description String?
+  imageUrl    String
+  active      Boolean      @default(true)
+  tenantId    String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime
+  Tenant      Tenant?      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Skin        Skin[]
+  VisitorRPG  VisitorRPG[]
 
   @@index([tenantId])
 }
 
-model TheaterCue {
-  id      String @id @default(uuid())
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+model ChatPersona {
+  id                String   @id
+  tenantId          String   @unique
+  systemPrompt      String
+  tone              String?  @default("formal-educativo")
+  style             String?  @default("historico-cultural")
+  historicalContext String?
+  references        String[]
+  temperature       Float?   @default(0.7)
+  maxTokens         Int?     @default(500)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime
+  Tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
 
-  type  String // LIGHT, SOUND, CURTAIN, OTHER
-  label String
-  desc  String?
-  time  String // Format: "HH:mm:ss" relative to start
-  order Int     @default(0)
-
+model Clue {
+  id        String   @id
+  riddle    String
+  answer    String
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  workId    String?
+  tenantId  String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Work      Work?    @relation(fields: [workId], references: [id], onDelete: Cascade)
+}
+
+model CollectibleCard {
+  id          String        @id
+  title       String
+  description String?
+  imageUrl    String?
+  rarity      String        @default("COMMON")
+  workId      String?
+  totalMinted Int           @default(100)
+  xpReward    Int           @default(10)
+  tenantId    String
+  createdAt   DateTime      @default(now())
+  Work        Work?         @relation(fields: [workId], references: [id])
+  VisitorCard VisitorCard[]
+
+  @@index([rarity])
+  @@index([tenantId])
+}
+
+model CommunityPost {
+  id         String   @id
+  content    String
+  mediaUrl   String?
+  status     String   @default("PENDING")
+  targetType String
+  targetId   String
+  userId     String
+  tenantId   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+  Tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  User       User     @relation(fields: [userId], references: [id])
+
+  @@index([targetId])
+  @@index([tenantId, status])
+}
+
+model ConservationRecord {
+  id              String    @id
+  workId          String
+  type            String
+  description     String?
+  responsibleName String
+  condition       String?
+  notes           String?
+  attachments     Json?
+  performedAt     DateTime  @default(now())
+  nextScheduled   DateTime?
+  tenantId        String
+  createdAt       DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([workId])
+}
+
+model ContactRequest {
+  id        String   @id
+  name      String
+  email     String
+  subject   String?
+  message   String
+  status    String   @default("NEW")
+  tenantId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+}
+
+model ContractPlan {
+  id                   String   @id
+  name                 String   @unique
+  description          String?
+  maxActiveProjects    Int      @default(10)
+  maxAccessibilityReqs Int      @default(5)
+  maxReportsPerMonth   Int      @default(10)
+  maxAIAnalyses        Int      @default(100)
+  maxWorks             Int      @default(50)
+  maxEvents            Int      @default(20)
+  maxChildTenants      Int      @default(0)
+  maxUsers             Int      @default(5)
+  aiTier               AITier   @default(BASIC)
+  slaTier              SLATier  @default(STANDARD)
+  supportResponseHours Int      @default(48)
+  monthlyPrice         Decimal? @db.Decimal(10, 2)
+  hasExecutiveReports  Boolean  @default(false)
+  hasLegalCompliance   Boolean  @default(false)
+  hasAPIAccess         Boolean  @default(false)
+  hasWhiteLabel        Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime
+  Tenant               Tenant[]
+}
+
+model Conversation {
+  id                    String                @id
+  producerId            String
+  providerId            String
+  status                String                @default("OPEN")
+  lastMessageAt         DateTime              @default(now())
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime
+  User                  User                  @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  AccessibilityProvider AccessibilityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  Message               Message[]
+  Transaction           Transaction[]
+
+  @@unique([producerId, providerId])
+  @@index([producerId])
+  @@index([providerId])
+}
+
+model Coupon {
+  id            String          @id
+  code          String          @unique
+  tenantId      String
+  discountType  DiscountType    @default(PERCENTAGE)
+  discountValue Decimal         @db.Decimal(10, 2)
+  xpCost        Int?
+  isActive      Boolean         @default(true)
+  description   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime
+  Tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  VisitorCoupon VisitorCoupon[]
+
+  @@index([tenantId])
+}
+
+model CulturalPassport {
+  id            String          @id
+  culturaCoins  Int             @default(0)
+  level         Int             @default(1)
+  visitorId     String          @unique
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime
+  Visitor       Visitor         @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  XPTransaction XPTransaction[]
+}
+
+model CulturalProject {
+  id                     String                   @id
+  title                  String
+  summary                String?
+  description            String?
+  justification          String?
+  culturalCategory       String?
+  targetRegion           String?
+  targetAudience         String?
+  startDate              DateTime?
+  endDate                DateTime?
+  requestedBudget        Decimal?                 @db.Decimal(10, 2)
+  approvedBudget         Decimal?                 @db.Decimal(10, 2)
+  expectedAudience       Int?
+  actualAudience         Int?
+  status                 ProjectStatus            @default(DRAFT)
+  proposalUrl            String?
+  attachments            Json?
+  accessibilityPlan      Json?
+  noticeId               String?
+  proponentId            String
+  eventId                String?
+  tenantId               String
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime
+  aiAnalysis             Json?
+  aiAnalyzedAt           DateTime?
+  finalScore             Float?
+  humanScore             Float?
+  reviewNotes            String?
+  reviewedAt             DateTime?
+  reviewedBy             String?
+  notaFiscalDate         DateTime?
+  notaFiscalNumber       String?
+  notaFiscalUrl          String?
+  AccessibilityExecution AccessibilityExecution[]
+  PublicNotice           PublicNotice?            @relation(fields: [noticeId], references: [id])
+  User                   User                     @relation(fields: [proponentId], references: [id])
+  Tenant                 Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([noticeId])
+  @@index([proponentId])
+  @@index([tenantId, status])
+}
+
+model CuratorNote {
+  id        String   @id
+  content   String
+  author    String?
+  pinned    Boolean  @default(false)
+  workId    String
+  tenantId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Work      Work     @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([workId])
+}
+
+model DailyChallenge {
+  id                       String                     @id
+  title                    String
+  description              String
+  xpReward                 Int                        @default(50)
+  type                     String
+  target                   Int                        @default(1)
+  conditions               Json?
+  activeDate               DateTime
+  tenantId                 String
+  createdAt                DateTime                   @default(now())
+  Tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  DailyChallengeCompletion DailyChallengeCompletion[]
+}
+
+model DailyChallengeCompletion {
+  id             String         @id
+  visitorId      String
+  challengeId    String
+  progress       Int            @default(0)
+  completed      Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  DailyChallenge DailyChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  Visitor        Visitor        @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, challengeId])
+}
+
+model DeviceToken {
+  id        String   @id
+  token     String   @unique
+  platform  String   @default("web")
+  userAgent String?
+  userId    String?
+  visitorId String?
+  tenantId  String?
+  active    Boolean  @default(true)
+  lastUsed  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  User      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Visitor   Visitor? @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@index([active])
+  @@index([userId])
+  @@index([visitorId])
+}
+
+model Donation {
+  id                    String   @id
+  amount                Decimal  @db.Decimal(10, 2)
+  currency              String   @default("BRL")
+  donorName             String?
+  donorEmail            String?
+  message               String?
+  anonymous             Boolean  @default(false)
+  status                String   @default("PENDING")
+  paymentId             String?
+  tenantId              String
+  createdAt             DateTime @default(now())
+  platformFee           Decimal? @db.Decimal(10, 2)
+  stripePaymentIntentId String?  @unique
+  Tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model EquipamentoCheckin {
+  id                  String              @id
+  equipamentoId       String
+  visitorId           String
+  method              String
+  lat                 Float?
+  lng                 Float?
+  xpGanho             Int                 @default(20)
+  createdAt           DateTime            @default(now())
+  EquipamentoCultural EquipamentoCultural @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  Visitor             Visitor             @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([equipamentoId, visitorId, createdAt])
+}
+
+model EquipamentoCultural {
+  id                 String               @id
+  tenantId           String
+  nome               String
+  slug               String               @unique
+  tipo               String
+  descricao          String?
+  missao             String?
+  endereco           String
+  cidade             String
+  estado             String               @default("MG")
+  lat                Float?
+  lng                Float?
+  raioCheckinMetros  Int                  @default(50)
+  fotoCapaUrl        String?
+  fotoGaleriaUrls    String[]
+  corPrimaria        String?
+  logoUrl            String?
+  qrCodeEntrada      String               @unique
+  qrCodeUrl          String?
+  urlPublica         String?
+  horarios           Json?
+  telefone           String?
+  email              String?
+  site               String?
+  acessivelCadeira   Boolean              @default(false)
+  acessivelLibras    Boolean              @default(false)
+  acessivelAudio     Boolean              @default(false)
+  ativo              Boolean              @default(true)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime
+  maxEvents          Int                  @default(20)
+  maxTrails          Int                  @default(10)
+  maxWorks           Int                  @default(50)
+  planId             String?
+  plantaUrl          String?
+  EquipamentoCheckin EquipamentoCheckin[]
+  Tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Event              Event[]
+  Space              Space[]
+  Trail              Trail[]
+  Work               Work[]
+
+  @@index([tenantId])
+}
+
+model Event {
+  id                        String                   @id
+  title                     String
+  description               String?
+  type                      EventType                @default(OTHER)
+  instructor                String?
+  materials                 String?
+  format                    String                   @default("PRESENTIAL")
+  visibility                String                   @default("PUBLIC")
+  isOnline                  Boolean                  @default(false)
+  startDate                 DateTime
+  endDate                   DateTime?
+  eventId                   String?                  @unique
+  location                  String?
+  zipCode                   String?
+  address                   String?
+  number                    String?
+  complement                String?
+  neighborhood              String?
+  city                      String?
+  state                     String?
+  meetingLink               String?
+  platform                  String?
+  producerName              String?
+  producerDescription       String?
+  producerLogoUrl           String?
+  coverImageUrl             String?
+  coverUrl                  String?
+  certificateBackgroundUrl  String?
+  certificateText           String?
+  minMinutesForCertificate  Int?
+  audioUrl                  String?
+  videoUrl                  String?
+  views                     Int                      @default(0)
+  status                    String                   @default("DRAFT")
+  customFormSchema          Json?
+  galleryUrls               String?
+  categoryId                String?
+  spaceId                   String?
+  tenantId                  String
+  certificateRequiresSurvey Boolean                  @default(false)
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime
+  deletedAt                 DateTime?
+  equipamentoId             String?
+  isTheaterSession          Boolean                  @default(false)
+  producerId                String?
+  Booking                   Booking[]
+  Category                  Category?                @relation(fields: [categoryId], references: [id])
+  EquipamentoCultural       EquipamentoCultural?     @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  Event                     Event?                   @relation("EventToEvent", fields: [eventId], references: [id])
+  other_Event               Event?                   @relation("EventToEvent")
+  User                      User?                    @relation(fields: [producerId], references: [id])
+  Space                     Space?                   @relation(fields: [spaceId], references: [id])
+  Tenant                    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  EventAttendance           EventAttendance[]
+  Favorite                  Favorite[]
+  Registration              Registration[]
+  Review                    Review[]
+  SurveyQuestion            SurveyQuestion[]
+  TheaterCue                TheaterCue[]
+  TheaterSeatReservation    TheaterSeatReservation[]
+  Ticket                    Ticket[]
+  VisitorVisit              VisitorVisit[]
+
+  @@index([tenantId, startDate])
+}
+
+model EventAttendance {
+  id          String   @id
+  eventId     String
+  visitorId   String
+  checkInTime DateTime @default(now())
+  status      String   @default("PRESENT")
+  createdAt   DateTime @default(now())
+  Event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Visitor     Visitor  @relation(fields: [visitorId], references: [id])
+
+  @@unique([eventId, visitorId])
+}
+
+model FamilyEvent {
+  id              String        @id
+  familyProfileId String
+  year            Int
+  title           String
+  description     String?
+  imageUrl        String?
+  type            String        @default("OTHER")
+  people          Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime
+  FamilyProfile   FamilyProfile @relation(fields: [familyProfileId], references: [id], onDelete: Cascade)
+
+  @@index([familyProfileId, year])
+}
+
+model FamilyProfile {
+  id            String        @id
+  familyName    String
+  description   String?
+  coverImageUrl String?
+  audioUrl      String?
+  spaceId       String?
+  tenantId      String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  FamilyEvent   FamilyEvent[]
+  Space         Space?        @relation(fields: [spaceId], references: [id])
+  Tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Favorite {
+  id        String   @id
+  visitorId String
+  workId    String?
+  createdAt DateTime @default(now())
+  eventId   String?
+  trailId   String?
+  Event     Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Trail     Trail?   @relation(fields: [trailId], references: [id], onDelete: Cascade)
+  Visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  Work      Work?    @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, eventId])
+  @@unique([visitorId, trailId])
+  @@unique([visitorId, workId])
+  @@index([workId])
+}
+
+model File {
+  id           String   @id
+  filename     String
+  originalName String
+  url          String
+  type         String
+  mimeType     String
+  size         Int
+  usedIn       String?
+  usedInId     String?
+  tenantId     String?
+  uploadedBy   String?
+  useInAi      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  Tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([usedIn, usedInId])
+}
+
+model FloorPlan {
+  id        String   @id
+  name      String
+  floor     Int      @default(0)
+  imageUrl  String
+  order     Int      @default(0)
+  tenantId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, order])
+}
+
+model GroupTicket {
+  id           String   @id
+  groupName    String
+  totalTickets Int
+  contactName  String
+  contactEmail String
+  contactPhone String?
+  eventId      String?
+  status       String   @default("PENDING")
+  totalPrice   Float    @default(0)
+  tenantId     String
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model GuestbookEntry {
+  id        String   @id
+  message   String
+  isVisible Boolean  @default(true)
+  visitorId String
+  tenantId  String
+  createdAt DateTime @default(now())
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Visitor   Visitor  @relation(fields: [visitorId], references: [id])
+}
+
+model InPersonService {
+  id                    String                  @id
+  name                  String
+  description           String?
+  active                Boolean                 @default(true)
+  tenantId              String
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime
+  Booking               Booking[]
+  Tenant                Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  TenantInPersonService TenantInPersonService[]
+
+  @@index([tenantId])
+}
+
+model IntangibleHeritage {
+  id          String   @id
+  title       String
+  description String?
+  category    String?
+  status      String   @default("ATIVO")
+  imageUrl    String?
+  videoUrl    String?
+  holders     String?
+  region      String?
+  tenantId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([tenantId])
+}
+
+model Membership {
+  id             String         @id
+  planId         String
+  visitorEmail   String
+  visitorName    String
+  status         String         @default("ACTIVE")
+  startDate      DateTime       @default(now())
+  renewDate      DateTime?
+  cancelledAt    DateTime?
+  paymentId      String?
+  tenantId       String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime
+  MembershipPlan MembershipPlan @relation(fields: [planId], references: [id])
+
+  @@index([tenantId])
+  @@index([visitorEmail])
+}
+
+model MembershipPlan {
+  id           String       @id
+  name         String
+  description  String?
+  monthlyPrice Decimal      @db.Decimal(10, 2)
+  yearlyPrice  Decimal?     @db.Decimal(10, 2)
+  benefits     Json?
+  badgeCode    String?
+  shopDiscount Int?
+  active       Boolean      @default(true)
+  tenantId     String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime
+  Membership   Membership[]
+
+  @@index([tenantId])
+}
+
+model Message {
+  id             String       @id
+  conversationId String
+  senderId       String
+  senderType     String
+  content        String
+  type           MessageType  @default(TEXT)
+  attachments    Json?
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+  Conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+model MuseumBattle {
+  id            String   @id
+  month         String
+  tenantId      String
+  totalVisitors Int      @default(0)
+  totalEvents   Int      @default(0)
+  totalReviews  Int      @default(0)
+  avgRating     Float    @default(0)
+  score         Int      @default(0)
+  rank          Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+
+  @@unique([tenantId, month])
+  @@index([month, score])
+}
+
+model NPSResponse {
+  id        String   @id
+  score     Int
+  comment   String?
+  visitorId String?
+  email     String?
+  tenantId  String
+  createdAt DateTime @default(now())
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([tenantId])
+}
+
+model NewsletterSubscription {
+  id        String   @id
+  email     String
+  name      String?
+  active    Boolean  @default(true)
+  tenantId  String
+  createdAt DateTime @default(now())
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([email, tenantId])
+}
+
+model NotificationPreference {
+  id                String   @id
+  visitorId         String   @unique
+  emailEvents       Boolean  @default(true)
+  emailNewsletter   Boolean  @default(true)
+  pushNotifications Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime
+  Visitor           Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                    String      @id
+  status                String      @default("PENDING")
+  total                 Decimal     @db.Decimal(10, 2)
+  customerName          String
+  customerEmail         String
+  customerPhone         String?
+  shippingAddress       String?
+  shippingMethod        String?
+  shippingCost          Decimal?    @db.Decimal(10, 2)
+  paymentMethod         String?
+  paymentId             String?
+  invoiceUrl            String?
+  bankSlipUrl           String?
+  pixQrCode             String?
+  pixPayload            String?
+  visitorId             String?
+  tenantId              String
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime
+  platformFee           Decimal?    @db.Decimal(10, 2)
+  stripePaymentIntentId String?     @unique
+  Tenant                Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Visitor               Visitor?    @relation(fields: [visitorId], references: [id])
+  OrderItem             OrderItem[]
+
+  @@index([status])
+  @@index([tenantId])
+  @@index([visitorId])
+}
+
+model OrderItem {
+  id        String  @id
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+  productId String
+  orderId   String
+  Order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  Product   Product @relation(fields: [productId], references: [id])
+}
+
+model PPAGoal {
+  id           String   @id
+  title        String
+  description  String?
+  metric       String
+  targetValue  Int
+  currentValue Int      @default(0)
+  year         Int
+  quarter      Int?
+  status       String   @default("IN_PROGRESS")
+  tenantId     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime
+
+  @@index([tenantId, year])
+}
+
+model PassportStamp {
+  id             String    @id
+  visitorId      String
+  workId         String
+  stampedAt      DateTime  @default(now())
+  accuracyMetros Float?
+  convertidoEm   DateTime?
+  isRelic        Boolean   @default(false)
+  latCaptura     Float?
+  lngCaptura     Float?
+  numeroCaptura  Int
+  raridade       String
+  xpGanho        Int       @default(50)
+  Visitor        Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  Work           Work      @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, workId])
+  @@index([visitorId])
+  @@index([workId])
+}
+
+model PostVisitActivity {
+  id            String       @id
+  title         String
+  description   String?
+  questions     Json?
+  ageGroup      String?
+  workIds       String[]
+  autoSend      Boolean      @default(true)
+  sentAt        DateTime?
+  schoolVisitId String?
+  tenantId      String
+  createdAt     DateTime     @default(now())
+  SchoolVisit   SchoolVisit? @relation(fields: [schoolVisitId], references: [id])
+
+  @@index([tenantId])
+}
+
+model Product {
+  id          String      @id
+  name        String
+  description String?
+  price       Decimal     @db.Decimal(10, 2)
+  sku         String?
+  imageUrl    String?
+  stock       Int         @default(0)
+  active      Boolean     @default(true)
+  tenantId    String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime
+  OrderItem   OrderItem[]
+  Tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([sku, tenantId])
+}
+
+model ProviderProduct {
+  id                String          @id
+  name              String
+  description       String?
+  price             Decimal         @db.Decimal(10, 2)
+  imageUrl          String?
+  active            Boolean         @default(true)
+  serviceProviderId String
+  tenantId          String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime
+  ServiceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  Tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model ProviderReview {
+  id                String          @id
+  rating            Int
+  comment           String?
+  videoUrl          String?
+  visitorId         String
+  serviceProviderId String
+  createdAt         DateTime        @default(now())
+  ServiceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  Visitor           Visitor         @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+}
+
+model PublicNotice {
+  id                        String            @id
+  title                     String
+  description               String?
+  objectives                String?
+  requirements              String?
+  publishDate               DateTime?
+  inscriptionStart          DateTime
+  inscriptionEnd            DateTime
+  evaluationEnd             DateTime?
+  resultsDate               DateTime?
+  executionEnd              DateTime?
+  totalBudget               Decimal?          @db.Decimal(12, 2)
+  maxPerProject             Decimal?          @db.Decimal(10, 2)
+  minPerProject             Decimal?          @db.Decimal(10, 2)
+  culturalCategories        String[]
+  targetRegions             String[]
+  status                    NoticeStatus      @default(DRAFT)
+  documentUrl               String?
+  attachments               Json?
+  requiresAccessibilityPlan Boolean           @default(true)
+  tenantId                  String
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime
+  showScoresInResults       Boolean           @default(true)
+  CulturalProject           CulturalProject[]
+  Tenant                    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([inscriptionEnd])
+  @@index([tenantId, status])
+}
+
+model QRCode {
+  id          String   @id
+  code        String   @unique
+  type        QRType
+  referenceId String?
+  title       String
+  xpReward    Int      @default(5)
+  tenantId    String
+  createdAt   DateTime @default(now())
+  Tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Quiz {
+  id           String         @id
+  title        String
+  targetType   String
+  targetId     String
+  tenantId     String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime
+  Tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  QuizQuestion QuizQuestion[]
+
+  @@index([targetId])
+  @@index([tenantId])
+}
+
+model QuizQuestion {
+  id           String   @id
+  quizId       String
+  question     String
+  options      Json
+  correctIndex Int
+  xpReward     Int      @default(50)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime
+  Quiz         Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id
+  token     String   @unique
+  userId    String
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+  updatedAt DateTime
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Registration {
+  id                    String             @id
+  code                  String             @unique
+  eventId               String
+  ticketId              String
+  visitorId             String?
+  guestName             String
+  guestEmail            String
+  status                RegistrationStatus @default(PENDING)
+  checkInDate           DateTime?
+  pricePaid             Decimal            @default(0.0)
+  customFormData        Json?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime
+  platformFee           Decimal?           @db.Decimal(10, 2)
+  asaasPaymentId        String?
+  asaasPaymentStatus    String?
+  deletedAt             DateTime?
+  stripePaymentIntentId String?            @unique
+  Event                 Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Ticket                Ticket             @relation(fields: [ticketId], references: [id])
+  Visitor               Visitor?           @relation(fields: [visitorId], references: [id])
+
+  @@index([asaasPaymentId])
+  @@index([eventId])
+  @@index([status])
+  @@index([visitorId])
+}
+
+model Review {
+  id        String   @id
+  rating    Int
+  comment   String?
+  visitorId String
+  workId    String?
+  eventId   String?
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Event     Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  Work      Work?    @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, eventId])
+  @@unique([visitorId, workId])
+  @@index([eventId])
+  @@index([workId])
+}
+
+model ReviewModeration {
+  id          String    @id
+  reviewId    String    @unique
+  isApproved  Boolean?
+  flagReason  String?
+  aiScore     Float?
+  aiReason    String?
+  moderatedBy String?
+  moderatedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([reviewId])
+}
+
+model Route {
+  id            String      @id
+  name          String
+  description   String?
+  imageUrl      String?
+  tenantId      String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime
+  difficulty    String?
+  estimatedTime Int?
+  isAIGenerated Boolean     @default(false)
+  xpReward      Int         @default(50)
+  Tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  RouteStop     RouteStop[]
+
+  @@index([tenantId])
+}
+
+model RouteStop {
+  id         String   @id
+  routeId    String
+  order      Int
+  targetType String
+  targetId   String
+  latitude   Float
+  longitude  Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+  Route      Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@index([routeId, order])
+}
+
+model ScavengerHunt {
+  id                         String                       @id
+  title                      String
+  description                String?
+  xpReward                   Int                          @default(200)
+  badgeReward                String?
+  active                     Boolean                      @default(true)
+  startsAt                   DateTime?
+  endsAt                     DateTime?
+  tenantId                   String
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime
+  Tenant                     Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ScavengerHuntParticipation ScavengerHuntParticipation[]
+  ScavengerHuntStep          ScavengerHuntStep[]
+}
+
+model ScavengerHuntParticipation {
+  id            String        @id
+  visitorId     String
+  huntId        String
+  currentStep   Int           @default(0)
+  completed     Boolean       @default(false)
+  completedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  ScavengerHunt ScavengerHunt @relation(fields: [huntId], references: [id], onDelete: Cascade)
+  Visitor       Visitor       @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, huntId])
+}
+
+model ScavengerHuntStep {
+  id            String        @id
+  order         Int
+  clue          String
+  answer        String
+  huntId        String
+  workId        String?
+  ScavengerHunt ScavengerHunt @relation(fields: [huntId], references: [id], onDelete: Cascade)
+}
+
+model SchoolVisit {
+  id                String              @id
+  teacherId         String
+  schoolName        String
+  grade             String?
+  studentCount      Int                 @default(0)
+  ageGroup          String?
+  visitDate         DateTime
+  selectedWorkIds   String[]
+  notes             String?
+  status            String              @default("SCHEDULED")
+  certificateIssued Boolean             @default(false)
+  tenantId          String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  PostVisitActivity PostVisitActivity[]
+  TeacherProfile    TeacherProfile      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([teacherId])
+  @@index([tenantId])
+}
+
+model SentimentAnalysis {
+  id          String   @id
+  sentiment   String
+  confidence  Float
+  keywords    String[]
+  summary     String?
+  reviewCount Int      @default(0)
+  period      String?
+  tenantId    String
+  generatedAt DateTime @default(now())
+  Tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model ServiceProvider {
+  id              String              @id
+  type            ServiceProviderType
+  name            String
+  description     String?
+  phone           String?
+  email           String?
+  website         String?
+  address         String?
+  latitude        Float?
+  longitude       Float?
+  stripeAccountId String?
+  feePercentage   Float?              @default(10.0)
+  active          Boolean             @default(true)
+  verified        Boolean             @default(false)
+  tenantId        String
+  ownerId         String?
+  coverUrl        String?
+  galleryUrls     String[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime
+  B2BBundle       B2BBundle[]
+  Booking         Booking[]
+  ProviderProduct ProviderProduct[]
+  ProviderReview  ProviderReview[]
+  User            User?               @relation(fields: [ownerId], references: [id])
+  Tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([type])
+}
+
+model Skin {
+  id                 String               @id
+  tenantId           String?
+  name               String
+  description        String?
+  imageUrl           String
+  xpCost             Int
+  rarity             SkinRarity           @default(COMMON)
+  active             Boolean              @default(true)
+  eventOnly          Boolean              @default(false)
+  spaceId            String?
+  createdAt          DateTime             @default(now())
+  characterBaseId    String?
+  aiDescription      String?
+  aiPrompt           String?
+  CharacterBase      CharacterBase?       @relation(fields: [characterBaseId], references: [id])
+  Tenant             Tenant?              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  VisitorAvatarCache VisitorAvatarCache[]
+  VisitorRPG         VisitorRPG[]
+  VisitorSkin        VisitorSkin[]
+}
+
+model SocialCheckin {
+  id        String   @id
+  visitorId String
+  tenantId  String
+  message   String?
+  emoji     String?  @default("🏛️")
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([visitorId])
+}
+
+model Space {
+  id                  String               @id
+  name                String
+  description         String?
+  capacity            Int                  @default(10)
+  type                String               @default("ROOM")
+  resources           Json?
+  isBookable          Boolean              @default(true)
+  imageUrl            String?
+  tenantId            String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime
+  equipamentoId       String?
+  categoryId          String?
+  theaterLayout       Json?
+  Booking             Booking[]
+  Event               Event[]
+  FamilyProfile       FamilyProfile[]
+  Category            Category?            @relation(fields: [categoryId], references: [id])
+  EquipamentoCultural EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  Tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  TimelineEvent       TimelineEvent[]
+  WorkSubmission      WorkSubmission[]
+
+  @@index([tenantId])
+}
+
+model SurveyQuestion {
+  id             String             @id
+  eventId        String
+  question       String
+  type           SurveyQuestionType @default(STARS)
+  options        Json?
+  required       Boolean            @default(true)
+  order          Int                @default(0)
+  createdAt      DateTime           @default(now())
+  Event          Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  SurveyResponse SurveyResponse[]
 
   @@index([eventId])
 }
 
-// ==========================================
-// Roteiro Cultural & Marketplace de Serviços
-// ==========================================
+model SurveyResponse {
+  id             String         @id
+  questionId     String
+  visitorId      String?
+  guestEmail     String?
+  answer         String
+  createdAt      DateTime       @default(now())
+  SurveyQuestion SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, guestEmail])
+  @@unique([questionId, visitorId])
+  @@index([questionId])
+}
+
+model TeacherProfile {
+  id          String        @id
+  name        String
+  email       String
+  phone       String?
+  school      String
+  city        String?
+  subject     String?
+  tenantId    String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime
+  SchoolVisit SchoolVisit[]
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+}
+
+model Tenant {
+  id                          String                   @id
+  type                        TenantType               @default(MUSEUM)
+  name                        String
+  slug                        String                   @unique
+  parentId                    String?
+  planId                      String?
+  plan                        String                   @default("START")
+  maxWorks                    Int                      @default(50)
+  capacityPerHour             Int                      @default(50)
+  mission                     String?
+  address                     String?
+  openingHours                String?
+  whatsapp                    String?
+  email                       String?
+  website                     String?
+  logoUrl                     String?
+  coverImageUrl               String?
+  appIconUrl                  String?
+  bannerUrl                   String?
+  signatureUrl                String?
+  certificateBackgroundUrl    String?
+  mapImageUrl                 String?
+  latitude                    Float?
+  longitude                   Float?
+  welcomeAudioUrl             String?
+  welcomeVideoUrl             String?
+  primaryColor                String                   @default("#d4af37")
+  secondaryColor              String                   @default("#cd7f32")
+  theme                       String                   @default("dark")
+  historicalFont              Boolean                  @default(true)
+  featureWorks                Boolean                  @default(true)
+  featureTrails               Boolean                  @default(true)
+  featureEvents               Boolean                  @default(true)
+  featureGamification         Boolean                  @default(true)
+  featureQRCodes              Boolean                  @default(true)
+  featureChatAI               Boolean                  @default(false)
+  featureShop                 Boolean                  @default(false)
+  featureDonations            Boolean                  @default(false)
+  featureCertificates         Boolean                  @default(true)
+  featureReviews              Boolean                  @default(true)
+  featureGuestbook            Boolean                  @default(true)
+  featureAccessibility        Boolean                  @default(true)
+  featureMinigames            Boolean                  @default(false)
+  featureServices             Boolean                  @default(false)
+  featureTickets              Boolean                  @default(false)
+  featureEditais              Boolean                  @default(false)
+  featureProjects             Boolean                  @default(false)
+  featureAccessibilityMgmt    Boolean                  @default(false)
+  featureProviders            Boolean                  @default(false)
+  featureInstitutionalReports Boolean                  @default(false)
+  featureEditaisSubmission    Boolean                  @default(false)
+  termsOfUse                  String?
+  privacyPolicy               String?
+  cnpj                        String?
+  legalNature                 String?
+  foundationYear              Int?
+  typology                    String?
+  legalRepresentative         String?
+  accessibilityResources      Json?
+  isCityMode                  Boolean                  @default(false)
+  createdAt                   DateTime                 @default(now())
+  updatedAt                   DateTime
+  asaasWalletId               String?
+  featureCuratorNotes         Boolean                  @default(false)
+  featureNPS                  Boolean                  @default(false)
+  featureSponsorship          Boolean                  @default(false)
+  deletedAt                   DateTime?
+  frameUrl                    String?
+  featureGroupAI              Boolean                  @default(true)
+  featureGroupAnalytics       Boolean                  @default(true)
+  featureGroupContent         Boolean                  @default(true)
+  featureGroupEngagement      Boolean                  @default(true)
+  featureGroupEvents          Boolean                  @default(true)
+  featureGroupGamification    Boolean                  @default(true)
+  featureGroupInstitutional   Boolean                  @default(true)
+  featureGroupPreservation    Boolean                  @default(true)
+  featureGroupRoadmap         Boolean                  @default(true)
+  featureGroupSocial          Boolean                  @default(true)
+  featureGroupTools           Boolean                  @default(true)
+  stripeConnectId             String?                  @unique
+  stripeCustomerId            String?                  @unique
+  isPublicInstitution         Boolean                  @default(false)
+  sponsorExclusivePrice       Float?                   @default(500.0)
+  sponsorSharedPrice          Float?                   @default(250.0)
+  AIUsage                     AIUsage[]
+  AccessibilityExecution      AccessibilityExecution[]
+  AccessibilityProvider       AccessibilityProvider[]
+  AccessibilityRequest        AccessibilityRequest[]
+  Achievement                 Achievement[]
+  AuditLog                    AuditLog[]
+  B2BBundle                   B2BBundle[]
+  BadgeRequest                BadgeRequest[]
+  Booking                     Booking[]
+  Category                    Category[]
+  Certificate                 Certificate[]
+  CertificateRule             CertificateRule[]
+  CertificateTemplate         CertificateTemplate[]
+  CharacterBase               CharacterBase[]
+  ChatPersona                 ChatPersona?
+  Clue                        Clue[]
+  CommunityPost               CommunityPost[]
+  Coupon                      Coupon[]
+  CulturalProject             CulturalProject[]
+  CuratorNote                 CuratorNote[]
+  DailyChallenge              DailyChallenge[]
+  Donation                    Donation[]
+  EquipamentoCultural         EquipamentoCultural[]
+  Event                       Event[]
+  FamilyProfile               FamilyProfile[]
+  File                        File[]
+  FloorPlan                   FloorPlan[]
+  GuestbookEntry              GuestbookEntry[]
+  InPersonService             InPersonService[]
+  NPSResponse                 NPSResponse[]
+  NewsletterSubscription      NewsletterSubscription[]
+  Order                       Order[]
+  Product                     Product[]
+  ProviderProduct             ProviderProduct[]
+  PublicNotice                PublicNotice[]
+  QRCode                      QRCode[]
+  Quiz                        Quiz[]
+  Route                       Route[]
+  ScavengerHunt               ScavengerHunt[]
+  SentimentAnalysis           SentimentAnalysis[]
+  ServiceProvider             ServiceProvider[]
+  Skin                        Skin[]
+  Space                       Space[]
+  Tenant                      Tenant?                  @relation("TenantToTenant", fields: [parentId], references: [id])
+  other_Tenant                Tenant[]                 @relation("TenantToTenant")
+  ContractPlan                ContractPlan?            @relation(fields: [planId], references: [id])
+  TenantInPersonService       TenantInPersonService[]
+  TheaterMember               TheaterMember[]
+  TimelineEvent               TimelineEvent[]
+  Trail                       Trail[]
+  User                        User[]
+  VestigeAlert                VestigeAlert[]
+  Visitor                     Visitor[]
+  VisitorVisit                VisitorVisit[]
+  Work                        Work[]
+  WorkSponsorship             WorkSponsorship[]
+  WorkSubmission              WorkSubmission[]
+
+  @@index([parentId])
+}
+
+model TenantInPersonService {
+  id                String          @id
+  active            Boolean         @default(true)
+  tenantId          String
+  inPersonServiceId String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime
+  InPersonService   InPersonService @relation(fields: [inPersonServiceId], references: [id], onDelete: Cascade)
+  Tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, inPersonServiceId])
+  @@index([inPersonServiceId])
+  @@index([tenantId])
+}
+
+model TheaterCue {
+  id        String   @id
+  eventId   String
+  type      String
+  label     String
+  desc      String?
+  time      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
+
+model TheaterMember {
+  id        String   @id
+  name      String
+  role      String
+  status    String   @default("READY")
+  rating    Int      @default(5)
+  tags      String[]
+  phone     String?
+  email     String?
+  tenantId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model TheaterSeatReservation {
+  id        String    @id
+  eventId   String
+  seatId    String
+  status    String    @default("RESERVED")
+  visitorId String?
+  ticketId  String?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  Event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Ticket    Ticket?   @relation(fields: [ticketId], references: [id])
+  Visitor   Visitor?  @relation(fields: [visitorId], references: [id])
+
+  @@unique([eventId, seatId])
+  @@index([eventId])
+}
+
+model Ticket {
+  id                     String                   @id
+  eventId                String
+  name                   String
+  description            String?
+  type                   TicketType               @default(FREE)
+  price                  Decimal                  @default(0.0) @db.Decimal(10, 2)
+  quantity               Int
+  sold                   Int                      @default(0)
+  absorbFee              Boolean                  @default(false)
+  minBuy                 Int                      @default(1)
+  maxBuy                 Int                      @default(5)
+  salesStartDate         DateTime?
+  salesEndDate           DateTime?
+  status                 TicketStatus             @default(ACTIVE)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime
+  Registration           Registration[]
+  TheaterSeatReservation TheaterSeatReservation[]
+  Event                  Event                    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+model TicketTransfer {
+  id             String    @id
+  registrationId String
+  fromEmail      String
+  toName         String
+  toEmail        String
+  newCode        String    @unique
+  status         String    @default("PENDING")
+  transferredAt  DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([registrationId])
+}
+
+model TimelineEvent {
+  id          String   @id
+  spaceId     String
+  year        Int
+  title       String
+  description String?
+  imageUrl    String?
+  people      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+  tenantId    String
+  Space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  Tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, year])
+  @@index([tenantId])
+}
+
+model Trail {
+  id                  String               @id
+  title               String
+  description         String?
+  duration            Int?
+  workIds             String[]
+  imageUrl            String?
+  audioUrl            String?
+  videoUrl            String?
+  active              Boolean              @default(true)
+  categoryId          String?
+  tenantId            String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime
+  equipamentoId       String?
+  deletedAt           DateTime?
+  tipoPercurso        String               @default("indoor")
+  ownerId             String?
+  Favorite            Favorite[]
+  Category            Category?            @relation(fields: [categoryId], references: [id])
+  EquipamentoCultural EquipamentoCultural? @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  Visitor             Visitor?             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  Tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  VisitorVisit        VisitorVisit[]
+}
+
+model Transaction {
+  id                    String            @id
+  amount                Decimal           @db.Decimal(10, 2)
+  status                TransactionStatus @default(PENDING)
+  description           String?
+  conversationId        String
+  payerId               String
+  payeeId               String
+  paidAt                DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime
+  stripePaymentIntentId String?           @unique
+  Conversation          Conversation      @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+  @@index([payerId])
+  @@index([status])
+}
+
+model User {
+  id                    String                 @id
+  email                 String                 @unique
+  password              String
+  name                  String
+  role                  Role
+  tenantId              String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime
+  active                Boolean                @default(true)
+  lastLogin             DateTime?
+  termsAcceptedAt       DateTime?
+  termsAcceptedIp       String?
+  cpf                   String?
+  phone                 String?
+  bio                   String?
+  website               String?
+  preferences           Json?
+  permissions           Json?
+  stripeCustomerId      String?                @unique
+  stripeConnectId       String?                @unique
+  AccessibilityProvider AccessibilityProvider?
+  Booking               Booking[]
+  CommunityPost         CommunityPost[]
+  Conversation          Conversation[]
+  CulturalProject       CulturalProject[]
+  DeviceToken           DeviceToken[]
+  Event                 Event[]
+  RefreshToken          RefreshToken[]
+  ServiceProvider       ServiceProvider[]
+  Tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  WorkSubmission        WorkSubmission[]
+}
+
+model VestigeAlert {
+  id        String    @id
+  tenantId  String
+  titulo    String
+  mensagem  String
+  tipo      String    @default("URGENTE")
+  link      String?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  Tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Visitor {
+  id                         String                       @id
+  name                       String?
+  email                      String?
+  age                        Int?
+  photoUrl                   String?
+  xp                         Int                          @default(0)
+  tenantId                   String
+  isFake                     Boolean                      @default(false)
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime
+  isTeacher                  Boolean                      @default(false)
+  BadgeRequest               BadgeRequest[]
+  Certificate                Certificate[]
+  CulturalPassport           CulturalPassport?
+  DailyChallengeCompletion   DailyChallengeCompletion[]
+  DeviceToken                DeviceToken[]
+  EquipamentoCheckin         EquipamentoCheckin[]
+  EventAttendance            EventAttendance[]
+  Favorite                   Favorite[]
+  GuestbookEntry             GuestbookEntry[]
+  NotificationPreference     NotificationPreference?
+  Order                      Order[]
+  PassportStamp              PassportStamp[]
+  ProviderReview             ProviderReview[]
+  Registration               Registration[]
+  Review                     Review[]
+  ScavengerHuntParticipation ScavengerHuntParticipation[]
+  TheaterSeatReservation     TheaterSeatReservation[]
+  Trail                      Trail[]
+  Tenant                     Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  VisitorAchievement         VisitorAchievement[]
+  VisitorAvatarCache         VisitorAvatarCache[]
+  VisitorCoupon              VisitorCoupon[]
+  VisitorRPG                 VisitorRPG[]
+  VisitorSkin                VisitorSkin[]
+  VisitorVisit               VisitorVisit[]
+
+  @@unique([email, tenantId])
+  @@index([tenantId, xp])
+}
+
+model VisitorAchievement {
+  id            String      @id
+  visitorId     String
+  achievementId String
+  unlockedAt    DateTime    @default(now())
+  Achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  Visitor       Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+}
+
+model VisitorAvatarCache {
+  id        String   @id
+  visitorId String
+  skinId    String?
+  imageUrl  String
+  status    String   @default("GENERATING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Skin      Skin?    @relation(fields: [skinId], references: [id], onDelete: Cascade)
+  Visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, skinId])
+}
+
+model VisitorCard {
+  id              String          @id
+  cardId          String
+  visitorId       String
+  earnedAt        DateTime        @default(now())
+  CollectibleCard CollectibleCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, visitorId])
+  @@index([visitorId])
+}
+
+model VisitorCoupon {
+  id         String    @id
+  visitorId  String
+  couponId   String
+  redeemedAt DateTime  @default(now())
+  usedAt     DateTime?
+  Coupon     Coupon    @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  Visitor    Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, couponId])
+  @@index([couponId])
+  @@index([visitorId])
+}
+
+model VisitorRPG {
+  id                  String         @id
+  visitorId           String
+  characterName       String         @default("Explorador")
+  characterClass      String         @default("NOVATO")
+  level               Int            @default(1)
+  currentXp           Int            @default(0)
+  nextLevelXp         Int            @default(100)
+  totalVisits         Int            @default(0)
+  totalWorks          Int            @default(0)
+  totalCards          Int            @default(0)
+  avatarUrl           String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime
+  selectedCharacterId String?
+  equippedSkinId      String?
+  isActive            Boolean        @default(false)
+  avatarGeneratedAt   DateTime?
+  avatarStatus        String         @default("NONE")
+  baseAvatarUrl       String?
+  selfieUrl           String?
+  Skin                Skin?          @relation(fields: [equippedSkinId], references: [id])
+  CharacterBase       CharacterBase? @relation(fields: [selectedCharacterId], references: [id])
+  Visitor             Visitor        @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, selectedCharacterId])
+  @@index([level])
+  @@index([visitorId])
+}
+
+model VisitorSkin {
+  id                 String   @id
+  visitorId          String
+  skinId             String
+  acquiredAt         DateTime @default(now())
+  generatedAvatarUrl String?
+  Skin               Skin     @relation(fields: [skinId], references: [id], onDelete: Cascade)
+  Visitor            Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, skinId])
+}
+
+model VisitorVisit {
+  id        String   @id
+  visitorId String
+  workId    String?
+  trailId   String?
+  eventId   String?
+  source    String?
+  xpGained  Int      @default(0)
+  createdAt DateTime @default(now())
+  tenantId  String?
+  Event     Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  Tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Trail     Trail?   @relation(fields: [trailId], references: [id], onDelete: Cascade)
+  Visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  Work      Work?    @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([eventId])
+  @@index([tenantId])
+  @@index([trailId])
+  @@index([visitorId])
+  @@index([workId])
+}
+
+model Volunteer {
+  id             String           @id
+  name           String
+  email          String
+  phone          String?
+  skills         String[]
+  availability   String?
+  status         String           @default("ACTIVE")
+  totalHours     Float            @default(0)
+  tenantId       String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  VolunteerShift VolunteerShift[]
+
+  @@unique([email, tenantId])
+  @@index([tenantId])
+}
+
+model VolunteerShift {
+  id          String    @id
+  volunteerId String
+  date        DateTime
+  startTime   String
+  endTime     String
+  hours       Float     @default(0)
+  activity    String?
+  confirmed   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  Volunteer   Volunteer @relation(fields: [volunteerId], references: [id], onDelete: Cascade)
+
+  @@index([volunteerId])
+}
+
+model Work {
+  id                   String                 @id
+  title                String
+  artist               String?
+  year                 String?
+  categoryId           String?
+  room                 String?
+  floor                String?
+  description          String?
+  imageUrl             String?
+  audioUrl             String?
+  librasUrl            String?
+  videoUrl             String?
+  latitude             Float?
+  longitude            Float?
+  radius               Int                    @default(5)
+  published            Boolean                @default(true)
+  tenantId             String
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime
+  dimensions           String?
+  medium               String?
+  period               String?
+  technique            String?
+  yearNumeric          Int?
+  metadata             Json?
+  deletedAt            DateTime?
+  equipamentoId        String?
+  sealImageUrl         String?
+  captureRadiusM       Int                    @default(15)
+  lat                  Float?
+  lng                  Float?
+  vestigeActive        Boolean                @default(false)
+  vestigeExpiresAt     DateTime?
+  vestigeImageUrl      String?
+  vestigeTotalCapturas Int                    @default(0)
+  vestigeType          String                 @default("WORK")
+  AccessibilityRequest AccessibilityRequest[]
+  Clue                 Clue[]
+  CollectibleCard      CollectibleCard[]
+  CuratorNote          CuratorNote[]
+  Favorite             Favorite[]
+  PassportStamp        PassportStamp[]
+  Review               Review[]
+  VisitorVisit         VisitorVisit[]
+  Category             Category?              @relation(fields: [categoryId], references: [id])
+  EquipamentoCultural  EquipamentoCultural?   @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  Tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  WorkSponsorship      WorkSponsorship[]
+
+  @@index([tenantId, categoryId])
+  @@index([tenantId, published])
+  @@index([tenantId, room])
+}
+
+model WorkLoan {
+  id              String    @id
+  workId          String
+  borrowerName    String
+  borrowerContact String?
+  purpose         String?
+  departureDate   DateTime
+  expectedReturn  DateTime?
+  actualReturn    DateTime?
+  status          String    @default("ACTIVE")
+  conditions      String?
+  insuranceInfo   String?
+  tenantId        String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime
+
+  @@index([tenantId])
+  @@index([workId])
+}
+
+model WorkSponsorship {
+  id                   String            @id
+  sponsorName          String
+  sponsorLogo          String?
+  sponsorUrl           String?
+  message              String?
+  active               Boolean           @default(true)
+  startDate            DateTime          @default(now())
+  endDate              DateTime?
+  workId               String
+  tenantId             String
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime
+  monthlyAmount        Decimal           @db.Decimal(10, 2)
+  platformFeePercent   Int               @default(15)
+  sponsorCNPJ          String?
+  sponsorEmail         String?
+  status               SponsorshipStatus @default(PENDING)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?           @unique
+  tier                 SponsorshipTier   @default(SHARED)
+  Tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Work                 Work              @relation(fields: [workId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([workId])
+}
+
+model WorkSubmission {
+  id          String    @id
+  title       String
+  description String?
+  imageUrl    String?
+  status      String    @default("PENDING")
+  userId      String
+  spaceId     String?
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  tenantId    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime
+  Space       Space?    @relation(fields: [spaceId], references: [id])
+  Tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  User        User      @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model WorkTranslation {
+  id              String   @id
+  workId          String
+  language        String
+  title           String?
+  description     String?
+  audioUrl        String?
+  isAutoGenerated Boolean  @default(true)
+  tenantId        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime
+
+  @@unique([workId, language])
+  @@index([tenantId])
+}
+
+model XPTransaction {
+  id               String           @id
+  amount           Int
+  reason           String
+  passportId       String
+  createdAt        DateTime         @default(now())
+  CulturalPassport CulturalPassport @relation(fields: [passportId], references: [id], onDelete: Cascade)
+}
+
+enum AITier {
+  BASIC
+  CONTINUOUS
+  ADVANCED
+}
+
+enum AccessibilityServiceType {
+  LIBRAS_INTERPRETATION
+  AUDIO_DESCRIPTION
+  CAPTIONING
+  BRAILLE
+  TACTILE_MODEL
+  EASY_READING
+  OTHER
+}
+
+enum BadgeStatus {
+  PENDING
+  APPROVED
+  PRINTING
+  SHIPPED
+  DELIVERED
+  REJECTED
+}
+
+enum CategoryType {
+  WORK
+  TRAIL
+  EVENT
+  GENERAL
+  SPACE
+}
+
+enum CertificateStatus {
+  VALID
+  REVOKED
+}
+
+enum CertificateType {
+  EVENT
+  TRAIL
+  VISIT
+  COURSE
+  CUSTOM
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum EventType {
+  WORKSHOP
+  EXHIBITION
+  SHOW
+  LECTURE
+  OTHER
+}
+
+enum MessageType {
+  TEXT
+  PROPOSAL
+  PAYMENT_REQUEST
+  SYSTEM_ALERT
+}
+
+enum NoticeStatus {
+  DRAFT
+  PUBLISHED
+  INSCRIPTIONS_OPEN
+  INSCRIPTIONS_CLOSED
+  EVALUATION
+  RESULTS_PUBLISHED
+  FINISHED
+}
+
+enum ProjectStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  IN_EXECUTION
+  COMPLETED
+  CANCELED
+}
+
+enum QRType {
+  WORK
+  TRAIL
+  EVENT
+  SPACE
+  CUSTOM
+  TENANT
+  EQUIPAMENTO
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  CANCELED
+  CHECKED_IN
+}
+
+enum Role {
+  MASTER
+  ADMIN
+  PRODUCER
+  VISITOR
+  COLLABORATOR
+}
+
+enum SLATier {
+  STANDARD
+  EXTENDED
+  DEDICATED
+}
 
 enum ServiceProviderType {
   TOUR_GUIDE
@@ -2946,128 +2323,79 @@ enum ServiceProviderType {
   EXPERIENCE
 }
 
-model ServiceProvider {
-  id          String              @id @default(uuid())
-  type        ServiceProviderType
-  name        String
-  description String?
-
-  // Contatos
-  phone   String?
-  email   String?
-  website String?
-
-  // Localização
-  address   String?
-  latitude  Float?
-  longitude Float?
-
-  // Financeiro (Stripe Connect Split)
-  stripeAccountId String? // Conta conectada para receber o split do Booking
-  feePercentage   Float?  @default(10.0) // Taxa retida pela plataforma Cultura Viva
-
-  active   Boolean @default(true)
-  verified Boolean @default(false) // Trust & Safety: KYC aprovado
-
-  // Vinculado a uma Cidade (Tenant)
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  // Dono do serviço (usuário que acessa o painel de parceiro)
-  ownerId String?
-  owner   User?   @relation("ProviderOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-
-  // Imagens
-  coverUrl    String?
-  galleryUrls String[]
-
-  bookings Booking[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  providerProducts ProviderProduct[]
-  providerReviews  ProviderReview[]
-  bundles          B2BBundle[]
-
-  @@index([tenantId])
-  @@index([type])
+enum SkinRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+  EXCLUSIVE
 }
 
-// ---------------------------------------------------------
-// ECOSSISTEMA DOMINANTE (TURISMO & COMÉRCIO LOCAL)
-// ---------------------------------------------------------
-
-model ProviderProduct {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  price       Decimal @db.Decimal(10, 2)
-  imageUrl    String?
-  active      Boolean @default(true)
-
-  serviceProviderId String
-  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+enum SponsorshipStatus {
+  PENDING
+  ACTIVE
+  CANCELLED
+  EXPIRED
 }
 
-model ProviderReview {
-  id       String  @id @default(uuid())
-  rating   Int // 1-5 estrelas
-  comment  String?
-  videoUrl String? // Review no estilo TikTok/Reels
+enum SponsorshipTier {
+  EXCLUSIVE
+  SHARED
+}
 
-  visitorId String
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+enum SurveyQuestionType {
+  STARS
+  TEXT
+  CHOICE
+  NPS
+}
 
-  serviceProviderId String
-  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+enum TenantType {
+  MUSEUM
+  PRODUCER
+  SECRETARIA
+  CULTURAL_SPACE
+  CITY
+  ARCHITECTURAL_LANDMARK
+}
 
+enum TicketStatus {
+  ACTIVE
+  PAUSED
+  SOLD_OUT
+  EXPIRED
+}
+
+enum TicketType {
+  FREE
+  PAID
+}
+
+enum TransactionStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  RELEASED
+}
+
+enum TriggerType {
+  TRAIL_COMPLETED
+  EVENT_ATTENDED
+  XP_THRESHOLD
+  MANUAL
+}
+
+
+model TokenBlacklist {
+  id String @id @default(uuid())
+  token String @unique @db.VarChar(512)
+  expiresAt DateTime
   createdAt DateTime @default(now())
 }
 
-model CulturalPassport {
-  id           String @id @default(uuid())
-  culturaCoins Int    @default(0) // Moeda virtual gamificada
-  level        Int    @default(1)
-
-  visitorId String  @unique
-  visitor   Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-
-  xpTransactions XPTransaction[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model XPTransaction {
-  id     String @id @default(uuid())
-  amount Int // +XP ou -XP
-  reason String // "Visitou Museu X", "Comeu no Restaurante Y"
-
-  passportId String
-  passport   CulturalPassport @relation(fields: [passportId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-}
-
-model B2BBundle {
-  id          String  @id @default(uuid())
-  name        String // ex: "Tour Histórico + Almoço Mineiro"
-  description String?
-  totalPrice  Decimal @db.Decimal(10, 2)
-
-  primaryProviderId String
-  primaryProvider   ServiceProvider @relation(fields: [primaryProviderId], references: [id], onDelete: Cascade)
-
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+model StripeWebhookEvent {
+  id String @id
+  type String
+  processedAt DateTime @default(now())
 }

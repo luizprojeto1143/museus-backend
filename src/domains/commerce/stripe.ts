@@ -19,7 +19,14 @@ router.get('/onboarding-link', authMiddleware, async (req, res) => {
         let dbUpdate: any = null;
 
         if (type === 'MUSEUM') {
-            const tenantId = (id as string || user.tenantId) as string;
+            let tenantId = user.tenantId;
+            if (id && id !== user.tenantId) {
+                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                    return res.status(403).json({ message: 'Acesso negado. Você só pode gerenciar o financeiro do seu próprio museu.' });
+                }
+                tenantId = id as string;
+            }
+            if (!tenantId) return res.status(400).json({ message: 'Tenant ID não encontrado' });
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
             if (!tenant) return res.status(404).json({ message: 'Museu não encontrado' });
             
@@ -76,11 +83,19 @@ router.get('/onboarding-link', authMiddleware, async (req, res) => {
  */
 router.get('/dashboard-link', authMiddleware, async (req, res) => {
     try {
+        const user = req.user!;
         const { type, id } = req.query;
         let connectedId = '';
 
         if (type === 'MUSEUM') {
-            const tenant = await prisma.tenant.findUnique({ where: { id: id as string } });
+            let tenantId = user.tenantId;
+            if (id && id !== user.tenantId) {
+                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                    return res.status(403).json({ message: 'Acesso negado.' });
+                }
+                tenantId = id as string;
+            }
+            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId as string } });
             connectedId = tenant?.stripeConnectId || '';
         } else if (type === 'PRODUCER') {
             const producer = await prisma.user.findUnique({ where: { id: req.user!.id } });
@@ -117,11 +132,19 @@ router.get('/dashboard-link', authMiddleware, async (req, res) => {
  */
 router.get('/balance', authMiddleware, async (req, res) => {
     try {
+        const user = req.user!;
         const { type, id } = req.query;
         let connectedId = '';
 
         if (type === 'MUSEUM') {
-            const tenant = await prisma.tenant.findUnique({ where: { id: id as string } });
+            let tenantId = user.tenantId;
+            if (id && id !== user.tenantId) {
+                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                    return res.status(403).json({ message: 'Acesso negado.' });
+                }
+                tenantId = id as string;
+            }
+            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId as string } });
             connectedId = tenant?.stripeConnectId || '';
         } else if (type === 'PRODUCER') {
             const producer = await prisma.user.findUnique({ where: { id: req.user!.id } });
@@ -163,7 +186,14 @@ router.post('/payout', authMiddleware, async (req, res) => {
         
         let connectedId = '';
         if (type === 'MUSEUM') {
-            const tenantId = (id as string || user.tenantId) as string;
+            let tenantId = user.tenantId;
+            if (id && id !== user.tenantId) {
+                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                    return res.status(403).json({ message: 'Acesso negado.' });
+                }
+                tenantId = id as string;
+            }
+            if (!tenantId) return res.status(400).json({ message: 'Tenant ID não encontrado' });
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
             connectedId = tenant?.stripeConnectId || '';
         } else if (type === 'PRODUCER') {

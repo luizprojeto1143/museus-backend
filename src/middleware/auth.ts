@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { Role } from "@prisma/client";
+import { prisma } from "../prisma.js";
 
 // SECURITY: JWT_SECRET must be set in production. In dev, we warn if missing.
 if (!process.env.JWT_SECRET) {
@@ -27,7 +28,7 @@ function getCookie(cookies: string | undefined, name: string) {
   return match ? match[2] : null;
 }
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+export async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   let token: string | null = null;
   
   // 1. Try Authorization header
@@ -45,7 +46,18 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     console.warn(`[AUTH] Missing authentication from ${req.ip}`);
     return res.status(401).json({ message: "Não autenticado" });
   }
+
   try {
+    // 3. Security: Check if token is in Blacklist
+    const blacklisted = await prisma.tokenBlacklist.findUnique({
+      where: { token }
+    });
+    
+    if (blacklisted) {
+      console.warn(`[AUTH] Attempt to use revoked token from ${req.ip}`);
+      return res.status(401).json({ message: "Sessão inválida ou revogada" });
+    }
+
     const payload = jwt.verify(token, JWT_SECRET) as JwtPayload;
     req.user = {
       id: payload.sub,

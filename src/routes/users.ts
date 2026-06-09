@@ -59,6 +59,10 @@ router.get("/:id", authMiddleware, async (req, res) => {
     const { id } = req.params;
     const currentUser = req.user!;
 
+    if (currentUser.id !== id && currentUser.role !== "MASTER" && currentUser.role !== "ADMIN") {
+        return res.status(403).json({ message: "Acesso negado. Você só pode visualizar seu próprio perfil." });
+    }
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: {

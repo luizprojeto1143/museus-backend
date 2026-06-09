@@ -250,6 +250,29 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
         data: { revoked: true }
       });
     }
+
+    // Blacklist the Access Token to prevent JWT replay
+    let accessToken = req.headers.authorization?.split(" ")[1];
+    if (!accessToken && req.headers.cookie) {
+      const match = req.headers.cookie.match(new RegExp('(^| )museus_token=([^;]+)'));
+      if (match) accessToken = match[2];
+    }
+    if (accessToken) {
+        try {
+            const decoded = jwt.decode(accessToken) as any;
+            if (decoded && decoded.exp) {
+                const expiresAt = new Date(decoded.exp * 1000);
+                await prisma.tokenBlacklist.create({
+                    data: {
+                        token: accessToken,
+                        expiresAt: expiresAt
+                    }
+                });
+            }
+        } catch (e) {
+            console.error("Failed to blacklist access token", e);
+        }
+    }
     res.clearCookie("museus_token", { sameSite: isProd ? "none" : "lax", secure: isProd });
     res.clearCookie("museus_refresh_token", { sameSite: isProd ? "none" : "lax", secure: isProd });
     return res.status(200).json({ message: "Logout realizado com sucesso" });
