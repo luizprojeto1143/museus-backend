@@ -829,4 +829,33 @@ router.get("/public-passport/:id", async (req, res) => {
   }
 });
 
+
+router.get("/me/passport", authMiddleware, async (req, res) => {
+  try {
+    const email = req.user?.email;
+    const tenantId = (req).tenantId;
+
+    if (!email || !tenantId) {
+      return res.status(400).json({ message: "email e tenantId sao obrigatorios" });
+    }
+
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: email.toLowerCase(), tenantId },
+      select: { id: true, xp: true, name: true }
+    });
+
+    if (!visitor) return res.status(404).json({ message: "Visitante nao encontrado" });
+
+    const stamps = await (prisma as any).passportStamp.findMany({
+      where: { visitorId: visitor.id },
+      include: { work: { select: { title: true, artist: true, imageUrl: true } } },
+      orderBy: { createdAt: "desc" }
+    });
+
+    res.json({ xp: visitor.xp, name: visitor.name, stamps });
+  } catch (error) {
+    res.status(500).json({ message: "Erro ao carregar passaporte" });
+  }
+});
+
 export default router;

@@ -42,8 +42,8 @@ export const initCronJobs = () => {
 
         const tokens: string[] = [];
         for (const reg of registrations) {
-          if (reg.visitor && reg.visitor.deviceTokens) {
-            for (const dt of reg.visitor.deviceTokens) {
+          if (reg.Visitor && reg.Visitor.deviceTokens) {
+            for (const dt of reg.Visitor.deviceTokens) {
               tokens.push(dt.token);
             }
           }
@@ -53,7 +53,7 @@ export const initCronJobs = () => {
           const message = {
             notification: {
               title: `Seu evento começa em 1 hora!`,
-              body: `${event.title} em ${event.tenant.name} está quase começando. Não esqueça seu QR Code de acesso.`
+              body: `${event.title} em ${event.Tenant?.name || ""} está quase começando. Não esqueça seu QR Code de acesso.`
             },
             data: {
               type: 'EVENT_REMINDER',

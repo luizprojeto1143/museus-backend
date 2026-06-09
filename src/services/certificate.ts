@@ -23,8 +23,8 @@ export class CertificateService {
         const cert = await prisma.certificate.findUnique({
             where: { id: certificateId },
             include: {
-                visitor: true,
-                tenant: true,
+                Visitor: true,
+                Tenant: true,
                 template: true
             }
         });
@@ -218,7 +218,7 @@ export class CertificateService {
                 const hasResponse = await prisma.surveyResponse.findFirst({
                     where: {
                         visitorId: visitorId,
-                        question: { eventId: relatedId }
+                        questionId: { eventId: relatedId }
                     }
                 });
 

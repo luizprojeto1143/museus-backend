@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { prisma } from "./prisma.js";
 import express from "express";
+import publicCitiesRoutes from "./routes/public/cities";
+import publicProvidersRoutes from "./routes/public/providers";
 import { Socket } from "net";
 import cors from "cors";
 import helmet from "helmet";
@@ -215,6 +217,8 @@ app.use("/trails", trailsRoutes);
 app.use("/events", eventsRoutes);
 app.use("/visitors", visitorsRoutes);
 app.use("/upload", uploadRoutes);
+app.use("/public/cities", publicCitiesRoutes);
+app.use("/public/providers", publicProvidersRoutes);
 app.use("/in-person-services", inPersonServicesRoutes);
 app.use("/tenant-services", tenantServicesRoutes);
 app.use("/ai", aiRoutes);

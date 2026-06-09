@@ -52,11 +52,11 @@ export class GamificationService {
             id: clue.id,
             riddle: clue.riddle,
             // SECURITY: Do NOT send 'answer' to the frontend to prevent simple inspection cheats
-            targetWorkId: clue.workId,
+            targetWorkId: clue.WorkId,
             xpReward: 100, // Standardize XP reward or make it dynamic if schema supported it
             date: clue.createdAt,
             // Hint: If work has a room, maybe use it as a hint?
-            hint: clue.work?.room ? `Local: ${clue.work.room}` : undefined,
+            hint: clue.Work?.room ? `Local: ${clue.Work.room}` : undefined,
             isActive: true // Backward compatibility
         }));
     }

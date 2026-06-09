@@ -22,12 +22,12 @@ export async function analyzeProjectWithAI(projectId: string, tenantId: string) 
         const project = await prisma.culturalProject.findUnique({
             where: { id: projectId },
             include: {
-                notice: true,
+                Notice: true,
                 tenant: true
             }
         });
 
-        if (!project || !project.notice) {
+        if (!project || !project.Notice) {
             console.error("Projeto ou edital não encontrado");
             return null;
         }
@@ -38,12 +38,12 @@ export async function analyzeProjectWithAI(projectId: string, tenantId: string) 
         Sua tarefa é analisar a proposta abaixo comparando-a com os requisitos e objetivos do edital vinculado.
 
         DADOS DO EDITAL:
-        Título: ${project.notice.title}
-        Descrição: ${project.notice.description || "N/A"}
-        Objetivos: ${project.notice.objectives || "N/A"}
-        Requisitos: ${project.notice.requirements || "N/A"}
-        Teto por projeto: R$ ${project.notice.maxPerProject || "N/A"}
-        Acessibilidade obrigatória: ${project.notice.requiresAccessibilityPlan ? "Sim" : "Não"}
+        Título: ${project.Notice?.title || ""}
+        Descrição: ${project.Notice.description || "N/A"}
+        Objetivos: ${project.Notice.objectives || "N/A"}
+        Requisitos: ${project.Notice.requirements || "N/A"}
+        Teto por projeto: R$ ${project.Notice.maxPerProject || "N/A"}
+        Acessibilidade obrigatória: ${project.Notice.requiresAccessibilityPlan ? "Sim" : "Não"}
 
         DADOS DO PROJETO:
         Título: ${project.title}
