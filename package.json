@@ -6,7 +6,7 @@
                 },
     "scripts":  {
                     "dev":  "tsx watch src/index.ts",
-                    "build":  "prisma generate",
+                    "build":  "prisma generate \u0026\u0026 tsc",
                     "start":  "node scripts/start_deploy.mjs",
                     "prisma:generate":  "prisma generate",
                     "prisma:migrate":  "prisma migrate deploy",

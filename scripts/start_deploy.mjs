@@ -1,3 +1,4 @@
+process.env.DIRECT_URL = process.env.DIRECT_URL || process.env.DATABASE_URL;
 import { execSync, spawn } from 'child_process';
 import 'dotenv/config';
 
@@ -193,4 +194,5 @@ main().catch(err => {
     console.error("❌ Erro no script de deploy:", err);
     process.exit(1);
 });
+
 
