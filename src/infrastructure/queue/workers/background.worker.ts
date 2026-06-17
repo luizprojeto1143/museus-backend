@@ -7,7 +7,7 @@ import { prisma } from '../../../prisma.js';
  * Background Worker Principal
  * Processa eventos assíncronos pesados desacoplados da request principal.
  */
-export const backgroundWorker = new Worker(QUEUES.BACKGROUND_TASKS, async (job: Job) => {
+export const backgroundWorker = redisConnection ? new Worker(QUEUES.BACKGROUND_TASKS, async (job: Job) => {
   logger.info(`[Worker] Processing job ${job.name} (ID: ${job.id})`);
 
   switch (job.name) {
@@ -30,7 +30,7 @@ export const backgroundWorker = new Worker(QUEUES.BACKGROUND_TASKS, async (job: 
     default:
       logger.warn(`[Worker] Unknown job name: ${job.name}`);
   }
-}, { connection: redisConnection as any });
+}, { connection: redisConnection as any }) : null;
 
 // ----------------------------------------------------
 // Handlers Assíncronos (Executados fora da requisição)
@@ -92,6 +92,8 @@ async function handleIncrementViews(data: { eventId?: string, spaceId?: string, 
 }
 
 // Tratamento de erros do Worker (Falhas de conexão com Redis, etc)
-backgroundWorker.on('error', (err: any) => {
-  logger.error(err, '[Worker] Fatal error:');
-});
+if (backgroundWorker) {
+  backgroundWorker.on('error', (err: any) => {
+    logger.error(err, '[Worker] Fatal error:');
+  });
+}
