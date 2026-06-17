@@ -1,1 +1,6 @@
-import { execSync } from "child_process";`ntry {`n  execSync("npx tsc", { stdio: "inherit" });`n} catch (e) {`n  console.log("TypeScript compilation finished with errors, but continuing...");`n}
+import { execSync } from "child_process";
+try {
+  execSync("npx tsc", { stdio: "inherit" });
+} catch (e) {
+  console.log("TypeScript compilation finished with errors, but continuing...");
+}
