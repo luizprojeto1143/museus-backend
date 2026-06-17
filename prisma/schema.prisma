@@ -55,6 +55,8 @@ model AccessibilityExecution {
   CulturalProject       CulturalProject?         @relation(fields: [projectId], references: [id])
   AccessibilityProvider AccessibilityProvider?   @relation(fields: [providerId], references: [id])
   Tenant                Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  financialTransactionId String?
+  FinancialTransaction  FinancialTransaction?    @relation(fields: [financialTransactionId], references: [id])
 
   @@index([projectId])
   @@index([providerId])
@@ -570,6 +572,8 @@ model Donation {
   platformFee           Decimal? @db.Decimal(10, 2)
   stripePaymentIntentId String?  @unique
   Tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  financialTransactionId String?
+  FinancialTransaction  FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
 }
 
 model EquipamentoCheckin {
@@ -988,6 +992,8 @@ model Order {
   stripePaymentIntentId String?     @unique
   Tenant                Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   Visitor               Visitor?    @relation(fields: [visitorId], references: [id])
+  financialTransactionId String?
+  FinancialTransaction  FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
   OrderItem             OrderItem[]
 
   @@index([status])
@@ -1213,6 +1219,8 @@ model Registration {
   Event                 Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
   Ticket                Ticket             @relation(fields: [ticketId], references: [id])
   Visitor               Visitor?           @relation(fields: [visitorId], references: [id])
+  financialTransactionId String?
+  FinancialTransaction  FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
 
   @@index([asaasPaymentId])
   @@index([eventId])
@@ -1528,6 +1536,7 @@ model Tenant {
   certificateBackgroundUrl    String?
   mapImageUrl                 String?
   latitude                    Float?
+  feePercentage               Float?                   @default(10.0)
   longitude                   Float?
   welcomeAudioUrl             String?
   welcomeVideoUrl             String?
@@ -1646,6 +1655,10 @@ model Tenant {
   Work                        Work[]
   WorkSponsorship             WorkSponsorship[]
   WorkSubmission              WorkSubmission[]
+  FinancialTransaction        FinancialTransaction[]
+  AccountsReceivable          AccountsReceivable[]
+  AccountsPayable             AccountsPayable[]
+  Refund                      Refund[]
 
   @@index([parentId])
 }
@@ -1808,6 +1821,8 @@ model Transaction {
   updatedAt             DateTime
   stripePaymentIntentId String?           @unique
   Conversation          Conversation      @relation(fields: [conversationId], references: [id])
+  financialTransactionId String?
+  FinancialTransaction  FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
 
   @@index([conversationId])
   @@index([payerId])
@@ -2398,4 +2413,67 @@ model StripeWebhookEvent {
   id String @id
   type String
   processedAt DateTime @default(now())
+}
+
+model FinancialTransaction {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  type                  String   
+  source                String   
+  amount                Decimal  @db.Decimal(10, 2)
+  fee                   Decimal  @db.Decimal(10, 2)
+  netAmount             Decimal  @db.Decimal(10, 2)
+  status                String   
+  paymentMethod         String   
+  stripePaymentIntentId String?
+  stripeChargeId        String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  Tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  Order                 Order[]
+  Donation              Donation[]
+  Registration          Registration[]
+  Transaction           Transaction[]
+  AccessibilityExecution AccessibilityExecution[]
+}
+
+model AccountsReceivable {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  description           String
+  amount                Decimal  @db.Decimal(10, 2)
+  dueDate               DateTime
+  status                String   
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  Tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model AccountsPayable {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  providerId            String?
+  description           String
+  amount                Decimal  @db.Decimal(10, 2)
+  dueDate               DateTime
+  status                String   
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  Tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Refund {
+  id                    String   @id @default(uuid())
+  transactionId         String
+  tenantId              String
+  amount                Decimal  @db.Decimal(10, 2)
+  reason                String?
+  status                String   
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  Tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

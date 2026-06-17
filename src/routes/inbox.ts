@@ -188,7 +188,8 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
         // 1. Stripe Split Payment Logic
         const { stripeService } = await import("../services/stripeService.js");
         const amountCents = Math.round(amount * 100);
-        const platformFeeCents = Math.round(amountCents * 0.10); // 10% fee for marketplace services
+        const feePercentage = conversation.provider?.feePercentage ?? 10.0;
+        const platformFeeCents = Math.round(amountCents * (feePercentage / 100)); // Taxa configurável
 
         const stripeCustomerId = await stripeService.createCustomer({
             name: user.name || "User",

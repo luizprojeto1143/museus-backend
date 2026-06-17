@@ -14,67 +14,82 @@ router.get('/dashboard', authMiddleware, requireRole(['ADMIN', 'MASTER']), async
             return res.status(400).json({ message: 'TenantID obrigatório' });
         }
 
-        // 1. Fetch Orders (Loja)
-        const orders = await prisma.order.findMany({
-            where: {
-                tenantId,
-                status: { in: ['PAID', 'DELIVERED'] }
-            },
-            select: { total: true, createdAt: true }
-        });
+        // Fetch aggregated stats from FinancialTransaction instead of individual tables
+        const [
+            shopAgg,
+            donationsAgg,
+            ticketsAgg,
+            serviceAgg,
+            totalAgg
+        ] = await Promise.all([
+            prisma.financialTransaction.aggregate({
+                where: { tenantId, status: 'COMPLETED', source: 'ORDER' },
+                _sum: { amount: true, fee: true, netAmount: true },
+                _count: { id: true }
+            }),
+            prisma.financialTransaction.aggregate({
+                where: { tenantId, status: 'COMPLETED', source: 'DONATION' },
+                _sum: { amount: true, fee: true, netAmount: true },
+                _count: { id: true }
+            }),
+            prisma.financialTransaction.aggregate({
+                where: { tenantId, status: 'COMPLETED', source: 'REGISTRATION' },
+                _sum: { amount: true, fee: true, netAmount: true },
+                _count: { id: true }
+            }),
+            prisma.financialTransaction.aggregate({
+                where: { tenantId, status: 'COMPLETED', source: 'SERVICE' },
+                _sum: { amount: true, fee: true, netAmount: true },
+                _count: { id: true }
+            }),
+            prisma.financialTransaction.aggregate({
+                where: { tenantId, status: 'COMPLETED' },
+                _sum: { amount: true, fee: true, netAmount: true },
+                _count: { id: true }
+            })
+        ]);
 
-        // 2. Fetch Donations
-        const donations = await prisma.donation.findMany({
-            where: {
-                tenantId,
-                status: 'COMPLETED'
-            },
-            select: { amount: true, createdAt: true }
-        });
+        const totalShop = Number(shopAgg._sum.amount || 0);
+        const totalDonations = Number(donationsAgg._sum.amount || 0);
+        const totalTickets = Number(ticketsAgg._sum.amount || 0);
+        const totalService = Number(serviceAgg._sum.amount || 0);
 
-        // 3. Fetch Paid Tickets (Registrations)
-        const tickets = await prisma.registration.findMany({
-            where: {
-                event: { tenantId },
-                status: { in: ['CONFIRMED', 'CHECKED_IN'] },
-                pricePaid: { gt: 0 }
-            },
-            select: { pricePaid: true, checkInDate: true, status: true } // Let's use checkInDate or assume recent if needed, but we don't have createdAt on registration. Wait, does Registration have createdAt? No. We might need to estimate or use event date. Let's just aggregate total for now.
-        });
-
-        // Aggregate Totals
-        const totalShop = orders.reduce((sum, order) => sum + Number(order.total), 0);
-        const totalDonations = donations.reduce((sum, don) => sum + Number(don.amount), 0);
-        const totalTickets = tickets.reduce((sum, tkt) => sum + Number(tkt.pricePaid), 0);
-
-        const grossTotal = totalShop + totalDonations + totalTickets;
-        const platformFee = grossTotal * 0.05; // 5% fee
-        const netTotal = grossTotal - platformFee;
+        const grossTotal = Number(totalAgg._sum.amount || 0);
+        const platformFee = Number(totalAgg._sum.fee || 0);
+        const netTotal = Number(totalAgg._sum.netAmount || 0);
 
         // Format for charts (Source Distribution)
         const distribution = [
             { name: 'Loja', value: totalShop },
             { name: 'Doações', value: totalDonations },
-            { name: 'Ingressos', value: totalTickets }
+            { name: 'Ingressos', value: totalTickets },
+            { name: 'Serviços', value: totalService }
         ].filter(item => item.value > 0);
 
-        // We can add a simple daily breakdown for Shop and Donations (since Registration lacks createdAt)
-        // For a true enterprise app, Registration needs createdAt, but let's work with what we have.
-        // Let's create a 7-day breakdown for Shop and Donations.
+        // Calculate Daily Breakdown dynamically via database
         const last7Days = Array.from({ length: 7 }, (_, i) => {
             const d = new Date();
             d.setDate(d.getDate() - i);
             return d.toISOString().split('T')[0];
         }).reverse();
 
-        const dailyRevenue = last7Days.map(dateStr => {
-            const dayOrders = orders.filter(o => o.createdAt.toISOString().startsWith(dateStr));
-            const dayDonations = donations.filter(d => d.createdAt.toISOString().startsWith(dateStr));
+        // Query daily revenue grouped by date
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+        const dailyTx = await prisma.financialTransaction.findMany({
+            where: { tenantId, status: 'COMPLETED', createdAt: { gte: sevenDaysAgo } },
+            select: { amount: true, source: true, createdAt: true }
+        });
+
+        const dailyRevenue = last7Days.map(dateStr => {
+            const dayTxs = dailyTx.filter(t => t.createdAt.toISOString().startsWith(dateStr));
             return {
                 date: dateStr,
-                loja: dayOrders.reduce((sum, o) => sum + Number(o.total), 0),
-                doacoes: dayDonations.reduce((sum, d) => sum + Number(d.amount), 0)
+                loja: dayTxs.filter(t => t.source === 'ORDER').reduce((sum, t) => sum + Number(t.amount), 0),
+                doacoes: dayTxs.filter(t => t.source === 'DONATION').reduce((sum, t) => sum + Number(t.amount), 0),
+                ingressos: dayTxs.filter(t => t.source === 'REGISTRATION').reduce((sum, t) => sum + Number(t.amount), 0),
+                servicos: dayTxs.filter(t => t.source === 'SERVICE').reduce((sum, t) => sum + Number(t.amount), 0)
             };
         });
 
@@ -83,7 +98,7 @@ router.get('/dashboard', authMiddleware, requireRole(['ADMIN', 'MASTER']), async
                 grossTotal,
                 platformFee,
                 netTotal,
-                totalTransactions: orders.length + donations.length + tickets.length
+                totalTransactions: totalAgg._count.id
             },
             distribution,
             dailyRevenue

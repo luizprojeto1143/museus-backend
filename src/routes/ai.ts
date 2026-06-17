@@ -4,9 +4,7 @@ import OpenAI from "openai";
 import { authMiddleware } from "../middleware/auth.js";
 import { aiLimiter } from "../middleware/rateLimiter.js";
 import multer from "multer";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const pdf = require("pdf-parse");
+import pdf from "pdf-parse";
 import fs from "fs";
 
 const router = Router();

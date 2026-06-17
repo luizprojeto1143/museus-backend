@@ -301,12 +301,19 @@ export async function deleteFromStorage(fileUrl: string) {
     }
     // Local Delete
     else if (fileUrl.includes("/uploads/")) {
-      const filename = fileUrl.split("/uploads/").pop();
-      if (filename) {
+      const rawFilename = fileUrl.split("/uploads/").pop();
+      if (rawFilename) {
+        // SECURITY: Prevent path traversal by extracting only the base name
+        const filename = path.basename(rawFilename);
         const filepath = path.join(uploadDir, filename);
-        if (fs.existsSync(filepath)) {
-          fs.unlinkSync(filepath);
-          console.log(`[Storage] Deleted local file: ${filepath}`);
+        
+        // Ensure the resolved path actually stays inside uploadDir
+        const resolvedUploadDir = path.resolve(uploadDir);
+        const resolvedFilePath = path.resolve(filepath);
+        
+        if (resolvedFilePath.startsWith(resolvedUploadDir) && fs.existsSync(resolvedFilePath)) {
+          fs.unlinkSync(resolvedFilePath);
+          console.log(`[Storage] Deleted local file: ${resolvedFilePath}`);
         }
       }
     }

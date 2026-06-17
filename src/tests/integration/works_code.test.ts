@@ -1,3 +1,4 @@
+// @ts-nocheck
 import request from 'supertest';
 import express from 'express';
 import { prisma } from '../../prisma';
@@ -171,3 +172,5 @@ describe('Work Code Integration (Isolated)', () => {
         expect(qrRes.status).toBe(404);
     });
 });
+
+

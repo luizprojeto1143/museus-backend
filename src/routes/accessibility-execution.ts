@@ -177,7 +177,8 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 
         const { stripeService } = await import("../services/stripeService.js");
         const amountCents = Math.round(Number(execution.approvedBudget) * 100);
-        const platformFeeCents = Math.round(amountCents * 0.10); // 10% comissão plataforma
+        const feePercentage = execution.provider.feePercentage ?? 10.0;
+        const platformFeeCents = Math.round(amountCents * (feePercentage / 100)); // Taxa configurável
 
         const stripeCustomerId = await stripeService.createCustomer({
             name: user.name || execution.tenant.name,

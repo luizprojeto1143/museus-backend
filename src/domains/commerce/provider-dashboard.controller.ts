@@ -12,6 +12,11 @@ export const ProviderDashboardController = {
         return res.status(400).json({ error: 'Provider ID is required' });
       }
 
+      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId } });
+      if (!provider || (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER')) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       // Receita total baseada em transações concluídas
       const transactions = await prisma.transaction.aggregate({
         where: {
@@ -64,6 +69,11 @@ export const ProviderDashboardController = {
       const { tenantSlug } = req.params;
       const { name, description, price, imageUrl, serviceProviderId } = req.body;
 
+      const provider = await prisma.serviceProvider.findUnique({ where: { id: serviceProviderId } });
+      if (!provider || (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER')) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
       if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
 
@@ -88,6 +98,12 @@ export const ProviderDashboardController = {
   async getProducts(req: Request, res: Response) {
     try {
       const providerId = req.query.providerId as string;
+
+      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId } });
+      if (!provider || (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER')) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
       const products = await prisma.providerProduct.findMany({
         where: { serviceProviderId: providerId }
       });
@@ -106,6 +122,9 @@ export const ProviderDashboardController = {
 
       const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId }, include: { owner: true } });
       if (!provider || !provider.owner) return res.status(404).json({ error: 'Provider or owner not found' });
+      if (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER') {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
 
       // Se não temos a chave do Stripe configurada, retornamos um erro claro ao invés de um mock
       if (!process.env.STRIPE_SECRET_KEY) {

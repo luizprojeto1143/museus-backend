@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { prisma } from "./prisma.js";
 import express from "express";
-import publicCitiesRoutes from "./routes/public/cities";
-import publicProvidersRoutes from "./routes/public/providers";
+import publicCitiesRoutes from "./routes/public/cities.js";
+import publicProvidersRoutes from "./routes/public/providers.js";
 import { Socket } from "net";
 import cors from "cors";
 import helmet from "helmet";
@@ -170,6 +170,7 @@ app.use(compression());
 // Specific routes (auth, AI, upload) have their own tighter limiters applied locally.
 app.use(limiter);
 
+app.use('/webhooks/stripe', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: "2mb" })); // Reduced from 10mb for general security. Upload routes have their own multer limit.
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
@@ -342,6 +343,12 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   // Always log full detail server-side
   const sanitizedBody = { ..._req.body };
   if (sanitizedBody.password) sanitizedBody.password = "****";
+  if (sanitizedBody.cpf) sanitizedBody.cpf = "***.***.***-**";
+  if (sanitizedBody.phone) sanitizedBody.phone = "****-****";
+
+  const sanitizedHeaders = { ..._req.headers };
+  if (sanitizedHeaders.authorization) sanitizedHeaders.authorization = "Bearer ****";
+  if (sanitizedHeaders.cookie) sanitizedHeaders.cookie = "****";
 
   console.error("❌ Global Error Detail:", {
     message: err.message,
@@ -351,7 +358,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     path: _req.path,
     method: _req.method,
     body: sanitizedBody,
-    headers: _req.headers
+    headers: sanitizedHeaders
   });
   
   // Persist error to AuditLog for remote debugging

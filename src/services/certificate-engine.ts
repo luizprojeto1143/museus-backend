@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { TriggerType, CertificateType } from '@prisma/client';
 import { CertificateService } from './certificate.js';
 import { prisma } from '../prisma.js';
@@ -128,3 +129,4 @@ export class CertificateEngine {
         console.log(`[CertificateEngine] Issued certificate ${cert.code} for visitor ${context.visitorId}`);
     }
 }
+

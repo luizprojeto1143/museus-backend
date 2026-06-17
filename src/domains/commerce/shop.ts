@@ -124,12 +124,13 @@ router.post('/orders', authMiddleware, async (req, res) => {
             // Fetch Tenant for Split
             const tenant = await tx.tenant.findUnique({
                 where: { id: tenantId },
-                select: { stripeConnectId: true, name: true }
+                select: { stripeConnectId: true, name: true, feePercentage: true }
             });
 
             const { stripeService } = await import('../../services/stripeService.js');
             const amountCents = Math.round(total * 100);
-            const platformFeeCents = Math.round(amountCents * 0.05);
+            const feePercent = tenant?.feePercentage ?? 5.0;
+            const platformFeeCents = Math.round(amountCents * (feePercent / 100));
 
             const stripeCustomerId = await stripeService.createCustomer({
                 name: customerName,

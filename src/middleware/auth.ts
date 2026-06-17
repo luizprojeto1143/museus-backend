@@ -67,6 +67,11 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       name: payload.name,
       permissions: payload.permissions
     };
+    
+    if (payload.tenantId) {
+      (req as any).tenantId = payload.tenantId;
+    }
+
     return next();
   } catch (err) {
     const tokenData = jwt.decode(token) as any;
@@ -134,6 +139,10 @@ export function softAuthMiddleware(req: Request, res: Response, next: NextFuncti
       name: payload.name,
       permissions: payload.permissions
     };
+
+    if (payload.tenantId) {
+      (req as any).tenantId = payload.tenantId;
+    }
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
       // Opt-out logging for soft-auth expired tokens if they are too frequent

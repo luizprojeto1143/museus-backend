@@ -22,7 +22,8 @@ async function main() {
       name: "Admin Master",
       password: hashedPassword,
       role: "MASTER",
-      active: true
+      active: true,
+      id: "admin-master-001", updatedAt: new Date()
     }
   });
 
@@ -32,3 +33,4 @@ async function main() {
 main()
   .catch(console.error)
   .finally(() => prisma.$disconnect());
+

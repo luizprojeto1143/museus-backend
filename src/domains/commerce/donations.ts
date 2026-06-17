@@ -35,7 +35,7 @@ router.post('/', limiter, async (req, res) => {
         // 1. Fetch Tenant to get its stripeConnectId
         const tenant = await prisma.tenant.findUnique({
             where: { id: data.tenantId },
-            select: { stripeConnectId: true, name: true }
+            select: { stripeConnectId: true, name: true, feePercentage: true }
         });
 
         // 2. Integration with Stripe
@@ -44,7 +44,8 @@ router.post('/', limiter, async (req, res) => {
             const { stripeService } = await import('../../services/stripeService.js');
             
             const amountCents = Math.round(data.amount * 100);
-            const platformFeeCents = Math.round(amountCents * 0.05); // 5% fee
+            const feePercent = tenant?.feePercentage ?? 5.0;
+            const platformFeeCents = Math.round(amountCents * (feePercent / 100)); // Dynamic fee
 
             const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 

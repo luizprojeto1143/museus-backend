@@ -4,7 +4,7 @@ import { z } from 'zod';
 const emailField = z.string().email({ message: "E-mail inválido" }).toLowerCase();
 
 const passwordField = z.string()
-    .min(6, { message: "A senha deve ter no mínimo 6 caracteres" })
+    .min(10, { message: "A senha deve ter no mínimo 10 caracteres" })
     .max(128, { message: "Senha demasiado longa" });
 
 // ─── Login ────────────────────────────────────────────────────────────────────

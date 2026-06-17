@@ -165,7 +165,7 @@ async function main() {
     console.log("👤 Garantindo usuário Master (Rescue)...");
     try {
       // Usamos node direto no arquivo compilado se disponível, ou ts-node com limite de memória
-      execSync("node scripts/rescue_master.js", { 
+      execSync("node scripts/rescue_master.mjs", { 
         env: { ...process.env, DATABASE_URL: poolerUrl },
         stdio: "inherit",
         timeout: 60000
@@ -193,3 +193,4 @@ main().catch(err => {
     console.error("❌ Erro no script de deploy:", err);
     process.exit(1);
 });
+

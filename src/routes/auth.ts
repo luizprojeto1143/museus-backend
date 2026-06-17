@@ -394,6 +394,12 @@ router.post("/reset-password", passwordRecoveryLimiter, validate(resetPasswordSc
       data: { password: hash }
     });
 
+    // Revoke old refresh tokens
+    await prisma.refreshToken.updateMany({
+      where: { userId: payload.userId },
+      data: { revoked: true }
+    });
+
     return res.json({ message: "Senha alterada com sucesso!" });
 
   } catch (err) {
@@ -631,9 +637,14 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
   try {
     const { targetTenantId } = req.body;
     const userId = req.user?.id;
+    const userRole = req.user?.role;
 
     if (!targetTenantId || !userId) {
       return res.status(400).json({ message: "Tenant ID e User ID são obrigatórios" });
+    }
+
+    if (userRole === Role.ADMIN || userRole === Role.COLLABORATOR || userRole === Role.PRODUCER) {
+      return res.status(403).json({ message: "Apenas usuários MASTER e VISITOR podem alternar de ambiente." });
     }
 
     const tenant = await prisma.tenant.findUnique({ where: { id: targetTenantId } });
@@ -641,10 +652,16 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
       return res.status(404).json({ message: "Museu não encontrado" });
     }
 
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: { tenantId: targetTenantId }
-    });
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ message: "Usuário não encontrado" });
+
+    // Só muda o tenant principal se for MASTER
+    if (userRole === Role.MASTER) {
+      user = await prisma.user.update({
+        where: { id: userId },
+        data: { tenantId: targetTenantId }
+      });
+    }
 
     const visitor = await prisma.visitor.findFirst({
       where: { email: user.email, tenantId: targetTenantId }
@@ -656,6 +673,7 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
       });
     }
 
+    // Passar o targetTenantId no token para refletir a sessão ativa (mesmo para VISITOR)
     const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, targetTenantId, tenant.type, user.name);
 
     // Buscar equipamentoId do novo tenant
@@ -663,6 +681,10 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
       where: { tenantId: targetTenantId, ativo: true },
       orderBy: { createdAt: 'asc' }
     });
+
+    // Atualiza os cookies com os novos tokens
+    res.cookie("museus_token", accessToken, COOKIE_OPTIONS);
+    res.cookie("museus_refresh_token", refreshToken, COOKIE_OPTIONS);
 
     return res.json({
       role: user.role,

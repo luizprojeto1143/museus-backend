@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { ProviderDashboardController } from './provider-dashboard.controller.js';
+import { authMiddleware, requireRole } from '../../middleware/auth.js';
+import { Role } from '@prisma/client';
 
 const router = Router({ mergeParams: true });
+
+router.use(authMiddleware, requireRole([Role.PRODUCER, Role.MASTER]));
 
 // Dashboard Analytics
 router.get('/dashboard', ProviderDashboardController.getDashboardStats);
