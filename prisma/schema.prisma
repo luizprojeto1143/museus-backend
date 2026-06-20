@@ -570,7 +570,8 @@ model Donation {
   tenantId              String
   createdAt             DateTime @default(now())
   platformFee           Decimal? @db.Decimal(10, 2)
-  stripePaymentIntentId String?  @unique
+  stripePaymentIntentId  String?  @unique
+  stripeCheckoutSessionId String? @unique
   tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   financialTransactionId String?
   financialTransaction  FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
@@ -989,7 +990,8 @@ model Order {
   createdAt             DateTime    @default(now())
   updatedAt             DateTime @updatedAt
   platformFee           Decimal?    @db.Decimal(10, 2)
-  stripePaymentIntentId String?     @unique
+  stripePaymentIntentId  String?     @unique
+  stripeCheckoutSessionId String?    @unique
   tenant                Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   visitor               Visitor?    @relation(fields: [visitorId], references: [id])
   financialTransactionId String?
@@ -1197,6 +1199,18 @@ model RefreshToken {
   @@index([userId])
 }
 
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model Registration {
   id                    String             @id @default(uuid())
   code                  String             @unique
@@ -1215,7 +1229,8 @@ model Registration {
   asaasPaymentId        String?
   asaasPaymentStatus    String?
   deletedAt             DateTime?
-  stripePaymentIntentId String?            @unique
+  stripePaymentIntentId  String?            @unique
+  stripeCheckoutSessionId String?           @unique
   event                 Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
   ticket                Ticket             @relation(fields: [ticketId], references: [id])
   visitor               Visitor?           @relation(fields: [visitorId], references: [id])
@@ -1858,6 +1873,7 @@ model User {
   deviceTokens           DeviceToken[]
   events                 Event[]
   refreshTokens          RefreshToken[]
+  passwordResetTokens    PasswordResetToken[]
   serviceProviders       ServiceProvider[]
   tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workSubmissions        WorkSubmission[]

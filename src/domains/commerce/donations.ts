@@ -76,8 +76,8 @@ router.post('/', limiter, async (req, res) => {
             await prisma.donation.update({
                 where: { id: donation.id },
                 data: {
-                    platformFee: data.amount * 0.05,
-                    stripePaymentIntentId: session.id
+                    platformFee: data.amount * (feePercent / 100),
+                    stripeCheckoutSessionId: session.id
                 }
             });
 

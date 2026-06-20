@@ -333,17 +333,24 @@ router.post("/recover-password", passwordRecoveryLimiter, validate(recoverPasswo
       return res.status(200).json({ message: "Se o e-mail existir, as instruções foram enviadas." });
     }
 
-    // 2. Generate Reset Token (JWT with specific purpose)
-    const resetToken = jwt.sign(
-      { userId: user.id, type: 'password-reset' },
-      JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    // 2. Generate Reset Token (opaque) and store hash in DB
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    // Invalidar tokens anteriores não usados
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, used: false },
+      data: { used: true }
+    });
+
+    await prisma.passwordResetToken.create({
+      data: { tokenHash, userId: user.id, expiresAt }
+    });
 
     // 3. Send Email
-    // Note: In production, FRONTEND_URL should be env var. Fallback to localhost for now.
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+    const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
 
     const { mailService } = await import("../services/email.js");
 
@@ -358,7 +365,7 @@ router.post("/recover-password", passwordRecoveryLimiter, validate(recoverPasswo
               <p>Clique no botão abaixo para criar uma nova senha:</p>
               <a href="${resetLink}" style="display: inline-block; padding: 10px 20px; background-color: #d4af37; color: #000; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 20px 0;">Redefinir Senha</a>
               <p>Link: <a href="${resetLink}">${resetLink}</a></p>
-              <p style="font-size: 12px; color: #666;">Este link expira em 1 hora.</p>
+              <p style="font-size: 12px; color: #666;">Este link expira em 1 hora e só pode ser usado uma vez.</p>
               <p style="font-size: 12px; color: #666;">Se você não solicitou isso, ignore este e-mail.</p>
           </div>
           `
@@ -379,24 +386,42 @@ router.post("/reset-password", passwordRecoveryLimiter, validate(resetPasswordSc
       return res.status(400).json({ message: "Token e nova senha são obrigatórios" });
     }
 
-    // Verify Token
-    const payload = jwt.verify(token, JWT_SECRET) as any;
-    if (payload.type !== 'password-reset') {
-      return res.status(400).json({ message: "Token inválido para esta operação" });
+    // 1. Verificar token na tabela PasswordResetToken
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const resetRecord = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash }
+    });
+
+    if (!resetRecord) {
+      return res.status(400).json({ message: "Token inválido ou não encontrado" });
     }
 
-    // Hash new password
+    if (resetRecord.used) {
+      return res.status(400).json({ message: "Token já utilizado. Solicite um novo link de recuperação." });
+    }
+
+    if (new Date() > resetRecord.expiresAt) {
+      return res.status(400).json({ message: "Token expirado. Solicite um novo link de recuperação." });
+    }
+
+    // 2. Marcar como usado ANTES de alterar a senha (evitar race condition)
+    await prisma.passwordResetToken.update({
+      where: { tokenHash },
+      data: { used: true }
+    });
+
+    // 3. Hash new password
     const hash = await bcrypt.hash(newPassword, 10);
 
-    // Update User
+    // 4. Update User
     await prisma.user.update({
-      where: { id: payload.userId },
+      where: { id: resetRecord.userId },
       data: { password: hash }
     });
 
-    // Revoke old refresh tokens
+    // 5. Revoke old refresh tokens (forcá re-login em todos os dispositivos)
     await prisma.refreshToken.updateMany({
-      where: { userId: payload.userId },
+      where: { userId: resetRecord.userId },
       data: { revoked: true }
     });
 

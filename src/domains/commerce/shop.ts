@@ -160,8 +160,8 @@ router.post('/orders', authMiddleware, async (req, res) => {
                     customerPhone,
                     shippingAddress,
                     total,
-                    platformFee: total * 0.05,
-                    stripePaymentIntentId: session.id,
+                    platformFee: total * (feePercent / 100),
+                    stripeCheckoutSessionId: session.id,
                     orderItems: { create: orderItems }
                 }
             });

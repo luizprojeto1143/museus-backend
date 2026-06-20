@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { z } from 'zod';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { mailService, sendCertificateEmail } from '../services/email.js';
+import { getPlatformFeeRate } from '../utils/fees.js';
 
 const router = Router();
 
@@ -80,7 +81,9 @@ router.post('/', authMiddleware, async (req, res) => {
 
                 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
                 const amountCents = Math.round(Number(ticket.price) * 100);
-                const platformFeeCents = Math.round(amountCents * 0.05); // 5% platform fee
+                // Taxa dinâmica por tenant
+                const feeRate = await getPlatformFeeRate(tenantId);
+                const platformFeeCents = Math.round(amountCents * feeRate);
 
                 // Create Checkout Session with Split
                 const session = await stripeService.createSplitPaymentSession({
@@ -106,7 +109,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
         // 4. Register Transaction (Transaction Protected)
         try {
-            const [registration] = await prisma.$transaction([
+                    const [registration] = await prisma.$transaction([
                 prisma.registration.create({
                     data: {
                         eventId,
@@ -116,15 +119,19 @@ router.post('/', authMiddleware, async (req, res) => {
                         guestEmail,
                         code,
                         pricePaid: ticket.price || 0,
-                        platformFee: ticket.price ? Number(ticket.price) * 0.05 : 0,
+                        platformFee: ticket.price ? Number(ticket.price) * await getPlatformFeeRate(tenantId) : 0,
                         status: ticket.type === 'PAID' ? 'PENDING' : 'CONFIRMED',
-                        stripePaymentIntentId: stripePaymentData?.id
+                        stripeCheckoutSessionId: stripePaymentData?.id
                     }
                 }),
-                prisma.ticket.update({
-                    where: { id: ticketId, sold: { lt: ticket.quantity } },
-                    data: { sold: { increment: 1 } }
-                })
+                // sold é incrementado SOMENTE após confirmação do pagamento (webhook checkout.session.completed)
+                // Para ingressos GRATUITOS, incrementamos agora
+                ...(ticket.type === 'FREE' ? [
+                    prisma.ticket.update({
+                        where: { id: ticketId, sold: { lt: ticket.quantity } },
+                        data: { sold: { increment: 1 } }
+                    })
+                ] : [])
             ]);
 
             // Fire and Forget Email (Free only, Paid usually after webhook)

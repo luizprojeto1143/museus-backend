@@ -862,7 +862,10 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       });
 
       const amountInCents = Math.round(result.totalAmount * 100);
-      const appFeeInCents = Math.round(amountInCents * 0.05); // 5% platform fee
+      // Taxa dinâmica: lê do tenant (fallback 5%)
+      const eventTenant = await prisma.tenant.findUnique({ where: { id: event.tenantId }, select: { feePercentage: true } });
+      const feeRate = (eventTenant?.feePercentage ?? 5) / 100;
+      const appFeeInCents = Math.round(amountInCents * feeRate);
 
       // 3. Create Stripe Checkout session with Connect Split
       const session = await stripeService.createSplitPaymentSession({
@@ -882,7 +885,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       // Update registration with Stripe Session ID
       await prisma.registration.update({
         where: { id: result.registration.id },
-        data: { stripePaymentIntentId: session.id }
+        data: { stripeCheckoutSessionId: session.id }
       });
 
       return res.status(201).json({

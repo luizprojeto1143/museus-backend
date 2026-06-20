@@ -58,7 +58,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
         // 1. Handle Registration (Tickets)
         const registration = await prisma.registration.findFirst({
-          where: { stripePaymentIntentId: session.id },
+          where: { stripeCheckoutSessionId: session.id },
           include: { event: true }
         });
         if (registration && registration.status === "PENDING") {
@@ -77,18 +77,26 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 netAmount: amount - fee,
                 status: "COMPLETED",
                 paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: session.id,
+                stripePaymentIntentId: session.payment_intent as string | undefined,
                 stripeChargeId: session.payment_intent as string | undefined
               }
             });
             finTxId = finTx.id;
           }
 
-          await prisma.registration.update({
-            where: { id: registration.id },
-            data: { status: "CONFIRMED", financialTransactionId: finTxId }
-          });
-          console.log(`[Webhook] Registration ${registration.code} CONFIRMED!`);
+          // Confirmar registro + incrementar sold atomicamente
+          await prisma.$transaction([
+            prisma.registration.update({
+              where: { id: registration.id },
+              data: { status: "CONFIRMED", financialTransactionId: finTxId }
+            }),
+            // Incrementa sold apenas agora, após pagamento confirmado
+            prisma.ticket.update({
+              where: { id: registration.ticketId, sold: { lt: prisma.ticket.fields.quantity } },
+              data: { sold: { increment: 1 } }
+            })
+          ]);
+          console.log(`[Webhook] Registration ${registration.code} CONFIRMED + sold incrementado!`);
           
           // Send Ticket Email
           const eventData = await prisma.event.findUnique({ where: { id: registration.eventId } });
@@ -102,7 +110,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
         // 2. Handle Shop Orders
         const order = await prisma.order.findFirst({
-          where: { stripePaymentIntentId: session.id }
+          where: { stripeCheckoutSessionId: session.id }
         });
         if (order && order.status === "PENDING") {
           const amount = Number(order.total);
@@ -118,7 +126,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
               netAmount: amount - fee,
               status: "COMPLETED",
               paymentMethod: "CREDIT_CARD",
-              stripePaymentIntentId: session.id,
+              stripePaymentIntentId: session.payment_intent as string | undefined,
               stripeChargeId: session.payment_intent as string | undefined
             }
           });
@@ -199,7 +207,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
         // 5. Handle Donations
         const donation = await prisma.donation.findFirst({
-          where: { stripePaymentIntentId: session.id }
+          where: { stripeCheckoutSessionId: session.id }
         });
         if (donation && donation.status === "PENDING") {
           const amount = Number(donation.amount);
@@ -212,7 +220,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               source: "DONATION",
               amount, fee, netAmount: amount - fee,
               status: "COMPLETED", paymentMethod: "CREDIT_CARD",
-              stripePaymentIntentId: session.id, stripeChargeId: session.payment_intent as string | undefined
+              stripePaymentIntentId: session.payment_intent as string | undefined,
+              stripeChargeId: session.payment_intent as string | undefined
             }
           });
 

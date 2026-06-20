@@ -37,12 +37,21 @@ export const createAuditLog = async (
 };
 
 // GET /audit-logs - List audit logs (Admin only)
-router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req: any, res) => {
     try {
-        const { tenantId, entity, action, limit = 100, offset = 0 } = req.query;
+        const user = req.user;
+        const { entity, action, limit = 100, offset = 0 } = req.query;
 
         const where: any = {};
-        if (tenantId) where.tenantId = tenantId;
+
+        // MASTER pode filtrar por qualquer tenant; ADMIN só vê o próprio
+        if (user.role === 'MASTER') {
+            if (req.query.tenantId) where.tenantId = req.query.tenantId;
+        } else {
+            // ADMIN: força o tenant dele, ignora qualquer ?tenantId externo
+            where.tenantId = user.tenantId;
+        }
+
         if (entity) where.entity = entity;
         if (action) where.action = action;
 
@@ -89,13 +98,19 @@ router.get('/entity/:entity/:id', authMiddleware, requireRole(['ADMIN', 'MASTER'
 });
 
 // GET /audit-logs/summary - Get summary of recent activity
-router.get('/summary', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+router.get('/summary', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req: any, res) => {
     try {
-        const { tenantId } = req.query;
+        const user = req.user;
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
 
         const where: any = { createdAt: { gte: since } };
-        if (tenantId) where.tenantId = tenantId;
+
+        // MASTER pode filtrar por qualquer tenant; ADMIN só vê o próprio
+        if (user.role === 'MASTER') {
+            if (req.query.tenantId) where.tenantId = req.query.tenantId;
+        } else {
+            where.tenantId = user.tenantId;
+        }
 
         const [actionCounts, entityCounts, recentLogs] = await Promise.all([
             prisma.auditLog.groupBy({
