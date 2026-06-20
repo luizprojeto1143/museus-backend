@@ -32,7 +32,7 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODU
             where,
             orderBy: { name: "asc" },
             include: {
-                _count: { select: { executions: true } }
+                _count: { select: { accessibilityExecutions: true } }
             }
         });
 
@@ -77,11 +77,11 @@ router.get("/me/executions", authMiddleware, async (req, res) => {
         const executions = await prisma.accessibilityExecution.findMany({
             where: { providerId: provider.id },
             include: {
-                project: {
+                culturalProject: {
                     select: {
                         id: true,
                         title: true,
-                        proponent: {
+                        user: {
                             select: {
                                 name: true
                             }
@@ -154,14 +154,14 @@ router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         const provider = await prisma.accessibilityProvider.findUnique({
             where: { id },
             include: {
-                executions: {
+                accessibilityExecutions: {
                     orderBy: { createdAt: "desc" },
                     take: 20,
                     include: {
-                        project: { select: { id: true, title: true } }
+                        culturalProject: { select: { id: true, title: true } }
                     }
                 },
-                _count: { select: { executions: true } }
+                _count: { select: { accessibilityExecutions: true } }
             }
         });
 
@@ -368,7 +368,7 @@ router.get("/:id/history", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]
             where: { providerId: id },
             orderBy: { createdAt: "desc" },
             include: {
-                project: { select: { id: true, title: true } },
+                culturalProject: { select: { id: true, title: true } },
                 tenant: { select: { id: true, name: true } }
             }
         });

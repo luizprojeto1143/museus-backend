@@ -12,9 +12,7 @@ router.get('/', async (req, res) => {
 
         const quiz = await prisma.quiz.findFirst({
             where: { targetId: targetId as string },
-            include: {
-                questions: true
-            }
+            include: { quizQuestions: true }
         });
 
         res.json(quiz);
@@ -102,7 +100,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
                 targetType,
                 targetId,
                 tenantId: tenantId!,
-                questions: {
+                quizQuestions: {
                     create: questions.map((q: any) => ({
                         question: q.question,
                         options: q.options,
@@ -111,7 +109,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
                     }))
                 }
             },
-            include: { questions: true }
+            include: { quizQuestions: true }
         });
 
         res.status(201).json(quiz);

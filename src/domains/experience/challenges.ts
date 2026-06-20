@@ -236,7 +236,7 @@ router.get('/hunts', async (req, res) => {
                 ]
             },
             include: {
-                _count: { select: { steps: true } }
+                _count: { select: { scavengerHuntSteps: true } }
             }
         });
 
@@ -255,7 +255,7 @@ router.get('/hunts/:id', async (req, res) => {
         const hunt = await prisma.scavengerHunt.findUnique({
             where: { id },
             include: {
-                steps: {
+                scavengerHuntSteps: {
                     orderBy: { order: 'asc' },
                     take: 1, // Only show first step initially
                     select: { id: true, order: true, clue: true }

@@ -83,6 +83,7 @@ async function run() {
           fotoCapaUrl: "https://images.unsplash.com/photo-1544967082-d9d25d867d66?q=80&w=600",
           ativo: true,
           tenantId: casaCultura.id,
+          qrCodeEntrada: "casa-da-cultura-sede-qr-" + Date.now(),
           acessivelCadeira: true,
           acessivelLibras: true,
           acessivelAudio: true
@@ -152,6 +153,7 @@ async function run() {
           fotoCapaUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=600",
           ativo: true,
           tenantId: teatroTenant.id,
+          qrCodeEntrada: "teatro-municipal-sede-qr-" + Date.now(),
           acessivelCadeira: true,
           acessivelLibras: true
         }

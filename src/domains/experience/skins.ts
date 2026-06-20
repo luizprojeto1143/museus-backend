@@ -9,7 +9,7 @@ const router = Router();
 router.get("/", authenticate, authorize(["MASTER"]), async (req, res) => {
   const skins = await prisma.skin.findMany({
     include: { 
-      _count: { select: { owners: true } },
+      _count: { select: { visitorSkins: true } },
       characterBase: true
     }
   });

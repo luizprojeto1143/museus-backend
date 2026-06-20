@@ -68,7 +68,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       where: { email },
       include: {
         tenant: { select: { type: true, parentId: true } },
-        providerProfile: { select: { id: true } }
+        accessibilityProvider: { select: { id: true } }
       }
     });
 
@@ -115,7 +115,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
       cityId: user.tenant?.parentId || null,
       equipamentoId,
       tenantType: user.tenant?.type,
-      hasProviderProfile: !!user.providerProfile,
+      hasProviderProfile: !!(user as any).accessibilityProvider,
       permissions: user.permissions,
       user: {
         id: user.id,
@@ -126,7 +126,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
         cityId: user.tenant?.parentId || null,
         equipamentoId,
         tenantType: user.tenant?.type,
-        hasProviderProfile: !!user.providerProfile,
+        hasProviderProfile: !!(user as any).accessibilityProvider,
         permissions: user.permissions
       }
     };
@@ -289,7 +289,7 @@ router.get("/me", authMiddleware, async (req: any, res: Response) => {
       where: { id: req.user.id },
       include: {
         tenant: { select: { type: true, parentId: true } },
-        providerProfile: { select: { id: true } }
+        accessibilityProvider: { select: { id: true } }
       }
     });
 
@@ -313,7 +313,7 @@ router.get("/me", authMiddleware, async (req: any, res: Response) => {
       cityId: user.tenant?.parentId || null,
       equipamentoId,
       tenantType: user.tenant?.type,
-      hasProviderProfile: !!user.providerProfile,
+      hasProviderProfile: !!(user as any).accessibilityProvider,
       permissions: user.permissions
     });
   } catch (err) {

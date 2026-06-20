@@ -25,8 +25,8 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
             where,
             orderBy: { createdAt: "desc" },
             include: {
-                project: { select: { id: true, title: true } },
-                provider: { select: { id: true, name: true } }
+                culturalProject: { select: { id: true, title: true } },
+                accessibilityProvider: { select: { id: true, name: true } }
             }
         });
         return res.json(executions);
@@ -48,8 +48,8 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
             prisma.accessibilityExecution.findMany({
                 where: { tenantId }, orderBy: { createdAt: "desc" }, take: 10,
                 include: {
-                    project: { select: { id: true, title: true } },
-                    provider: { select: { id: true, name: true } }
+                    culturalProject: { select: { id: true, title: true } },
+                    accessibilityProvider: { select: { id: true, name: true } }
                 }
             })
         ]);
@@ -64,7 +64,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
     try {
         const execution = await prisma.accessibilityExecution.findUnique({
             where: { id: req.params.id },
-            include: { project: true, provider: true, tenant: { select: { id: true, name: true } } }
+            include: { culturalProject: true, accessibilityProvider: true, tenant: { select: { id: true, name: true } } }
         });
         if (!execution) return res.status(404).json({ message: "Execução não encontrada" });
         if (req.user!.role !== Role.MASTER && execution.tenantId !== req.user!.tenantId) return res.status(403).json({ message: "Sem permissão" });
@@ -130,7 +130,10 @@ router.put("/:id/deliver", authMiddleware, async (req, res) => {
 router.put("/:id/validate", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { validationStatus, validationNotes } = req.body;
-        const execution = await prisma.accessibilityExecution.findUnique({ where: { id: req.params.id } });
+        const execution = await prisma.accessibilityExecution.findUnique({ 
+            where: { id: req.params.id },
+            include: { accessibilityProvider: true }
+        });
         if (!execution) return res.status(404).json({ message: "Execução não encontrada" });
 
         if (validationStatus === "APPROVED" && execution.providerId) {
@@ -161,15 +164,15 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 
         const execution = await prisma.accessibilityExecution.findUnique({
             where: { id },
-            include: { provider: true, tenant: true }
+            include: { accessibilityProvider: true, tenant: true }
         });
 
-        if (!execution || !execution.provider) return res.status(404).json({ message: "Execução ou prestador não encontrado" });
+        if (!execution || !execution.accessibilityProvider) return res.status(404).json({ message: "Execução ou prestador não encontrado" });
         if (user.role !== Role.MASTER && execution.tenantId !== user.tenantId) return res.status(403).json({ message: "Sem permissão" });
         if (!execution.approvedBudget) return res.status(400).json({ message: "Valor aprovado não definido" });
 
         // Stripe Split Payment Verification
-        if (!execution.provider.stripeConnectId) {
+        if (!(execution as any).accessibilityProvider?.stripeConnectId) {
             return res.status(400).json({ 
                 message: "O prestador ainda não configurou sua conta Stripe Connect. Solicite ao prestador que acesse o painel e configure os recebimentos." 
             });
@@ -177,7 +180,7 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 
         const { stripeService } = await import("../services/stripeService.js");
         const amountCents = Math.round(Number(execution.approvedBudget) * 100);
-        const feePercentage = execution.provider.feePercentage ?? 10.0;
+        const feePercentage = (execution as any).accessibilityProvider?.feePercentage ?? 10.0;
         const platformFeeCents = Math.round(amountCents * (feePercentage / 100)); // Taxa configurável
 
         const stripeCustomerId = await stripeService.createCustomer({
@@ -192,7 +195,7 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
             customerId: stripeCustomerId,
             amount: amountCents,
             description: `Serviço de Acessibilidade: ${execution.serviceType}`,
-            connectedAccountId: execution.provider.stripeConnectId || '', 
+            connectedAccountId: (execution as any).accessibilityProvider.stripeConnectId, 
             applicationFeeAmount: platformFeeCents,
             successUrl: `${frontendUrl}/accessibility/success?id=${id}`,
             cancelUrl: `${frontendUrl}/accessibility/cancel?id=${id}`

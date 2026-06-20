@@ -18,7 +18,7 @@ export class RoteiroController {
       const routes = await prisma.route.findMany({
         where: { tenantId: tenant.id },
         include: {
-          stops: {
+          routeStops: {
             orderBy: { order: 'asc' }
           }
         },

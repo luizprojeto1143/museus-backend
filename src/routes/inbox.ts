@@ -28,8 +28,8 @@ router.get("/", authMiddleware, async (req, res) => {
         const conversations = await prisma.conversation.findMany({
             where,
             include: {
-                provider: { select: { id: true, name: true, email: true } },
-                producer: { select: { id: true, name: true, email: true } },
+                accessibilityProvider: { select: { id: true, name: true, email: true } },
+                user: { select: { id: true, name: true, email: true } },
                 messages: {
                     orderBy: { createdAt: "desc" },
                     take: 1
@@ -54,8 +54,8 @@ router.get("/:id", authMiddleware, async (req, res) => {
         const conversation = await prisma.conversation.findUnique({
             where: { id },
             include: {
-                provider: { select: { id: true, name: true, email: true } },
-                producer: { select: { id: true, name: true, email: true } },
+                accessibilityProvider: { select: { id: true, name: true, email: true } },
+                user: { select: { id: true, name: true, email: true } },
                 messages: { orderBy: { createdAt: "asc" } },
                 transactions: { orderBy: { createdAt: "desc" } }
             }
@@ -65,7 +65,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
         const isProducer = conversation.producerId === user.id;
         const providerProfile = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
-        const isProvider = conversation.provider.id === providerProfile?.id;
+        const isProvider = (conversation as any).accessibilityProvider.id === providerProfile?.id;
         const isAdmin = user.role === Role.ADMIN || user.role === Role.MASTER;
 
         if (!isProducer && !isProvider && !isAdmin) {
@@ -181,14 +181,14 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 
         const conversation = await prisma.conversation.findUnique({ 
             where: { id },
-            include: { provider: true }
+            include: { accessibilityProvider: true }
         });
         if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
         // 1. Stripe Split Payment Logic
         const { stripeService } = await import("../services/stripeService.js");
         const amountCents = Math.round(amount * 100);
-        const feePercentage = conversation.provider?.feePercentage ?? 10.0;
+        const feePercentage = (conversation as any).accessibilityProvider?.feePercentage ?? 10.0;
         const platformFeeCents = Math.round(amountCents * (feePercentage / 100)); // Taxa configurável
 
         const stripeCustomerId = await stripeService.createCustomer({
@@ -203,7 +203,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
             customerId: stripeCustomerId,
             amount: amountCents,
             description: `Serviço Profissional: ${description}`,
-            connectedAccountId: conversation.provider.stripeConnectId || '', // Payout to Provider
+            connectedAccountId: (conversation as any).accessibilityProvider?.stripeConnectId || '', // Payout to Provider
             applicationFeeAmount: platformFeeCents,
             successUrl: `${frontendUrl}/inbox/${id}/success?session_id={CHECKOUT_SESSION_ID}`,
             cancelUrl: `${frontendUrl}/inbox/${id}/cancel`

@@ -23,13 +23,13 @@ router.get("/", authenticate, async (req, res) => {
       },
       include: {
         characterBase: true,
-        owners: visitorId ? { where: { visitorId: String(visitorId) } } : false
+        visitorSkins: visitorId ? { where: { visitorId: String(visitorId) } } : false
       }
     });
 
     const formatted = skins.map((s: any) => ({
       ...s,
-      owned: s.owners?.length > 0
+      owned: s.visitorSkins?.length > 0
     }));
 
     res.json(formatted);

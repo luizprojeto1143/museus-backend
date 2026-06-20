@@ -35,7 +35,7 @@ router.post("/", authenticate, async (req, res) => {
     // C1 Fix: Derive visitorId from JWT
     const visitor = await prisma.visitor.findFirst({
       where: { email: userEmail, tenantId },
-      include: { vRPGs: { where: { isActive: true }, include: { equippedSkin: true } } }
+      include: { visitorRPGs: { where: { isActive: true }, include: { skin: true } } }
     });
 
     if (!visitor) return res.status(404).json({ error: "Visitante não encontrado" });
@@ -56,7 +56,7 @@ router.post("/", authenticate, async (req, res) => {
       });
     }
 
-    const equippedSkin = visitor?.vRPGs[0]?.equippedSkin?.imageUrl || "default_avatar.png";
+    const equippedSkin = visitor?.visitorRPGs[0]?.skin?.imageUrl || "default_avatar.png";
 
     // L2 Backend Logic: Bronze=100k, Prata=250k, Ouro=500k, Platina=1M
     let level = 1; // Bronze

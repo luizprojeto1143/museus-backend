@@ -46,8 +46,8 @@ router.get('/me', authMiddleware, async (req, res) => {
         const characters = await prisma.visitorRPG.findMany({
             where: { visitorId },
             include: { 
-                selectedCharacter: true,
-                equippedSkin: true
+                characterBase: true,
+                skin: true
             }
         });
 
@@ -91,20 +91,22 @@ router.get('/me', authMiddleware, async (req, res) => {
                     if (cache?.status === 'READY') {
                         displayAvatarUrl = cache.imageUrl;
                     } else {
-                        displayAvatarUrl = c.baseAvatarUrl || c.equippedSkin?.imageUrl || c.selectedCharacter?.imageUrl || displayAvatarUrl;
+                        displayAvatarUrl = c.baseAvatarUrl || c.skin?.imageUrl || c.characterBase?.imageUrl || displayAvatarUrl;
                     }
                 } else {
-                    displayAvatarUrl = c.baseAvatarUrl || c.selectedCharacter?.imageUrl || displayAvatarUrl;
+                    displayAvatarUrl = c.baseAvatarUrl || c.characterBase?.imageUrl || displayAvatarUrl;
                 }
             } else {
-                displayAvatarUrl = c.equippedSkin?.imageUrl || c.selectedCharacter?.imageUrl || displayAvatarUrl;
+                displayAvatarUrl = c.skin?.imageUrl || c.characterBase?.imageUrl || displayAvatarUrl;
             }
 
             return {
                 ...c,
                 level: newLevel,
                 characterClass: newClass,
-                displayAvatarUrl
+                displayAvatarUrl,
+                baseCharacter: c.characterBase,
+                equippedSkin: c.skin
             };
         }));
 
@@ -175,7 +177,7 @@ router.post('/add-xp', authMiddleware, async (req, res) => {
 
         const updated = await prisma.visitorRPG.findFirst({
             where: { visitorId, isActive: true },
-            include: { selectedCharacter: true }
+            include: { characterBase: true }
         });
 
         res.json({ ...updated, leveledUp, xpAdded: amount });
@@ -251,7 +253,7 @@ router.post('/select-character', authMiddleware, async (req, res) => {
                 isActive: true,
                 characterName: (await prisma.characterBase.findUnique({ where: { id: characterId } }))?.name || 'Explorador'
             },
-            include: { selectedCharacter: true }
+            include: { characterBase: true }
         });
 
         res.json(updated);
@@ -297,7 +299,7 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
         const updatedRPG = await prisma.visitorRPG.update({
             where: { id: rpg.id },
             data: { equippedSkinId: skinId },
-            include: { equippedSkin: true }
+            include: { skin: true }
         });
 
         res.json(updatedRPG);

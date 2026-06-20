@@ -41,7 +41,7 @@ router.get("/events/:eventId/survey", async (req: Request, res: Response) => {
             orderBy: { order: "asc" },
             include: {
                 _count: {
-                    select: { responses: true }
+                    select: { surveyResponses: true }
                 }
             }
         });
@@ -132,13 +132,13 @@ router.get("/events/:eventId/survey/results", authenticate, async (req: Request,
             where: { eventId },
             orderBy: { order: "asc" },
             include: {
-                responses: true
+                surveyResponses: true
             }
         });
 
         // Calculate aggregated results
         const results = questions.map(q => {
-            const responses = q.responses;
+            const responses = q.surveyResponses;
             const totalResponses = responses.length;
 
             let aggregation: Record<string, unknown> = {};
@@ -207,7 +207,7 @@ router.get("/events/:eventId/survey/results", authenticate, async (req: Request,
         const uniqueRespondents = await prisma.surveyResponse.groupBy({
             by: ["visitorId", "guestEmail"],
             where: {
-                question: { eventId }
+                surveyQuestion: { eventId }
             }
         });
 
@@ -308,14 +308,14 @@ router.get("/events/:eventId/survey/my-responses", async (req: Request, res: Res
 
         const responses = await prisma.surveyResponse.findMany({
             where: {
-                question: { eventId },
+                surveyQuestion: { eventId },
                 OR: [
                     { visitorId: visitorId || undefined },
                     { guestEmail: guestEmail || undefined }
                 ]
             },
             include: {
-                question: true
+                surveyQuestion: true
             }
         });
 

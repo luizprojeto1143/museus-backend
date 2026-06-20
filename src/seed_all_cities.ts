@@ -481,6 +481,7 @@ async function run() {
               fotoCapaUrl: child.equipamento.fotoCapaUrl,
               ativo: true,
               tenantId: childTenant.id,
+              qrCodeEntrada: child.equipamento.slug + "-qr-" + Date.now(),
               acessivelCadeira: child.equipamento.acessivelCadeira,
               acessivelLibras: child.equipamento.acessivelLibras,
               acessivelAudio: child.equipamento.acessivelAudio

@@ -40,8 +40,8 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLA
              where,
              orderBy: { createdAt: "desc" },
              include: {
-                 notice: { select: { id: true, title: true, status: true } },
-                 proponent: { select: { id: true, name: true, email: true } },
+                 publicNotice: { select: { id: true, title: true, status: true } },
+                 user: { select: { id: true, name: true, email: true } },
                  tenant: { select: { name: true } },
                  _count: { select: { accessibilityExecutions: true } }
              }
@@ -63,7 +63,7 @@ router.get("/my", authMiddleware, async (req, res) => {
             where: { proponentId: user.id },
             orderBy: { createdAt: "desc" },
             include: {
-                notice: { select: { id: true, title: true, status: true } },
+                publicNotice: { select: { id: true, title: true, status: true } },
                 tenant: { select: { id: true, name: true, slug: true } }
             }
         });
@@ -84,12 +84,12 @@ router.get("/:id", authMiddleware, async (req, res) => {
         const project = await prisma.culturalProject.findUnique({
             where: { id },
             include: {
-                notice: true,
+                publicNotice: true,
                 tenant: { select: { id: true, name: true, slug: true } },
-                proponent: { select: { id: true, name: true, email: true } },
+                user: { select: { id: true, name: true, email: true } },
                 accessibilityExecutions: {
                     include: {
-                        provider: { select: { id: true, name: true } }
+                        accessibilityProvider: { select: { id: true, name: true } }
                     }
                 }
             }
@@ -265,7 +265,7 @@ router.post("/:id/submit", authMiddleware, async (req, res) => {
 
         const project = await prisma.culturalProject.findUnique({
             where: { id },
-            include: { notice: true, tenant: true }
+            include: { publicNotice: true, tenant: true }
         });
 
         if (!project) {
@@ -285,16 +285,16 @@ router.post("/:id/submit", authMiddleware, async (req, res) => {
             return res.status(400).json({ message: "Projeto já foi submetido" });
         }
 
-        if (!project.noticeId || !project.notice) {
+        if (!project.noticeId || !project.publicNotice) {
             return res.status(400).json({ message: "Projeto precisa estar vinculado a um edital" });
         }
 
-        if (project.notice.status !== "INSCRIPTIONS_OPEN") {
+        if (project.publicNotice?.status !== "INSCRIPTIONS_OPEN") {
             return res.status(400).json({ message: "Inscrições do edital encerradas" });
         }
 
         // Verificar se plano de acessibilidade é obrigatório
-        if (project.notice.requiresAccessibilityPlan && !project.accessibilityPlan) {
+        if (project.publicNotice?.requiresAccessibilityPlan && !project.accessibilityPlan) {
             return res.status(400).json({ message: "Plano de acessibilidade é obrigatório para este edital" });
         }
 
@@ -475,7 +475,7 @@ router.get("/:id/accessibility", authMiddleware, async (req, res) => {
             include: {
                 accessibilityExecutions: {
                     include: {
-                        provider: { select: { id: true, name: true, email: true } }
+                        accessibilityProvider: { select: { id: true, name: true, email: true } }
                     },
                     orderBy: { createdAt: "desc" }
                 }
@@ -510,7 +510,7 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
         const { id } = req.params;
         const project = await prisma.culturalProject.findUnique({
             where: { id },
-            include: { notice: true, proponent: true, tenant: true }
+            include: { publicNotice: true, user: true, tenant: true }
         });
 
         if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
@@ -550,7 +550,7 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
                 coverUrl: "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=1000&auto=format&fit=crop", 
                 format: "PRESENTIAL",
                 visibility: "PUBLIC",
-                producerName: project.proponent?.name || "Produtor Cultural",
+                producerName: project.user?.name || "Produtor Cultural",
                 tenantId: project.tenantId
             }
         });

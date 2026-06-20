@@ -297,15 +297,15 @@ router.post("/souvenir", async (req, res) => {
         email,
         tenantId
       },
-      include: { stamps: { include: { work: true } } }
+      include: { passportStamps: { include: { work: true } } }
     });
 
     if (!visitor) {
       return res.status(404).json({ message: "Visitante não encontrado" });
     }
 
-    const obras = visitor.stamps
-      .map((s) => `- ${s.work?.title || "Obra sem título"} (visitada em ${s.stampedAt.toISOString().substring(0, 10)})`)
+    const obras = visitor.passportStamps
+      .map((s: any) => `- ${s.work?.title || "Obra sem título"} (visitada em ${s.stampedAt.toISOString().substring(0, 10)})`)
       .join("\n");
 
     const userPrompt = `Crie um texto de souvenir para o visitante com base nas obras que ele viu:\n${obras}`;
@@ -508,7 +508,7 @@ router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, r
     }
 
     const dataBuffer = fs.readFileSync(req.file.path);
-    const data = await pdf(dataBuffer);
+    const data = await (pdf as any)(dataBuffer);
     const text = data.text;
 
     // Remove o arquivo temporário

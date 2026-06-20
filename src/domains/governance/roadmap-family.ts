@@ -14,7 +14,7 @@ router.get('/profiles', async (req, res) => {
 
         const profiles = await prisma.familyProfile.findMany({
             where: { spaceId: spaceId as string },
-            include: { events: { orderBy: { year: 'asc' } } }
+            include: { familyEvents: { orderBy: { year: 'asc' } } }
         });
 
         res.json(profiles);
@@ -30,7 +30,7 @@ router.get('/profiles/:id', async (req, res) => {
         const { id } = req.params;
         const profile = await prisma.familyProfile.findUnique({
             where: { id },
-            include: { events: { orderBy: { year: 'asc' } } }
+            include: { familyEvents: { orderBy: { year: 'asc' } } }
         });
 
         if (!profile) {

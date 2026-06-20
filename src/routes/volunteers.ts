@@ -11,7 +11,7 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const volunteers = await prisma.volunteer.findMany({
             where: { tenantId },
-            include: { _count: { select: { shifts: true } } },
+            include: { _count: { select: { volunteerShifts: true } } },
             orderBy: { createdAt: 'desc' }
         });
         res.json(volunteers);

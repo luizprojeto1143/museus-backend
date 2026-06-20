@@ -21,7 +21,7 @@ router.get('/onboarding-link', authMiddleware, async (req, res) => {
         if (type === 'MUSEUM') {
             let tenantId = user.tenantId;
             if (id && id !== user.tenantId) {
-                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                if (user.role !== 'MASTER') {
                     return res.status(403).json({ message: 'Acesso negado. Você só pode gerenciar o financeiro do seu próprio museu.' });
                 }
                 tenantId = id as string;
@@ -90,7 +90,7 @@ router.get('/dashboard-link', authMiddleware, async (req, res) => {
         if (type === 'MUSEUM') {
             let tenantId = user.tenantId;
             if (id && id !== user.tenantId) {
-                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                if (user.role !== 'MASTER') {
                     return res.status(403).json({ message: 'Acesso negado.' });
                 }
                 tenantId = id as string;
@@ -139,7 +139,7 @@ router.get('/balance', authMiddleware, async (req, res) => {
         if (type === 'MUSEUM') {
             let tenantId = user.tenantId;
             if (id && id !== user.tenantId) {
-                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                if (user.role !== 'MASTER') {
                     return res.status(403).json({ message: 'Acesso negado.' });
                 }
                 tenantId = id as string;
@@ -188,7 +188,7 @@ router.post('/payout', authMiddleware, async (req, res) => {
         if (type === 'MUSEUM') {
             let tenantId = user.tenantId;
             if (id && id !== user.tenantId) {
-                if (user.role !== 'MASTER' && user.role !== 'ADMIN') {
+                if (user.role !== 'MASTER') {
                     return res.status(403).json({ message: 'Acesso negado.' });
                 }
                 tenantId = id as string;

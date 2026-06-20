@@ -20,7 +20,7 @@ router.get("/works", async (req, res) => {
         tenant: {
           select: { name: true }
         },
-        sponsorships: {
+        workSponsorships: {
           where: { status: 'ACTIVE' },
           select: { tier: true }
         }
@@ -28,8 +28,8 @@ router.get("/works", async (req, res) => {
     });
 
     const worksWithSponsorData = works.map(work => {
-      const activeSponsors = work.sponsorships;
-      const hasExclusiveSponsor = activeSponsors.some(s => s.tier === 'EXCLUSIVE');
+      const activeSponsors = work.workSponsorships;
+      const hasExclusiveSponsor = activeSponsors.some((s: any) => s.tier === 'EXCLUSIVE');
       return {
         id: work.id,
         title: work.title,

@@ -25,7 +25,7 @@ router.get("/public", async (req, res) => {
             orderBy: { inscriptionEnd: "desc" },
             include: {
                 tenant: { select: { id: true, name: true, slug: true, logoUrl: true } },
-                _count: { select: { projects: true } }
+                _count: { select: { culturalProjects: true } }
             }
         });
 
@@ -45,7 +45,7 @@ router.get("/public/:id", async (req, res) => {
             where: { id },
             include: {
                 tenant: { select: { id: true, name: true, slug: true, logoUrl: true } },
-                _count: { select: { projects: true } }
+                _count: { select: { culturalProjects: true } }
             }
         });
 
@@ -88,7 +88,7 @@ router.get("/public/:id/results", async (req, res) => {
                 finalScore: "desc"
             },
             include: {
-                proponent: { select: { name: true } }
+                user: { select: { name: true } }
             }
         });
 
@@ -98,7 +98,7 @@ router.get("/public/:id/results", async (req, res) => {
             projects: projects.map(p => ({
                 id: p.id,
                 title: p.title,
-                proponentName: p.proponent.name,
+                proponentName: p.user?.name || "Desconhecido",
                 finalScore: notice.showScoresInResults ? p.finalScore : null,
                 approvedBudget: p.approvedBudget,
                 culturalCategory: p.culturalCategory
@@ -136,21 +136,21 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLA
             where: { tenantId },
             orderBy: { createdAt: "desc" },
             include: {
-                projects: {
+                culturalProjects: {
                     select: { status: true }
                 },
-                _count: { select: { projects: true } }
+                _count: { select: { culturalProjects: true } }
             }
         });
 
         // Agrupar status por edital
         const noticesWithStats = notices.map(notice => {
-            const stats = notice.projects.reduce((acc: any, p) => {
+            const stats = notice.culturalProjects.reduce((acc: any, p: any) => {
                 acc[p.status] = (acc[p.status] || 0) + 1;
                 return acc;
             }, {});
 
-            const { projects, ...noticeData } = notice;
+            const { culturalProjects: projects, ...noticeData } = notice;
             return {
                 ...noticeData,
                 stats
@@ -204,11 +204,11 @@ router.get("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.CO
             where: { id },
             include: {
                 tenant: true,
-                projects: {
+                culturalProjects: {
                     orderBy: { createdAt: "desc" },
                     take: 50
                 },
-                _count: { select: { projects: true } }
+                _count: { select: { culturalProjects: true } }
             }
         });
 

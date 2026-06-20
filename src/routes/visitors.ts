@@ -27,7 +27,7 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
         skip,
         take: limit,
         include: {
-          visits: {
+          visitorVisits: {
             select: {
               workId: true,
               trailId: true,
@@ -42,13 +42,13 @@ router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
     // Mapear para o formato esperado pelo front
     const formatted = visitors.map(v => {
       // Obras visitadas = visitas que possuem workId
-      const worksVisited = v.visits.filter(visit => visit.workId).length;
+      const worksVisited = v.visitorVisits.filter(visit => visit.workId).length;
 
       // Trilhas únicas
-      const uniqueTrails = new Set(v.visits.filter(visit => visit.trailId).map(visit => visit.trailId));
+      const uniqueTrails = new Set(v.visitorVisits.filter(visit => visit.trailId).map(visit => visit.trailId));
 
       // Eventos únicos
-      const uniqueEvents = new Set(v.visits.filter(visit => visit.eventId).map(visit => visit.eventId));
+      const uniqueEvents = new Set(v.visitorVisits.filter(visit => visit.eventId).map(visit => visit.eventId));
 
       return {
         id: v.id,
@@ -94,7 +94,7 @@ router.get("/me", authMiddleware, async (req, res) => {
     let visitor = await prisma.visitor.findFirst({
       where: { email: email.toLowerCase(), tenantId },
       include: {
-        visits: {
+        visitorVisits: {
           include: {
             work: { select: { title: true } },
             trail: { select: { title: true } },
@@ -103,7 +103,7 @@ router.get("/me", authMiddleware, async (req, res) => {
           orderBy: { createdAt: "desc" },
           take: 50
         },
-        achievements: {
+        visitorAchievements: {
           include: {
             achievement: {
               select: {
@@ -127,8 +127,8 @@ router.get("/me", authMiddleware, async (req, res) => {
           xp: 0
         },
         include: {
-          visits: true,
-          achievements: true
+          visitorVisits: true,
+          visitorAchievements: true
         }
       }) as any;
     }
@@ -153,7 +153,7 @@ router.get("/me/summary", async (req, res) => {
     const visitor = await prisma.visitor.findFirst({
       where: { email: email.toLowerCase(), tenantId },
       include: {
-        visits: {
+        visitorVisits: {
           orderBy: { createdAt: "desc" },
           take: 50,
           include: {
@@ -166,8 +166,8 @@ router.get("/me/summary", async (req, res) => {
             }
           }
         },
-        achievements: { include: { achievement: true } },
-        stamps: { include: { work: { select: { id: true, title: true, imageUrl: true } } } }
+        visitorAchievements: { include: { achievement: true } },
+        passportStamps: { include: { work: { select: { id: true, title: true, imageUrl: true } } } }
       }
     });
 
@@ -183,15 +183,15 @@ router.get("/me/summary", async (req, res) => {
       });
     }
 
-    const stamps = visitor.stamps.map(s => ({
+    const stamps = visitor.passportStamps.map((s: any) => ({
       workId: s.work?.id,
       workTitle: s.work?.title || "Obra",
       workImageUrl: s.work?.imageUrl,
       date: s.stampedAt
     }));
 
-    const visits = visitor.visits
-      .filter(v => v.work)
+    const visits = visitor.visitorVisits
+      .filter((v: any) => v.work)
       .map(v => ({
         id: v.id,
         work: v.work ? {
@@ -222,7 +222,7 @@ router.get("/me/summary", async (req, res) => {
       xp: visitor.xp,
       stamps,
       visits,
-      achievements: visitor.achievements.map((va) => ({
+      achievements: visitor.visitorAchievements.map((va: any) => ({
         id: va.achievement.id,
         code: va.achievement.code,
         title: va.achievement.title,
@@ -230,7 +230,7 @@ router.get("/me/summary", async (req, res) => {
         iconUrl: va.achievement.iconUrl,
         unlockedAt: va.unlockedAt
       })),
-      visitsCount: visitor.visits.length,
+      visitsCount: visitor.visitorVisits.length,
       level: level,
       nextLevelXp: nextLevelXpThreshold
     });
@@ -376,7 +376,7 @@ router.get("/:id", async (req, res) => {
     const visitor = await prisma.visitor.findFirst({
       where: { id, tenantId: String(tenantId) },
       include: {
-        visits: {
+        visitorVisits: {
           include: {
             work: { select: { title: true } },
             trail: { select: { title: true } },
@@ -384,7 +384,7 @@ router.get("/:id", async (req, res) => {
           },
           orderBy: { createdAt: "desc" }
         },
-        achievements: {
+        visitorAchievements: {
           include: {
             achievement: {
               select: {
@@ -693,8 +693,8 @@ router.get("/:visitorId/summary", async (req, res) => {
     const visitor = await prisma.visitor.findUnique({
       where: { id: visitorId },
       include: {
-        visits: { orderBy: { createdAt: "desc" }, take: 100, include: { work: true } },
-        achievements: { include: { achievement: true } }
+        visitorVisits: { orderBy: { createdAt: "desc" }, take: 100, include: { work: true } },
+        visitorAchievements: { include: { achievement: true } }
       }
     });
 
@@ -702,7 +702,7 @@ router.get("/:visitorId/summary", async (req, res) => {
       return res.status(404).json({ message: "Visitante não encontrado" });
     }
 
-    const stamps = visitor.visits
+    const stamps = visitor.visitorVisits
       .filter((v) => v.work)
       .map((v) => ({
         workTitle: v.work!.title,
@@ -714,14 +714,14 @@ router.get("/:visitorId/summary", async (req, res) => {
     return res.json({
       xp,
       stamps,
-      achievements: visitor.achievements.map((va) => ({
+      achievements: visitor.visitorAchievements.map((va) => ({
         id: va.achievement.id,
         code: va.achievement.code,
         title: va.achievement.title,
         description: va.achievement.description,
         unlockedAt: va.unlockedAt
       })),
-      visitsCount: visitor.visits.length
+      visitsCount: visitor.visitorVisits.length
     });
   } catch (err) {
     console.error("Erro summary visitante", err);
@@ -833,7 +833,7 @@ router.get("/public-passport/:id", async (req, res) => {
 router.get("/me/passport", authMiddleware, async (req, res) => {
   try {
     const email = req.user?.email;
-    const tenantId = (req).tenantId;
+    const tenantId = req.user?.tenantId;
 
     if (!email || !tenantId) {
       return res.status(400).json({ message: "email e tenantId sao obrigatorios" });

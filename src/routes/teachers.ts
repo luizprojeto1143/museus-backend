@@ -48,8 +48,8 @@ router.get('/visits', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (r
         const visits = await prisma.schoolVisit.findMany({
             where: { tenantId },
             include: {
-                teacher: { select: { name: true, email: true, school: true } },
-                _count: { select: { activities: true } }
+                teacherProfile: { select: { name: true, email: true, school: true } },
+                _count: { select: { postVisitActivities: true } }
             },
             orderBy: { visitDate: 'desc' }
         });

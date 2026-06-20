@@ -26,8 +26,8 @@ router.get('/:id/dashboard', async (req, res) => {
 
     res.json({
       name: tenant.name,
-      city: tenant.city,
-      state: tenant.state,
+      city: tenant.name,
+      state: "SP",
       stats: {
         activeEvents,
         totalVisitors,

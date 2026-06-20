@@ -10,17 +10,17 @@ router.get("/passport/:id", async (req, res) => {
         const visitor = await prisma.visitor.findUnique({
             where: { id },
             include: {
-                vRPGs: {
+                visitorRPGs: {
                     where: { isActive: true },
                     include: {
-                        selectedCharacter: true,
-                        equippedSkin: true
+                        characterBase: true,
+                        skin: true
                     }
                 },
-                vSkins: {
+                visitorSkins: {
                     include: { skin: true }
                 },
-                stamps: {
+                passportStamps: {
                     include: {
                         work: {
                             select: {

@@ -240,7 +240,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         certificateBackgroundUrl: certificateBackgroundUrl ? String(certificateBackgroundUrl) : null,
         certificateText: certificateText ? String(certificateText) : null,
         minMinutesForCertificate: minMinutesForCertificate ? Number(minMinutesForCertificate) : null,
-        producer: user.role === "PRODUCER" ? { connect: { id: user.id } } : undefined,
+        user: user.role === "PRODUCER" ? { connect: { id: user.id } } : undefined,
 
         // New fields
         type: type || "OTHER",
@@ -275,7 +275,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         videoUrl: videoUrl ? String(videoUrl) : null,
 
         space: spaceId ? { connect: { id: String(spaceId) } } : undefined,
-        equipamento: equipamentoId ? { connect: { id: String(equipamentoId) } } : undefined,
+        equipamentoCultural: equipamentoId ? { connect: { id: String(equipamentoId) } } : undefined,
 
         tenant: { connect: { id: String(tenantId) } }
       }
@@ -661,7 +661,7 @@ router.get("/:id/certificate/download", authMiddleware, async (req, res) => {
       const answersStart = await prisma.surveyResponse.count({
         where: {
           visitorId: visitor.id,
-          question: { eventId: id }
+          surveyQuestion: { eventId: id }
         }
       });
       // Assuming if they answered at least one question, it's valid. 
@@ -736,7 +736,7 @@ router.post("/:id/certificate", authMiddleware, async (req, res) => {
       const answersStart = await prisma.surveyResponse.count({
         where: {
           visitorId: visitorId,
-          question: { eventId: id }
+          surveyQuestion: { eventId: id }
         }
       });
       if (answersStart === 0) {
@@ -923,7 +923,7 @@ router.get("/:id/report", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
         },
         surveyQuestions: {
           include: {
-            responses: true
+            surveyResponses: true
           },
           orderBy: { order: "asc" }
         }
@@ -960,7 +960,7 @@ router.get("/:id/report", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
 
     // 3. Survey Results
     const surveyResults = event.surveyQuestions.map(q => {
-      const responses = q.responses;
+      const responses = q.surveyResponses;
       const totalResponses = responses.length;
 
       let aggregation: Record<string, unknown> = { count: totalResponses };
@@ -1025,7 +1025,7 @@ router.get("/:id/report", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
     let overallSatisfaction = 0;
     if (starsQuestions.length > 0) {
       const allStarsResponses = starsQuestions.flatMap(q =>
-        q.responses.map(r => parseFloat(r.answer)).filter(n => !isNaN(n))
+        q.surveyResponses.map(r => parseFloat(r.answer)).filter(n => !isNaN(n))
       );
       if (allStarsResponses.length > 0) {
         overallSatisfaction = Math.round(
@@ -1071,7 +1071,7 @@ router.get("/:id/report", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
         totalResponses: surveyResults.reduce((sum, q) => sum + q.totalResponses, 0),
         uniqueRespondents: new Set(
           event.surveyQuestions.flatMap(q =>
-            q.responses.map(r => r.visitorId || r.guestEmail)
+            q.surveyResponses.map(r => r.visitorId || r.guestEmail)
           )
         ).size,
         overallSatisfaction,
@@ -1112,7 +1112,7 @@ router.get("/pos/sessions", authMiddleware, async (req, res) => {
       include: {
         space: true,
         _count: {
-          select: { registrations: true, seatReservations: true }
+          select: { registrations: true, theaterSeatReservations: true }
         }
       },
       orderBy: { startDate: "asc" }

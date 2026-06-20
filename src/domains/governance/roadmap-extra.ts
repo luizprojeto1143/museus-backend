@@ -58,7 +58,7 @@ router.get('/', async (req, res) => {
 
         const routes = await prisma.route.findMany({
             where: { tenantId: tenantId as string },
-            include: { stops: true }
+            include: { routeStops: true }
         });
 
         res.json(routes);
@@ -75,7 +75,7 @@ router.get('/:id', async (req, res) => {
         const route = await prisma.route.findUnique({
             where: { id },
             include: {
-                stops: {
+                routeStops: {
                     orderBy: { order: 'asc' }
                 }
             }
@@ -99,7 +99,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
                 description,
                 imageUrl,
                 tenantId: tenantId!,
-                stops: {
+                routeStops: {
                     create: stops.map((s: any) => ({
                         order: s.order,
                         targetType: s.targetType,
@@ -109,7 +109,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
                     }))
                 }
             },
-            include: { stops: true }
+            include: { routeStops: true }
         });
 
         res.status(201).json(route);

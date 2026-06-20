@@ -92,7 +92,7 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
       prisma.tenant.findMany({
         include: {
           _count: {
-            select: { works: true, trails: true, events: true, visitors: true, equipamentos: true }
+            select: { works: true, trails: true, events: true, visitors: true, equipamentoCulturals: true }
           }
         }
       }),
@@ -137,7 +137,7 @@ router.get("/tenants-summary", authMiddleware, requireRole([Role.MASTER]), async
       trails: t._count.trails,
       events: t._count.events,
       visitors: t._count.visitors,
-      equipamentos: t._count.equipamentos,
+      equipamentos: t._count.equipamentoCulturals,
       visits: visitMap.get(t.id) || 0
     }));
 
@@ -162,7 +162,7 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
         where: { id: tenantId },
         include: {
           _count: {
-            select: { works: true, trails: true, events: true, visitors: true, equipamentos: true }
+            select: { works: true, trails: true, events: true, visitors: true, equipamentoCulturals: true }
           }
         }
       }),
@@ -182,7 +182,7 @@ router.get("/tenant-summary/:tenantId", authMiddleware, requireRole([Role.ADMIN,
       trails: tenant._count.trails,
       events: tenant._count.events,
       visitors: tenant._count.visitors,
-      equipamentos: tenant._count.equipamentos,
+      equipamentos: tenant._count.equipamentoCulturals,
       visits: visitsCount
     });
   } catch (err) {
@@ -511,7 +511,7 @@ router.get("/advanced/:tenantId", authMiddleware, requireRole([Role.ADMIN, Role.
       ageDistributionRaw
     ] = await Promise.all([
       prisma.visitor.count({ where: { tenantId, createdAt: { gte: startDate } } }),
-      prisma.visitor.count({ where: { tenantId, visits: { some: { createdAt: { gte: startDate } } } } }),
+      prisma.visitor.count({ where: { tenantId, visitorVisits: { some: { createdAt: { gte: startDate } } } } }),
       // Daily Visits
       prisma.$queryRaw`
         SELECT DATE("createdAt") as date, COUNT(*) as count 
@@ -903,16 +903,16 @@ router.get("/municipal-pwa/summary", authMiddleware, async (req: any, res: any, 
     const visitor = await prisma.visitor.findFirst({
       where: { email: user.email.toLowerCase() },
       include: {
-        visits: true,
-        achievements: true,
-        stamps: true
+        visitorVisits: true,
+        visitorAchievements: true,
+        passportStamps: true
       }
     });
 
     const visitorId = visitor?.id || null;
     const visitorXp = visitor?.xp || 0;
-    const unlockedAchievements = visitor?.achievements?.length || 0;
-    const totalStamps = visitor?.stamps?.length || 0;
+    const unlockedAchievements = visitor?.visitorAchievements?.length || 0;
+    const totalStamps = visitor?.passportStamps?.length || 0;
 
     // 2. Buscar todas as cidades (Tenants principais com parentId === null e do tipo CITY)
     const cities = await prisma.tenant.findMany({
@@ -925,7 +925,7 @@ router.get("/municipal-pwa/summary", authMiddleware, async (req: any, res: any, 
         coverImageUrl: true,
         latitude: true,
         longitude: true,
-        children: {
+        other_Tenant: {
           select: {
             id: true,
             name: true,
@@ -957,7 +957,7 @@ router.get("/municipal-pwa/summary", authMiddleware, async (req: any, res: any, 
         coverImageUrl: true,
         latitude: true,
         longitude: true,
-        children: {
+        other_Tenant: {
           select: {
             id: true,
             name: true,
@@ -977,8 +977,8 @@ router.get("/municipal-pwa/summary", authMiddleware, async (req: any, res: any, 
       }
     });
 
-    const processedCities = await Promise.all(finalCities.map(async (city) => {
-      const childrenIds = city.children.map(c => c.id);
+    const processedCities = await Promise.all(finalCities.map(async (city: any) => {
+      const childrenIds = city.other_Tenant.map((c: any) => c.id);
       const allTenantIds = [city.id, ...childrenIds];
 
       // Total de obras (experiências) no município
@@ -1083,7 +1083,7 @@ router.get("/municipal-pwa/summary", authMiddleware, async (req: any, res: any, 
         activeEventsCount,
         explorerTitle,
         explorerBadge,
-        equipments: city.children.map(child => ({
+        equipments: city.other_Tenant.map((child: any) => ({
           id: child.id,
           name: child.name,
           slug: child.slug,
@@ -1093,7 +1093,7 @@ router.get("/municipal-pwa/summary", authMiddleware, async (req: any, res: any, 
           eventsCount: child._count.events
         })),
         visitedEquipmentsCount,
-        totalEquipmentsCount: city.children.length,
+        totalEquipmentsCount: city.other_Tenant.length,
         registeredEventsCount,
         completedTrailsCount,
         totalTrailsCount: totalTrails
@@ -1195,7 +1195,7 @@ router.get("/territorial-gaps", authMiddleware, requireRole([Role.ADMIN, Role.MA
     // 3. Check-ins de visitantes (densidade populacional)
     const checkins = await prisma.equipamentoCheckin.findMany({
       where: {
-        equipamento: {
+        equipamentoCultural: {
           tenantId: { in: tenantIds }
         }
       },
@@ -1205,7 +1205,7 @@ router.get("/territorial-gaps", authMiddleware, requireRole([Role.ADMIN, Role.MA
         lng: true,
         createdAt: true,
         equipamentoId: true,
-        equipamento: {
+        equipamentoCultural: {
           select: {
             nome: true
           }
@@ -1250,7 +1250,7 @@ router.get("/territorial-gaps", authMiddleware, requireRole([Role.ADMIN, Role.MA
       lat: c.lat,
       lng: c.lng,
       createdAt: c.createdAt,
-      equipmentName: c.equipamento?.nome || "Equipamento"
+      equipmentName: c.equipamentoCultural?.nome || "Equipamento"
     })).filter(c => c.lat !== null && c.lng !== null);
 
     return res.json({

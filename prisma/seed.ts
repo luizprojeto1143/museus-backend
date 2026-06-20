@@ -76,7 +76,7 @@ async function main() {
 
     if (!existingUser) {
         console.log("👤 Criando Usuário Master (admin@museu.com)...");
-        const hashedPassword = await bcrypt.hash("123456", 10);
+        const hashedPassword = await bcrypt.hash(process.env.DEFAULT_PASSWORD || "Museu$2026!", 10);
 
         await prisma.user.create({
             data: {
@@ -87,7 +87,7 @@ async function main() {
                 tenantId: tenant.id
             }
         });
-        console.log("🔑 Usuário Master criado! Email: admin@museu.com / Senha: 123456");
+        console.log("🔑 Usuário Master criado! Email: admin@museu.com / Senha: [ver vari�vel DEFAULT_PASSWORD ou Museu$2026!]");
     } else {
         console.log("✓ Usuário Master já existe.");
     }
@@ -98,7 +98,7 @@ async function main() {
 
     if (!existingAdmin) {
         console.log("👤 Criando Usuário Admin Demo (demo@museu.com)...");
-        const hashedAdminPassword = await bcrypt.hash("123456", 10);
+        const hashedAdminPassword = await bcrypt.hash(process.env.DEFAULT_PASSWORD || "Museu$2026!", 10);
 
         await prisma.user.create({
             data: {
@@ -109,7 +109,7 @@ async function main() {
                 tenantId: tenant.id
             }
         });
-        console.log("🔑 Usuário Admin Demo criado! Email: demo@museu.com / Senha: 123456");
+        console.log("🔑 Usuário Admin Demo criado! Email: demo@museu.com / Senha: [ver vari�vel DEFAULT_PASSWORD ou Museu$2026!]");
     } else {
         console.log("✓ Usuário Admin Demo já existe.");
     }

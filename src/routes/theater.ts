@@ -19,7 +19,7 @@ router.get("/sessions", authMiddleware, async (req, res) => {
             include: {
                 space: true,
                 _count: {
-                    select: { seatReservations: true }
+                    select: { theaterSeatReservations: true }
                 }
             },
             orderBy: { startDate: "asc" }

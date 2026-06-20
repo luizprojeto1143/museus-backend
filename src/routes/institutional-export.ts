@@ -20,7 +20,7 @@ router.get("/pdf", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
 
         const tenant = await prisma.tenant.findUnique({
             where: { id: tenantId },
-            include: { parent: true }
+            include: { tenant: true }
         });
 
         if (!tenant) return res.status(404).json({ message: "Tenant não encontrado" });
@@ -47,8 +47,8 @@ router.get("/pdf", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
         doc.moveDown();
 
         // Organization info
-        if (tenant.parent) {
-            doc.fontSize(10).text(tenant.parent.name.toUpperCase(), { align: "center" });
+        if ((tenant as any).parentTenant) {
+            doc.fontSize(10).text((tenant as any).parentTenant.name.toUpperCase(), { align: "center" });
         }
         doc.fontSize(14).text(tenant.name.toUpperCase(), { align: "center" });
         doc.moveDown();
@@ -151,13 +151,13 @@ router.get("/csv", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async
                     status: true,
                     requestedAt: true,
                     executedAt: true,
-                    provider: { select: { name: true } }
+                    accessibilityProvider: { select: { name: true } }
                 }
             });
 
             csvContent = "ID;Tipo de Serviço;Status;Prestador;Solicitado Em;Executado Em\n";
             csvContent += executions.map(e =>
-                `${e.id};${e.serviceType};${e.status};${e.provider?.name || "-"};${e.requestedAt?.toLocaleDateString("pt-BR") || "-"};${e.executedAt?.toLocaleDateString("pt-BR") || "-"}`
+                `${e.id};${e.serviceType};${e.status};${(e as any).accessibilityProvider?.name || "-"};${e.requestedAt?.toLocaleDateString("pt-BR") || "-"};${e.executedAt?.toLocaleDateString("pt-BR") || "-"}`
             ).join("\n");
             filename = "acessibilidade";
 

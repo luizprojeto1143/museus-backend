@@ -13,7 +13,7 @@ router.get('/', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (r
 
         const rules = await prisma.certificateRule.findMany({
             where: { tenantId: tenantId as string },
-            include: { actionTemplate: true },
+            include: { certificateTemplate: true },
             orderBy: { updatedAt: 'desc' }
         });
         return res.json(rules);

@@ -120,8 +120,8 @@ export const ProviderDashboardController = {
       const { tenantSlug } = req.params;
       const { providerId } = req.body;
 
-      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId }, include: { owner: true } });
-      if (!provider || !provider.owner) return res.status(404).json({ error: 'Provider or owner not found' });
+      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId }, include: { user: true } });
+      if (!provider || !provider.user) return res.status(404).json({ error: 'Provider or owner not found' });
       if (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER') {
         return res.status(403).json({ error: 'Forbidden' });
       }
@@ -139,7 +139,7 @@ export const ProviderDashboardController = {
       if (!accountId) {
         const account = await stripe.accounts.create({
           type: 'express',
-          email: provider.owner.email,
+          email: provider.user.email,
           business_type: 'individual',
           business_profile: {
             name: provider.name,

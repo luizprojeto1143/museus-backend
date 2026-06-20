@@ -44,7 +44,7 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const memberships = await prisma.membership.findMany({
             where: { tenantId },
-            include: { plan: { select: { name: true, monthlyPrice: true } } },
+            include: { membershipPlan: { select: { name: true, monthlyPrice: true } } },
             orderBy: { createdAt: 'desc' }
         });
         res.json(memberships);

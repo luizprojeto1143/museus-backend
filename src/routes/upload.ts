@@ -43,7 +43,7 @@ const storage = multer.diskStorage({
 
 // TYPES
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
-  images: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+  images: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
   audio: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm'],
   video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
   documents: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']

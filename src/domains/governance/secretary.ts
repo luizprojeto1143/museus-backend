@@ -202,8 +202,8 @@ router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, R
             orderBy: { createdAt: "desc" },
             take: 50,
             include: {
-                provider: { select: { id: true, name: true } },
-                project: { select: { id: true, title: true } }
+                accessibilityProvider: { select: { id: true, name: true } },
+                culturalProject: { select: { id: true, title: true } }
             }
         });
 
@@ -217,8 +217,8 @@ router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, R
             approvedAt: item.approvedAt,
             approvedBy: item.approvedBy,
             executedAt: item.executedAt,
-            provider: item.provider?.name,
-            project: item.project?.title,
+            provider: item.accessibilityProvider?.name,
+            project: item.culturalProject?.title,
             delayDays: item.approvedAt && item.executedAt
                 ? Math.floor((new Date(item.executedAt).getTime() - new Date(item.approvedAt).getTime()) / (1000 * 60 * 60 * 24))
                 : null

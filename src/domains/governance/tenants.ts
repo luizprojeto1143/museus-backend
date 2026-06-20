@@ -408,7 +408,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
             }
           ]
         },
-        equipamentos: (type !== TenantType.CITY && type !== TenantType.SECRETARIA) ? {
+        equipamentoCulturals: (type !== TenantType.CITY && type !== TenantType.SECRETARIA) ? {
           create: [
             {
               nome: `Sede - ${name}`,
@@ -416,7 +416,8 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
               tipo: type === TenantType.PRODUCER ? 'produtora' : type === TenantType.CULTURAL_SPACE ? 'espaço' : 'museu',
               endereco: 'Endereço Principal',
               cidade: 'Sua Cidade',
-              estado: 'BR'
+              estado: 'BR',
+              qrCodeEntrada: `${slug}-sede-qr`
             }
           ]
         } : undefined

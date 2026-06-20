@@ -59,17 +59,17 @@ router.post("/stripe", async (req: Request, res: Response) => {
         // 1. Handle Registration (Tickets)
         const registration = await prisma.registration.findFirst({
           where: { stripePaymentIntentId: session.id },
-          include: { Event: true }
+          include: { event: true }
         });
         if (registration && registration.status === "PENDING") {
           const amount = Number(registration.pricePaid);
           const fee = Number(registration.platformFee || 0);
 
           let finTxId: string | undefined;
-          if (registration.Event?.tenantId) {
+          if (registration.event?.tenantId) {
             const finTx = await prisma.financialTransaction.create({
               data: {
-                tenantId: registration.Event.tenantId,
+                tenantId: registration.event.tenantId,
                 type: "PAYMENT",
                 source: "REGISTRATION",
                 amount,
@@ -133,14 +133,14 @@ router.post("/stripe", async (req: Request, res: Response) => {
         // 3. Handle Service Transactions (Chat)
         const transaction = await prisma.transaction.findFirst({
           where: { stripePaymentIntentId: session.id },
-          include: { Conversation: { include: { AccessibilityProvider: true } } }
+          include: { conversation: { include: { accessibilityProvider: true } } }
         });
         if (transaction && transaction.status === "PENDING") {
           const amount = Number(transaction.amount);
           const fee = Number(amount * 0.1); // Assumindo 10% padrão se não houver no schema do provider
 
           let finTxId: string | undefined;
-          const tenantId = transaction.Conversation.AccessibilityProvider.tenantId;
+          const tenantId = transaction.conversation.accessibilityProvider.tenantId;
           if (tenantId) {
             const finTx = await prisma.financialTransaction.create({
               data: {
@@ -168,13 +168,12 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
         // 4. Handle Accessibility Service Executions
         const execution = await prisma.accessibilityExecution.findFirst({
-          where: { stripePaymentIntentId: session.id },
-          include: { Request: { include: { CulturalProject: true, Event: true } } }
+          where: { stripePaymentIntentId: session.id }
         });
         if (execution && execution.status !== "PAID") {
-          const amount = Number(execution.amount);
+          const amount = Number(execution.approvedBudget || 0);
           const fee = Number(amount * 0.1); // Assumindo 10%
-          const tenantId = execution.Request.CulturalProject?.tenantId || execution.Request.Event?.tenantId;
+          const tenantId = execution.tenantId;
 
           let finTxId: string | undefined;
           if (tenantId) {

@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
         const cards = await prisma.collectibleCard.findMany({
             where: { tenantId },
             include: { 
-                _count: { select: { owners: true } },
+                _count: { select: { visitorCards: true } },
                 work: { select: { imageUrl: true, title: true } }
             },
             orderBy: { createdAt: 'desc' }
@@ -36,7 +36,7 @@ router.get('/my', authMiddleware, async (req, res) => {
         const cards = await prisma.visitorCard.findMany({
             where: { visitorId: visitor.id },
             include: { 
-                card: {
+                collectibleCard: {
                     include: { work: { select: { imageUrl: true, title: true } } }
                 } 
             },
@@ -85,16 +85,16 @@ router.post('/earn/:cardId', authMiddleware, async (req, res) => {
         const card = await prisma.collectibleCard.findUnique({
             where: { id: cardId },
             include: { 
-                _count: { select: { owners: true } },
+                _count: { select: { visitorCards: true } },
                 work: { select: { imageUrl: true, title: true } }
             }
         });
         if (!card) return res.status(404).json({ message: 'Card não encontrado' });
-        if (card._count.owners >= card.totalMinted) return res.status(410).json({ message: 'Este card esgotou!' });
+        if (card._count.visitorCards >= card.totalMinted) return res.status(410).json({ message: 'Este card esgotou!' });
 
         const owned = await prisma.visitorCard.create({
             data: { cardId, visitorId },
-            include: { card: true }
+            include: { collectibleCard: true }
         });
 
         res.status(201).json({ message: `Card "${card.title}" conquistado!`, card: owned });
@@ -111,7 +111,7 @@ router.get('/stats', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (re
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const [totalCards, totalOwned, byRarity] = await Promise.all([
             prisma.collectibleCard.count({ where: { tenantId } }),
-            prisma.visitorCard.count({ where: { card: { tenantId } } }),
+            prisma.visitorCard.count({ where: { collectibleCard: { tenantId } } }),
             prisma.collectibleCard.groupBy({
                 by: ['rarity'],
                 where: { tenantId },

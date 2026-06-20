@@ -162,7 +162,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
                     total,
                     platformFee: total * 0.05,
                     stripePaymentIntentId: session.id,
-                    items: { create: orderItems }
+                    orderItems: { create: orderItems }
                 }
             });
 
@@ -193,7 +193,7 @@ router.get('/orders', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (r
         const where: any = {};
         if (tenantId) where.tenantId = tenantId;
         if (status) where.status = status;
-        const orders = await prisma.order.findMany({ where, include: { items: { include: { product: true } } }, orderBy: { createdAt: 'desc' } });
+        const orders = await prisma.order.findMany({ where, include: { orderItems: { include: { product: true } } }, orderBy: { createdAt: 'desc' } });
         res.json(orders);
     } catch (error) {
         res.status(500).json({ message: 'Erro ao buscar pedidos' });
@@ -204,7 +204,7 @@ router.get('/my-orders', authMiddleware, async (req, res) => {
     try {
         const orders = await prisma.order.findMany({
             where: { customerEmail: req.user?.email },
-            include: { items: { include: { product: true } } },
+            include: { orderItems: { include: { product: true } } },
             orderBy: { createdAt: 'desc' }
         });
         res.json(orders);

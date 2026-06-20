@@ -13,7 +13,6 @@ router.get('/:id', async (req, res) => {
       select: {
         id: true,
         name: true,
-        document: false, // Ocultar dados sensíveis
         phone: true,
         email: true,
         address: true,
