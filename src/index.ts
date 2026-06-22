@@ -110,6 +110,7 @@ import webhooksRoutes from "./routes/webhooks.js";
 import { stripeRouter } from "./domains/commerce/stripe.js";
 import theaterRoutes from "./routes/theater.js";
 import financialRoutes from "./domains/infrastructure/financial.js";
+import { csrfMiddleware, getCsrfToken } from "./middleware/csrf.middleware.js";
 import { validateEnv } from "./config/validateEnv.js";
 import { limiter } from "./middleware/rateLimiter.js";
 import { tenantMiddleware } from "./middleware/tenant.js";
@@ -189,25 +190,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// C1: CSRF Protection Middleware
-// Require 'X-Requested-With: XMLHttpRequest' for mutating requests when auth is present
-app.use((req, res, next) => {
-  const mutatingMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
-  if (mutatingMethods.includes(req.method)) {
-    // We allow stripe webhooks to bypass CSRF because they authenticate via webhook signatures
-    if (req.path.startsWith('/stripe/webhook') || req.path.startsWith('/webhooks')) {
-      return next();
-    }
-    const requestedWith = req.headers['x-requested-with'];
-    if (requestedWith !== 'XMLHttpRequest') {
-      return res.status(403).json({ message: "CSRF token missing or incorrect." });
-    }
-  }
-  next();
-});
+// C1: CSRF Protection — Double-Submit Cookie Pattern
+// Rotas que usam APENAS Bearer token são automaticamente isentas
+// Webhooks Stripe ficam isentos por caminho
+app.use(csrfMiddleware);
 
 app.get("/", (_req, res) => {
-  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.4.3" });
+  res.json({ status: "ok", env: process.env.NODE_ENV || "dev", v: "1.4.7" });
+});
+
+// Endpoint para obter token CSRF — frontend chama antes de qualquer mutação via cookie
+app.get("/auth/csrf-token", (req, res) => {
+  const token = getCsrfToken(req, res);
+  res.json({ csrfToken: token });
 });
 
 import sponsorPortalRoutes from "./routes/sponsor-portal.js";

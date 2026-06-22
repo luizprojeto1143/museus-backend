@@ -78,14 +78,27 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req: an
 });
 
 // GET /audit-logs/entity/:entity/:id - Get logs for specific entity
-router.get('/entity/:entity/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+router.get('/entity/:entity/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req: any, res) => {
     try {
         const { entity, id } = req.params;
+        const user = req.user;
+
+        // MASTER pode filtrar por qualquer tenant; ADMIN só vê o próprio
+        const tenantFilter: any = {};
+        if (user.role === 'MASTER') {
+            if (req.query.tenantId) tenantFilter.tenantId = req.query.tenantId;
+            // sem filtro = MASTER vê todos
+        } else {
+            // ADMIN: força o tenant dele — impede leitura de entidades de outro tenant
+            if (!user.tenantId) return res.status(403).json({ message: 'Tenant não identificado' });
+            tenantFilter.tenantId = user.tenantId;
+        }
 
         const logs = await prisma.auditLog.findMany({
             where: {
                 entity,
-                entityId: id
+                entityId: id,
+                ...tenantFilter
             },
             orderBy: { createdAt: 'desc' }
         });

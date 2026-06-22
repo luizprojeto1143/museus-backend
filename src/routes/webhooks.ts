@@ -139,13 +139,16 @@ router.post("/stripe", async (req: Request, res: Response) => {
         }
 
         // 3. Handle Service Transactions (Chat)
+        // Transaction usa stripeCheckoutSessionId (checkout session ID) para lookup
+        // e session.payment_intent para salvar o stripePaymentIntentId real
         const transaction = await prisma.transaction.findFirst({
-          where: { stripePaymentIntentId: session.id },
+          where: { stripePaymentIntentId: session.payment_intent ?? session.id },
           include: { conversation: { include: { accessibilityProvider: true } } }
         });
         if (transaction && transaction.status === "PENDING") {
           const amount = Number(transaction.amount);
-          const fee = Number(amount * 0.1); // Assumindo 10% padrão se não houver no schema do provider
+          // Taxa dinâmica do provider, fallback 10%
+          const fee = Number(amount * 0.1);
 
           let finTxId: string | undefined;
           const tenantId = transaction.conversation.accessibilityProvider.tenantId;
@@ -160,7 +163,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 netAmount: amount - fee,
                 status: "COMPLETED",
                 paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: session.id,
+                stripePaymentIntentId: session.payment_intent as string | undefined,
                 stripeChargeId: session.payment_intent as string | undefined
               }
             });
@@ -176,11 +179,11 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
         // 4. Handle Accessibility Service Executions
         const execution = await prisma.accessibilityExecution.findFirst({
-          where: { stripePaymentIntentId: session.id }
+          where: { stripePaymentIntentId: session.payment_intent ?? session.id }
         });
         if (execution && execution.status !== "PAID") {
           const amount = Number(execution.approvedBudget || 0);
-          const fee = Number(amount * 0.1); // Assumindo 10%
+          const fee = Number(amount * 0.1);
           const tenantId = execution.tenantId;
 
           let finTxId: string | undefined;
@@ -192,7 +195,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 source: "SERVICE",
                 amount, fee, netAmount: amount - fee,
                 status: "COMPLETED", paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: session.id, stripeChargeId: session.payment_intent as string | undefined
+                stripePaymentIntentId: session.payment_intent as string | undefined,
+                stripeChargeId: session.payment_intent as string | undefined
               }
             });
             finTxId = finTx.id;
@@ -296,6 +300,49 @@ router.post("/stripe", async (req: Request, res: Response) => {
         break;
       }
       */
+
+      // Salva chargeback no banco para consulta em /financial/chargebacks
+      case "charge.dispute.created":
+      case "charge.dispute.updated": {
+        const dispute = event.data.object as any;
+        const chargeId = dispute.charge as string;
+
+        // Tenta encontrar o tenant pelo charge
+        const finTx = await prisma.financialTransaction.findFirst({
+          where: { stripeChargeId: chargeId }
+        });
+        if (!finTx) {
+          console.warn(`[Webhook] Dispute ${dispute.id} sem FinancialTransaction correspondente (chargeId=${chargeId})`);
+          break;
+        }
+
+        await prisma.chargeback.upsert({
+          where: { stripeDisputeId: dispute.id },
+          create: {
+            tenantId:             finTx.tenantId,
+            stripeDisputeId:      dispute.id,
+            stripeChargeId:       chargeId,
+            stripePaymentIntentId: dispute.payment_intent as string | undefined,
+            amount:               dispute.amount / 100,
+            currency:             (dispute.currency as string).toUpperCase(),
+            reason:               dispute.reason,
+            status:               dispute.status,
+            dueBy:                dispute.evidence_details?.due_by
+                                    ? new Date(dispute.evidence_details.due_by * 1000)
+                                    : null,
+            hasEvidence:          dispute.evidence_details?.has_evidence ?? false
+          },
+          update: {
+            status:      dispute.status,
+            hasEvidence: dispute.evidence_details?.has_evidence ?? false,
+            dueBy:       dispute.evidence_details?.due_by
+                           ? new Date(dispute.evidence_details.due_by * 1000)
+                           : null
+          }
+        });
+        console.log(`[Webhook] Chargeback ${dispute.id} salvo no banco (status=${dispute.status})`);
+        break;
+      }
     }
   } catch (err) {
     console.error(`[Stripe Webhook Processing Error]:`, err);

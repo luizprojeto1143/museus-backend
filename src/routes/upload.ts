@@ -221,22 +221,39 @@ router.post("/audio",    authMiddleware, uploadLimiter, uploadAudio.single("file
 router.post("/video",    authMiddleware, uploadLimiter, uploadVideo.single("file"),    (req, res, next) => validateMagicBytes(req, res, next, 'video'),    (req, res) => handleUpload(req, res, "video"));
 router.post("/document", authMiddleware, uploadLimiter, uploadDocument.single("file"), (req, res, next) => validateMagicBytes(req, res, next, 'document'), (req, res) => handleUpload(req, res, "document"));
 
-// Generic upload (used by AdminUploads.tsx – validates MIME server-side)
-router.post("/", authMiddleware, uploadLimiter, uploadImage.single("file"), async (req, res) => {
-  // Try all categories
-  const file = req.file;
-  if (!file) return res.status(400).json({ message: "Arquivo é obrigatório" });
-  const allAllowed = Object.values(ALLOWED_MIME_TYPES).flat();
-  if (!allAllowed.includes(file.mimetype)) {
-    if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    return res.status(400).json({ message: `Tipo não permitido: ${file.mimetype}` });
+// Generic upload (used by AdminUploads.tsx – validates MIME server-side + magic bytes)
+router.post("/", authMiddleware, uploadLimiter, uploadImage.single("file"),
+  // Passo 1: Validação MIME
+  async (req: Request, res: Response, next: NextFunction) => {
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: "Arquivo é obrigatório" });
+    const allAllowed = Object.values(ALLOWED_MIME_TYPES).flat();
+    if (!allAllowed.includes(file.mimetype)) {
+      if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      return res.status(400).json({ message: `Tipo não permitido: ${file.mimetype}` });
+    }
+    next();
+  },
+  // Passo 2: Validação de magic bytes (conteúdo binário real)
+  async (req: Request, res: Response, next: NextFunction) => {
+    const file = req.file;
+    if (!file) return next();
+    const category = file.mimetype.startsWith("image") ? "image"
+      : file.mimetype.startsWith("audio") ? "audio"
+      : file.mimetype.startsWith("video") ? "video"
+      : "document";
+    return validateMagicBytes(req, res, next, category);
+  },
+  // Passo 3: Upload real
+  (req: Request, res: Response) => {
+    const file = req.file!;
+    const type = file.mimetype.startsWith("image") ? "image"
+      : file.mimetype.startsWith("audio") ? "audio"
+      : file.mimetype.startsWith("video") ? "video"
+      : "document";
+    return handleUpload(req, res, type);
   }
-  const type = file.mimetype.startsWith("image") ? "image"
-    : file.mimetype.startsWith("audio") ? "audio"
-    : file.mimetype.startsWith("video") ? "video"
-    : "document";
-  return handleUpload(req, res, type);
-});
+);
 
 // LIST FILES (SECURE)
 router.get("/", authMiddleware, async (req, res) => {

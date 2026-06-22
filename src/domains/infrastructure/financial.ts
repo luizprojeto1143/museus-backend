@@ -1,22 +1,34 @@
 /**
  * ======================================================
- * MÓDULO FINANCEIRO COMPLETO
+ * MÓDULO FINANCEIRO COMPLETO — ERP
  * /financial — ADMIN/MASTER only
  *
- * Endpoints:
- *  GET  /financial/summary             — Resumo financeiro do tenant
- *  GET  /financial/statement           — Extrato unificado (todas as transações)
- *  GET  /financial/receivables         — Contas a receber
- *  POST /financial/receivables         — Criar conta a receber manual
- *  PUT  /financial/receivables/:id     — Atualizar status de conta a receber
- *  GET  /financial/payables            — Contas a pagar
- *  POST /financial/payables            — Criar conta a pagar manual
- *  PUT  /financial/payables/:id        — Atualizar status de conta a pagar
- *  POST /financial/refund/:transactionId — Emitir refund Stripe real
- *  GET  /financial/refunds             — Listar reembolsos do tenant
- *  GET  /financial/reconciliation      — Conciliação bancária (FinancialTransaction vs Stripe)
- *  GET  /financial/payouts             — Histórico de repasses/payouts Stripe Connect
- *  GET  /financial/disputes            — Disputas e chargebacks Stripe
+ * Endpoints existentes:
+ *  GET  /financial/summary
+ *  GET  /financial/statement
+ *  GET  /financial/receivables
+ *  POST /financial/receivables
+ *  PUT  /financial/receivables/:id
+ *  GET  /financial/payables
+ *  POST /financial/payables
+ *  PUT  /financial/payables/:id
+ *  POST /financial/refund/:transactionId
+ *  GET  /financial/refunds
+ *  GET  /financial/reconciliation
+ *  GET  /financial/payouts
+ *  GET  /financial/disputes
+ *
+ * Endpoints ERP adicionados:
+ *  PUT  /financial/receivables/:id/baixa     — Baixa formal com data/comprovante
+ *  PUT  /financial/payables/:id/baixa        — Baixa formal com data/comprovante
+ *  GET  /financial/export                    — Exportação CSV/JSON de transações
+ *  GET  /financial/cost-centers             — Listar centros de custo
+ *  POST /financial/cost-centers             — Criar centro de custo
+ *  PUT  /financial/cost-centers/:id         — Atualizar centro de custo
+ *  GET  /financial/categories               — Listar categorias contábeis
+ *  POST /financial/categories               — Criar categoria contábil
+ *  PUT  /financial/categories/:id           — Atualizar categoria contábil
+ *  GET  /financial/chargebacks              — Listar chargebacks salvos no banco
  * ======================================================
  */
 
@@ -560,6 +572,267 @@ router.get('/disputes', async (req: Request, res: Response): Promise<any> => {
       detail: err?.message
     });
   }
+});
+
+// ==========================================
+// PUT /financial/receivables/:id/baixa
+// Baixa formal de conta a receber (data de pagamento + comprovante)
+// ==========================================
+const baixaSchema = z.object({
+  paidAt:     z.string().datetime(),
+  paidAmount: z.number().positive().optional(),
+  receiptUrl: z.string().url().optional(),
+  notes:      z.string().optional()
+});
+
+router.put('/receivables/:id/baixa', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const parse = baixaSchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ errors: parse.error.errors });
+
+  const existing = await prisma.accountsReceivable.findFirst({ where: { id: req.params.id, tenantId } });
+  if (!existing) return res.status(404).json({ message: 'Conta a receber não encontrada' });
+  if (existing.status === 'RECEIVED') return res.status(400).json({ message: 'Conta já baixada' });
+
+  const updated = await prisma.accountsReceivable.update({
+    where: { id: req.params.id },
+    data: {
+      status:     'RECEIVED',
+      paidAt:     new Date(parse.data.paidAt),
+      paidAmount: parse.data.paidAmount ?? Number(existing.amount),
+      receiptUrl: parse.data.receiptUrl,
+      notes:      parse.data.notes
+    }
+  });
+  return res.json(updated);
+});
+
+// ==========================================
+// PUT /financial/payables/:id/baixa
+// Baixa formal de conta a pagar
+// ==========================================
+router.put('/payables/:id/baixa', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const parse = baixaSchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ errors: parse.error.errors });
+
+  const existing = await prisma.accountsPayable.findFirst({ where: { id: req.params.id, tenantId } });
+  if (!existing) return res.status(404).json({ message: 'Conta a pagar não encontrada' });
+  if (existing.status === 'PAID') return res.status(400).json({ message: 'Conta já baixada' });
+
+  const updated = await prisma.accountsPayable.update({
+    where: { id: req.params.id },
+    data: {
+      status:     'PAID',
+      paidAt:     new Date(parse.data.paidAt),
+      paidAmount: parse.data.paidAmount ?? Number(existing.amount),
+      receiptUrl: parse.data.receiptUrl,
+      notes:      parse.data.notes
+    }
+  });
+  return res.json(updated);
+});
+
+// ==========================================
+// GET /financial/export
+// Exportação contábil de transações (CSV ou JSON)
+// ==========================================
+router.get('/export', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const { startDate, endDate, format = 'json', source, status } = req.query;
+
+  const where: any = { tenantId };
+  if (source) where.source = source;
+  if (status) where.status = status;
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate as string);
+    if (endDate)   where.createdAt.lte = new Date(endDate as string);
+  }
+
+  const transactions = await prisma.financialTransaction.findMany({
+    where,
+    orderBy: { createdAt: 'asc' }
+  });
+
+  if (format === 'csv') {
+    const header = 'id,tipo,fonte,valor_bruto,taxa,valor_liquido,status,metodo_pagamento,data\n';
+    const rows = transactions.map(t =>
+      [
+        t.id,
+        t.type,
+        t.source,
+        Number(t.amount).toFixed(2),
+        Number(t.fee).toFixed(2),
+        Number(t.netAmount).toFixed(2),
+        t.status,
+        t.paymentMethod,
+        t.createdAt.toISOString()
+      ].join(',')
+    ).join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="extrato_${tenantId}_${Date.now()}.csv"`);
+    return res.send(header + rows);
+  }
+
+  // JSON padrão
+  return res.json({
+    tenantId,
+    exported: transactions.length,
+    period: { startDate: startDate || null, endDate: endDate || null },
+    data: transactions
+  });
+});
+
+// ==========================================
+// GET /financial/cost-centers
+// ==========================================
+router.get('/cost-centers', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const items = await prisma.costCenter.findMany({
+    where: { tenantId, active: true },
+    orderBy: { code: 'asc' }
+  });
+  return res.json(items);
+});
+
+// ==========================================
+// POST /financial/cost-centers
+// ==========================================
+const costCenterSchema = z.object({
+  name:        z.string().min(1),
+  code:        z.string().optional(),
+  description: z.string().optional()
+});
+
+router.post('/cost-centers', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const parse = costCenterSchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ errors: parse.error.errors });
+
+  const item = await prisma.costCenter.create({
+    data: { tenantId, ...parse.data }
+  });
+  return res.status(201).json(item);
+});
+
+// ==========================================
+// PUT /financial/cost-centers/:id
+// ==========================================
+router.put('/cost-centers/:id', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const existing = await prisma.costCenter.findFirst({ where: { id: req.params.id, tenantId } });
+  if (!existing) return res.status(404).json({ message: 'Centro de custo não encontrado' });
+
+  const { name, code, description, active } = req.body;
+  const updated = await prisma.costCenter.update({
+    where: { id: req.params.id },
+    data: {
+      ...(name        !== undefined && { name }),
+      ...(code        !== undefined && { code }),
+      ...(description !== undefined && { description }),
+      ...(active      !== undefined && { active })
+    }
+  });
+  return res.json(updated);
+});
+
+// ==========================================
+// GET /financial/categories
+// ==========================================
+router.get('/categories', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const { type } = req.query; // REVENUE | EXPENSE
+  const where: any = { tenantId, active: true };
+  if (type) where.type = type;
+
+  const items = await prisma.accountingCategory.findMany({
+    where,
+    orderBy: { code: 'asc' }
+  });
+  return res.json(items);
+});
+
+// ==========================================
+// POST /financial/categories
+// ==========================================
+const categorySchema = z.object({
+  name:        z.string().min(1),
+  type:        z.enum(['REVENUE', 'EXPENSE']),
+  code:        z.string().optional(),
+  description: z.string().optional()
+});
+
+router.post('/categories', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const parse = categorySchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ errors: parse.error.errors });
+
+  const item = await prisma.accountingCategory.create({
+    data: { tenantId, ...parse.data }
+  });
+  return res.status(201).json(item);
+});
+
+// ==========================================
+// PUT /financial/categories/:id
+// ==========================================
+router.put('/categories/:id', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const existing = await prisma.accountingCategory.findFirst({ where: { id: req.params.id, tenantId } });
+  if (!existing) return res.status(404).json({ message: 'Categoria não encontrada' });
+
+  const { name, code, description, type, active } = req.body;
+  const updated = await prisma.accountingCategory.update({
+    where: { id: req.params.id },
+    data: {
+      ...(name        !== undefined && { name }),
+      ...(code        !== undefined && { code }),
+      ...(description !== undefined && { description }),
+      ...(type        !== undefined && { type }),
+      ...(active      !== undefined && { active })
+    }
+  });
+  return res.json(updated);
+});
+
+// ==========================================
+// GET /financial/chargebacks
+// Chargebacks salvos localmente no banco (sincronizados via webhook)
+// ==========================================
+router.get('/chargebacks', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const { status } = req.query;
+  const where: any = { tenantId };
+  if (status) where.status = status;
+
+  const chargebacks = await prisma.chargeback.findMany({
+    where,
+    orderBy: { createdAt: 'desc' }
+  });
+
+  return res.json(chargebacks);
 });
 
 export default router;

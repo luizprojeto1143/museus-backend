@@ -1674,6 +1674,9 @@ model Tenant {
   accountsReceivables          AccountsReceivable[]
   accountsPayables             AccountsPayable[]
   refunds                      Refund[]
+  chargebacks                  Chargeback[]
+  costCenters                  CostCenter[]
+  accountingCategories         AccountingCategory[]
 
   @@index([parentId])
 }
@@ -2338,6 +2341,11 @@ enum Role {
   PRODUCER
   VISITOR
   COLLABORATOR
+  SECRETARIA    // Secretaria Municipal de Cultura
+  PRESTADOR     // Prestador de serviço / fornecedor
+  PATROCINADOR  // Patrocinador / apoiador
+  OPERADOR      // Operador de totem / kiosk
+  TEATRO        // Perfil especial para teatros
 }
 
 enum SLATier {
@@ -2455,30 +2463,46 @@ model FinancialTransaction {
 }
 
 model AccountsReceivable {
-  id                    String   @id @default(uuid())
+  id                    String    @id @default(uuid())
   tenantId              String
   description           String
-  amount                Decimal  @db.Decimal(10, 2)
+  amount                Decimal   @db.Decimal(10, 2)
   dueDate               DateTime
-  status                String   
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  status                String    // PENDING | RECEIVED | OVERDUE | CANCELLED
+  // Baixa formal
+  paidAt                DateTime?
+  paidAmount            Decimal?  @db.Decimal(10, 2)
+  receiptUrl            String?
+  notes                 String?
+  // Classificação contábil
+  costCenterId          String?
+  categoryId            String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model AccountsPayable {
-  id                    String   @id @default(uuid())
+  id                    String    @id @default(uuid())
   tenantId              String
   providerId            String?
   description           String
-  amount                Decimal  @db.Decimal(10, 2)
+  amount                Decimal   @db.Decimal(10, 2)
   dueDate               DateTime
-  status                String   
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  status                String    // PENDING | PAID | OVERDUE | CANCELLED
+  // Baixa formal
+  paidAt                DateTime?
+  paidAmount            Decimal?  @db.Decimal(10, 2)
+  receiptUrl            String?
+  notes                 String?
+  // Classificação contábil
+  costCenterId          String?
+  categoryId            String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model Refund {
@@ -2493,4 +2517,61 @@ model Refund {
   updatedAt             DateTime @updatedAt
 
   tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// MODELOS ERP FINANCEIRO AVANÇADO
+// ============================================
+
+model Chargeback {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  stripeDisputeId       String   @unique
+  stripeChargeId        String?
+  stripePaymentIntentId String?
+  amount                Decimal  @db.Decimal(10, 2)
+  currency              String   @default("BRL")
+  reason                String   // fraudulent | duplicate | credit_not_processed | etc
+  status                String   // warning_needs_response | needs_response | under_review | won | lost
+  dueBy                 DateTime? // Prazo para envio de evidência
+  hasEvidence           Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model CostCenter {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  code        String?  // Código contábil (ex: "1.1.01")
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model AccountingCategory {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String   // Ex: "Receita de Ingressos", "Despesa de Pessoal"
+  type        String   // REVENUE | EXPENSE
+  code        String?  // Código contábil
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
