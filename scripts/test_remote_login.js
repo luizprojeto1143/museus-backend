@@ -1,6 +1,10 @@
 import axios from 'axios';
 
 async function testRemoteLogin() {
+    if (process.env.NODE_ENV === "production") {
+        console.error("❌ Operação abortada: Scripts de teste/demo são bloqueados em produção por motivos de segurança.");
+        process.exit(1);
+    }
     const url = "https://museus-backend-1.onrender.com/auth/login";
     const payload = {
         email: "demo@museu.com",

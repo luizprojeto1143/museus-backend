@@ -1,0 +1,42 @@
+import { prisma } from "../prisma.js";
+import { Role } from "@prisma/client";
+
+export async function checkEntityOwnership(
+  entityName: 'accessibilityExecution' | 'event' | 'work' | 'space' | 'theaterMember' | 'theaterCue',
+  id: string,
+  user: { id: string; role: Role; tenantId?: string | null }
+): Promise<{ success: boolean; record?: any; status: number; message: string }> {
+  if (!id) {
+    return { success: false, status: 400, message: "ID é obrigatório" };
+  }
+
+  const dbModel = (prisma as any)[entityName];
+  if (!dbModel) {
+    return { success: false, status: 500, message: `Model ${entityName} não encontrado no Prisma` };
+  }
+
+  try {
+    const record = await dbModel.findUnique({
+      where: { id }
+    });
+
+    if (!record) {
+      return { success: false, status: 404, message: "Registro não encontrado" };
+    }
+
+    if (user.role !== Role.MASTER) {
+      if (entityName === 'theaterCue') {
+        const event = await prisma.event.findUnique({ where: { id: record.eventId } });
+        if (!event || event.tenantId !== user.tenantId) {
+          return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+        }
+      } else if (record.tenantId !== user.tenantId) {
+        return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+      }
+    }
+
+    return { success: true, record, status: 200, message: "OK" };
+  } catch (error: any) {
+    return { success: false, status: 500, message: `Erro ao buscar propriedade: ${error.message}` };
+  }
+}

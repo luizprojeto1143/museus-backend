@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
 import { z } from "zod";
+import { checkEntityOwnership } from "../utils/ownership.js";
 
 const router = Router();
 
@@ -102,6 +103,9 @@ router.post("/request", authMiddleware, async (req, res) => {
 router.put("/:id/approve", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { approvedBudget } = req.body;
+        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
         const execution = await prisma.accessibilityExecution.update({
             where: { id: req.params.id },
             data: { status: "APPROVED", approvedAt: new Date(), approvedBy: req.user!.id, approvedBudget }
@@ -116,6 +120,21 @@ router.put("/:id/approve", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]
 router.put("/:id/deliver", authMiddleware, async (req, res) => {
     try {
         const { deliverables, executionNotes } = req.body;
+        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
+        const execution = ownership.record;
+
+        // Verificação adicional de permissão: ou é o prestador designado ou é admin do tenant
+        const isProvider = execution.providerId && await prisma.accessibilityProvider.findFirst({
+            where: { id: execution.providerId, userId: req.user!.id }
+        });
+        const isTenantAdmin = req.user!.role === Role.MASTER || (req.user!.role === Role.ADMIN && execution.tenantId === req.user!.tenantId);
+
+        if (!isProvider && !isTenantAdmin) {
+            return res.status(403).json({ message: "Sem permissão" });
+        }
+
         const updated = await prisma.accessibilityExecution.update({
             where: { id: req.params.id },
             data: { deliverables, executionNotes, executedAt: new Date(), status: "DELIVERED" }
@@ -130,11 +149,16 @@ router.put("/:id/deliver", authMiddleware, async (req, res) => {
 router.put("/:id/validate", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { validationStatus, validationNotes } = req.body;
-        const execution = await prisma.accessibilityExecution.findUnique({ 
-            where: { id: req.params.id },
-            include: { accessibilityProvider: true }
-        });
-        if (!execution) return res.status(404).json({ message: "Execução não encontrada" });
+        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
+        const execution = ownership.record;
+        
+        // Incluir o accessibilityProvider para uso posterior
+        const provider = execution.providerId ? await prisma.accessibilityProvider.findUnique({
+            where: { id: execution.providerId }
+        }) : null;
+        execution.accessibilityProvider = provider;
 
         if (validationStatus === "APPROVED" && execution.providerId) {
             await prisma.accessibilityProvider.update({
@@ -222,6 +246,9 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 router.put("/:id/nota-fiscal", authMiddleware, async (req, res) => {
     try {
         const { notaFiscalUrl, notaFiscalNumber, notaFiscalDate } = req.body;
+        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
         const updated = await prisma.accessibilityExecution.update({
             where: { id: req.params.id },
             data: { notaFiscalUrl, notaFiscalNumber, notaFiscalDate: notaFiscalDate ? new Date(notaFiscalDate) : null }
@@ -236,6 +263,9 @@ router.put("/:id/nota-fiscal", authMiddleware, async (req, res) => {
 router.put("/:id/payment-receipt", authMiddleware, async (req, res) => {
     try {
         const { paymentReceiptUrl } = req.body;
+        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
         const updated = await prisma.accessibilityExecution.update({
             where: { id: req.params.id },
             data: { paymentReceiptUrl }

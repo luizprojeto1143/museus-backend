@@ -310,10 +310,9 @@ router.post("/register", async (req, res) => {
 });
 
 // Rastreia uma visita genérica (não via QR)
-router.post("/track", async (req, res) => {
+router.post("/track", authMiddleware, async (req, res) => {
   try {
     const trackSchema = z.object({
-      visitorId: z.string().uuid("visitorId inválido"),
       workId: z.string().optional(),
       trailId: z.string().optional(),
       eventId: z.string().optional(),
@@ -325,43 +324,62 @@ router.post("/track", async (req, res) => {
       return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     }
 
-    const { visitorId, workId, trailId, eventId, xpGained } = parsed.data;
+    const { workId, trailId, eventId, xpGained } = parsed.data;
+    const email = req.user!.email;
+    const tenantId = (req as any).tenantId;
 
-    const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
-    if (!visitor) {
-      return res.status(404).json({ message: "Visitante não encontrado" });
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId não encontrado" });
     }
 
-    const xpToAdd = xpGained ?? 1;
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: email.toLowerCase(), tenantId }
+    });
+
+    if (!visitor) {
+      return res.status(404).json({ message: "Perfil de visitante não encontrado para este tenant" });
+    }
+
+    // ANTI-CHEAT / XP FARMING PREVENTION 🛡️
+    // Check if user visited this item in the last 10 minutes
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const recentVisit = await prisma.visitorVisit.findFirst({
+      where: {
+        visitorId: visitor.id,
+        workId: workId || null,
+        eventId: eventId || null,
+        createdAt: { gte: tenMinutesAgo }
+      }
+    });
+
+    const xpToAdd = recentVisit ? 0 : (xpGained ?? 1);
+    const xpMessage = recentVisit ? "Visita registrada (sem XP extra por frequência)" : "Visita registrada";
 
     await prisma.$transaction([
       prisma.visitorVisit.create({
         data: {
-          visitorId,
+          visitorId: visitor.id,
           workId: workId || null,
           trailId: trailId || null,
           eventId: eventId || null,
-          tenantId: visitor.tenantId,
+          tenantId,
           source: "APP",
           xpGained: xpToAdd
         }
       }),
-      prisma.visitor.update({
-        where: { id: visitorId },
-        data: { xp: { increment: xpToAdd } }
-      })
+      ...(xpToAdd > 0 ? [
+        prisma.visitor.update({
+          where: { id: visitor.id },
+          data: { xp: { increment: xpToAdd } }
+        })
+      ] : [])
     ]);
 
-    return res.status(201).json({ message: "Visita registrada", xpGained: xpToAdd });
+    return res.status(201).json({ message: xpMessage, xpGained: xpToAdd });
   } catch (err) {
     console.error("Erro registrar visita", err);
     return res.status(500).json({ message: "Erro ao registrar visita" });
   }
-});
-
-// Registrar visita via QR
-router.post("/visit-from-qr", async (req, res) => {
-  // ... Implementation already exists, just keeping structure ...
 });
 
 router.get("/:id", async (req, res) => {

@@ -350,8 +350,8 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
     const refundedAmount = stripeRefund.amount / 100;
 
     // 3. Registrar no banco em transação atômica
-    const [refundRecord] = await prisma.$transaction([
-      prisma.refund.create({
+    const refundRecord = await prisma.$transaction(async (txPrisma) => {
+      const createdRefund = await txPrisma.refund.create({
         data: {
           transactionId: tx.id,
           tenantId,
@@ -360,15 +360,29 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
           status:        stripeRefund.status === 'succeeded' ? 'COMPLETED' : 'PENDING',
           stripeRefundId: stripeRefund.id
         }
-      }),
-      // Atualizar status da transação financeira
-      prisma.financialTransaction.update({
+      });
+
+      // Calcular o montante total reembolsado até agora
+      const allCompletedRefunds = await txPrisma.refund.findMany({
+        where: { transactionId: tx.id, status: 'COMPLETED' }
+      });
+
+      const totalRefunded = allCompletedRefunds.reduce((sum, r) => sum + Number(r.amount), 0);
+      const isFullRefund = totalRefunded >= Number(tx.amount);
+      
+      const finalTxStatus = isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+      const pendingStatus = isFullRefund ? 'REFUND_PENDING' : 'PARTIAL_REFUND_PENDING';
+
+      // Atualizar status da transação financeira de acordo com o total reembolsado
+      await txPrisma.financialTransaction.update({
         where: { id: tx.id },
         data: {
-          status: stripeRefund.status === 'succeeded' ? 'REFUNDED' : 'REFUND_PENDING'
+          status: stripeRefund.status === 'succeeded' ? finalTxStatus : pendingStatus
         }
-      })
-    ]);
+      });
+
+      return createdRefund;
+    });
 
     return res.json({
       message: 'Reembolso processado com sucesso',

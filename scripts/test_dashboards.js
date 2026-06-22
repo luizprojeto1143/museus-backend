@@ -21,6 +21,10 @@ async function testEndpoint(name, url, token) {
 }
 
 async function run() {
+    if (process.env.NODE_ENV === "production") {
+        console.error("❌ Operação abortada: Scripts de teste/demo são bloqueados em produção por motivos de segurança.");
+        process.exit(1);
+    }
     const baseUrl = "https://museus-backend-1.onrender.com";
     const tenantId = "8cc9b546-7f7d-4908-a6cf-acdd7b86982b";
     

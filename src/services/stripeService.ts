@@ -11,7 +11,7 @@ export const stripe = new Stripe(STRIPE_SECRET_KEY, {
     apiVersion: '2025-01-27' as any, // Updated to latest stable for current SDK
 });
 
-const IS_PLACEHOLDER = STRIPE_SECRET_KEY.includes('missing_key');
+const IS_PLACEHOLDER = STRIPE_SECRET_KEY.includes('missing_key') && process.env.NODE_ENV !== 'production';
 
 interface CustomerData {
     name: string;

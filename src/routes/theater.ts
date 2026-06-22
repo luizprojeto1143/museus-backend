@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
+import { checkEntityOwnership } from "../utils/ownership.js";
 
 const router = Router();
 
@@ -38,14 +39,17 @@ router.get("/sessions", authMiddleware, async (req, res) => {
 router.get("/sessions/:id/seats", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await prisma.event.findUnique({
-            where: { id },
-            include: { space: true }
-        });
+        const ownership = await checkEntityOwnership('event', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        const session = ownership.record;
 
-        if (!session || !session.isTheaterSession) {
+        if (!session.isTheaterSession) {
             return res.status(404).json({ message: "Sessão não encontrada" });
         }
+
+        // Fetch space explicitly since checkEntityOwnership doesn't include it by default
+        const space = session.spaceId ? await prisma.space.findUnique({ where: { id: session.spaceId } }) : null;
+        session.space = space;
 
         const reservations = await prisma.theaterSeatReservation.findMany({
             where: { eventId: id }
@@ -69,6 +73,14 @@ router.get("/sessions/:id/seats", authMiddleware, async (req, res) => {
 router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
+        const ownership = await checkEntityOwnership('event', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        const session = ownership.record;
+
+        if (!session.isTheaterSession) {
+            return res.status(404).json({ message: "Sessão não encontrada" });
+        }
+
         const { seatIds } = z.object({ seatIds: z.array(z.string()) }).parse(req.body);
 
         // Transaction to prevent overbooking
@@ -108,6 +120,14 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
 router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
+        const ownership = await checkEntityOwnership('event', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        const session = ownership.record;
+
+        if (!session.isTheaterSession) {
+            return res.status(404).json({ message: "Sessão não encontrada" });
+        }
+
         const { seatIds, paymentMethod, visitorId } = z.object({
             seatIds: z.array(z.string()),
             paymentMethod: z.string(),
@@ -115,21 +135,47 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
         }).parse(req.body);
 
         const result = await prisma.$transaction(async (tx) => {
+            // Buscar informações de comissão do tenant
+            const tenant = await tx.tenant.findUnique({ where: { id: session.tenantId } });
+            if (!tenant) throw new Error("Tenant não encontrado");
+
+            // Buscar se existe algum ingresso pago associado à sessão
+            const ticket = await tx.ticket.findFirst({
+                where: { eventId: id, type: "PAID" }
+            });
+
+            const unitPrice = ticket ? Number(ticket.price) : 100.0;
+            const totalAmount = seatIds.length * unitPrice;
+            const feePercentage = tenant.feePercentage ?? 10.0;
+            const totalFee = totalAmount * (feePercentage / 100);
+
             // Update or create reservations as SOLD
             for (const seatId of seatIds) {
                 await tx.theaterSeatReservation.upsert({
                     where: { eventId_seatId: { eventId: id, seatId } },
-                    update: { status: "SOLD", visitorId },
-                    create: { eventId: id, seatId, status: "SOLD", visitorId }
+                    update: { status: "SOLD", visitorId, ticketId: ticket?.id },
+                    create: { eventId: id, seatId, status: "SOLD", visitorId, ticketId: ticket?.id }
                 });
             }
 
-            // Create a registration for each seat? Or one for the group?
-            // Usually one registration per ticket.
-            // For now, let's just confirm the seats.
+            // Criar a transação financeira da venda do ingresso do teatro
+            const finTx = await tx.financialTransaction.create({
+                data: {
+                    tenantId: session.tenantId,
+                    type: "PAYMENT",
+                    source: "THEATER",
+                    amount: totalAmount,
+                    fee: totalFee,
+                    netAmount: totalAmount - totalFee,
+                    status: "COMPLETED",
+                    paymentMethod: paymentMethod || "CASH"
+                }
+            });
+
+            return { success: true, amount: totalAmount, transactionId: finTx.id };
         });
 
-        return res.json({ success: true });
+        return res.json(result);
     } catch (err: any) {
         return res.status(400).json({ message: err.message });
     }
@@ -220,6 +266,9 @@ router.post("/members", authMiddleware, async (req, res) => {
 router.get("/sessions/:id/cues", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
+        const ownership = await checkEntityOwnership('event', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
         const cues = await prisma.theaterCue.findMany({
             where: { eventId: id },
             orderBy: { order: "asc" }
@@ -235,6 +284,9 @@ router.get("/sessions/:id/cues", authMiddleware, async (req, res) => {
 router.post("/sessions/:id/cues", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
+        const ownership = await checkEntityOwnership('event', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
         const data = z.object({
             id: z.string().optional(),
             type: z.string(),
@@ -245,6 +297,10 @@ router.post("/sessions/:id/cues", authMiddleware, async (req, res) => {
         }).parse(req.body);
 
         if (data.id) {
+            // Garantir que a cue a ser editada também pertence a este evento
+            const cueOwnership = await checkEntityOwnership('theaterCue', data.id, req.user!);
+            if (!cueOwnership.success) return res.status(cueOwnership.status).json({ message: cueOwnership.message });
+
             const updated = await prisma.theaterCue.update({
                 where: { id: data.id },
                 data: { ...data, eventId: id } as any

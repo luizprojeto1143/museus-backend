@@ -5,6 +5,10 @@ import { createPrismaClient } from "./prisma_helper.js";
 const prisma = createPrismaClient();
 
 async function main() {
+    if (process.env.NODE_ENV === "production") {
+        console.error("❌ Operação abortada: Scripts de teste/demo são bloqueados em produção por motivos de segurança.");
+        process.exit(1);
+    }
     console.log("🛠️ Ensuring demo user accounts...");
     const hashedPassword = await bcrypt.hash("123456", 10);
     const tenant = await prisma.tenant.findFirst({ where: { slug: "museu-demo" } });
