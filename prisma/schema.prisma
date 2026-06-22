@@ -2488,6 +2488,7 @@ model Refund {
   amount                Decimal  @db.Decimal(10, 2)
   reason                String?
   status                String   
+  stripeRefundId        String?  @unique
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
@@ -10,6 +10,7 @@ import { Role } from "@prisma/client";
 import https from "https";
 import http from "http";
 import { MediaService } from "../services/mediaService.js";
+import { fileTypeFromBuffer } from "file-type";
 
 const router = Router();
 
@@ -175,11 +176,50 @@ async function handleUpload(req: Request, res: Response, type: string) {
   }
 }
 
+// MAGIC BYTES VALIDATOR — lê o arquivo do disco e verifica o tipo real pelo conteúdo binário
+// Isso bloqueia uploads onde o Content-Type é falso (ex: SVG renomeado como .jpg)
+const MAGIC_BYTE_ALLOWED: Record<string, string[]> = {
+  image:    ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  audio:    ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm'],
+  video:    ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
+  document: ['application/pdf'],
+};
+
+async function validateMagicBytes(
+  req: Request, res: Response, next: NextFunction, category: string
+): Promise<void> {
+  const file = req.file;
+  if (!file) { next(); return; }
+
+  try {
+    // Lê apenas os primeiros 4KB (suficiente para magic bytes)
+    const fd = fs.openSync(file.path, 'r');
+    const buf = Buffer.alloc(4096);
+    const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
+    fs.closeSync(fd);
+    const sample = buf.subarray(0, bytesRead);
+
+    const detected = await fileTypeFromBuffer(sample);
+    const allowed  = MAGIC_BYTE_ALLOWED[category] || [];
+
+    if (!detected || !allowed.includes(detected.mime)) {
+      fs.unlinkSync(file.path); // Apaga arquivo suspeito do disco
+      console.warn(`[Security] Magic bytes mismatch: declared=${file.mimetype} detected=${detected?.mime ?? 'unknown'} ip=${req.ip}`);
+      res.status(400).json({ message: 'Arquivo recusado: conteúdo não corresponde ao tipo declarado.' });
+      return;
+    }
+    next();
+  } catch (e) {
+    if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    res.status(500).json({ message: 'Erro ao validar arquivo.' });
+  }
+}
+
 // ROUTES
-router.post("/image",    authMiddleware, uploadLimiter, uploadImage.single("file"),    (req, res) => handleUpload(req, res, "image"));
-router.post("/audio",    authMiddleware, uploadLimiter, uploadAudio.single("file"),    (req, res) => handleUpload(req, res, "audio"));
-router.post("/video",    authMiddleware, uploadLimiter, uploadVideo.single("file"),    (req, res) => handleUpload(req, res, "video"));
-router.post("/document", authMiddleware, uploadLimiter, uploadDocument.single("file"), (req, res) => handleUpload(req, res, "document"));
+router.post("/image",    authMiddleware, uploadLimiter, uploadImage.single("file"),    (req, res, next) => validateMagicBytes(req, res, next, 'image'),    (req, res) => handleUpload(req, res, "image"));
+router.post("/audio",    authMiddleware, uploadLimiter, uploadAudio.single("file"),    (req, res, next) => validateMagicBytes(req, res, next, 'audio'),    (req, res) => handleUpload(req, res, "audio"));
+router.post("/video",    authMiddleware, uploadLimiter, uploadVideo.single("file"),    (req, res, next) => validateMagicBytes(req, res, next, 'video'),    (req, res) => handleUpload(req, res, "video"));
+router.post("/document", authMiddleware, uploadLimiter, uploadDocument.single("file"), (req, res, next) => validateMagicBytes(req, res, next, 'document'), (req, res) => handleUpload(req, res, "document"));
 
 // Generic upload (used by AdminUploads.tsx – validates MIME server-side)
 router.post("/", authMiddleware, uploadLimiter, uploadImage.single("file"), async (req, res) => {
