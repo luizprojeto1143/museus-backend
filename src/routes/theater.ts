@@ -6,6 +6,8 @@ import { z } from "zod";
 
 const router = Router();
 
+router.use(authMiddleware, requireRole([Role.TEATRO, Role.ADMIN, Role.MASTER]));
+
 // List Theater Sessions
 router.get("/sessions", authMiddleware, async (req, res) => {
     try {

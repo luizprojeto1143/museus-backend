@@ -8,7 +8,7 @@ const router = Router();
 // ========== SECRETARY DASHBOARD - Executive View ==========
 
 // Get Dashboard Data for Secretary/City Admin
-router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.SECRETARIA]), async (req, res) => {
     try {
         const user = req.user!;
         let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
@@ -170,7 +170,7 @@ router.get("/dashboard", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]),
 });
 
 // Get Accessibility Timeline for a specific tenant or project
-router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.SECRETARIA]), async (req, res) => {
     try {
         const user = req.user!;
         let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
@@ -233,7 +233,7 @@ router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, R
 });
 
 // Legal Compliance Matrix
-router.get("/legal-compliance", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+router.get("/legal-compliance", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.SECRETARIA]), async (req, res) => {
     try {
         const user = req.user!;
         let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;

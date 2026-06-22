@@ -6,6 +6,7 @@ import publicProvidersRoutes from "./routes/public/providers.js";
 import { Socket } from "net";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import compression from "compression";
 import path from "path";
 import swaggerUi from 'swagger-ui-express';
@@ -139,7 +140,7 @@ const corsOrigin = (() => {
 app.use(cors({
   origin: corsOrigin,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-ID", "X-Requested-With", "Accept"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-ID", "X-Requested-With", "Accept", "X-CSRF-Token"],
   credentials: true
 }));
 
@@ -193,6 +194,7 @@ app.use((req, res, next) => {
 // C1: CSRF Protection — Double-Submit Cookie Pattern
 // Rotas que usam APENAS Bearer token são automaticamente isentas
 // Webhooks Stripe ficam isentos por caminho
+app.use(cookieParser());
 app.use(csrfMiddleware);
 
 app.get("/", (_req, res) => {

@@ -37,15 +37,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
       console.log(`[Stripe Webhook] Event ${event.id} already processed. Skipping.`);
       return res.status(200).send({ received: true, duplicate: true });
     }
-    await prisma.stripeWebhookEvent.create({
-      data: {
-        id: event.id,
-        type: event.type
-      }
-    });
   } catch (err) {
     console.error(`[Stripe Webhook] Idempotency check failed:`, err);
-    // Proceeding even if this fails to avoid blocking payment confirmation, but ideally we return 500
   }
 
   console.log(`[Stripe Webhook] Received event: ${event.type}`);
@@ -55,6 +48,24 @@ router.post("/stripe", async (req: Request, res: Response) => {
       case "checkout.session.completed": {
         const session = event.data.object as any;
         const metadata = session.metadata || {};
+
+        // Recupera o ID de cobrança (charge) real a partir do PaymentIntent no Stripe
+        const paymentIntentId = session.payment_intent as string | undefined;
+        let realChargeId: string | undefined;
+
+        if (paymentIntentId) {
+          try {
+            const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+            if (pi.latest_charge) {
+              realChargeId = typeof pi.latest_charge === 'string'
+                ? pi.latest_charge
+                : pi.latest_charge.id;
+            }
+          } catch (e) {
+            console.error(`[Stripe Webhook] Failed to retrieve PaymentIntent ${paymentIntentId}:`, e);
+          }
+        }
+        const stripeChargeId = realChargeId ?? paymentIntentId;
 
         // 1. Handle Registration (Tickets)
         const registration = await prisma.registration.findFirst({
@@ -77,8 +88,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 netAmount: amount - fee,
                 status: "COMPLETED",
                 paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: session.payment_intent as string | undefined,
-                stripeChargeId: session.payment_intent as string | undefined
+                stripePaymentIntentId: paymentIntentId,
+                stripeChargeId: stripeChargeId
               }
             });
             finTxId = finTx.id;
@@ -126,8 +137,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               netAmount: amount - fee,
               status: "COMPLETED",
               paymentMethod: "CREDIT_CARD",
-              stripePaymentIntentId: session.payment_intent as string | undefined,
-              stripeChargeId: session.payment_intent as string | undefined
+              stripePaymentIntentId: paymentIntentId,
+              stripeChargeId: stripeChargeId
             }
           });
 
@@ -142,7 +153,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
         // Transaction usa stripeCheckoutSessionId (checkout session ID) para lookup
         // e session.payment_intent para salvar o stripePaymentIntentId real
         const transaction = await prisma.transaction.findFirst({
-          where: { stripePaymentIntentId: session.payment_intent ?? session.id },
+          where: { stripePaymentIntentId: paymentIntentId ?? session.id },
           include: { conversation: { include: { accessibilityProvider: true } } }
         });
         if (transaction && transaction.status === "PENDING") {
@@ -163,8 +174,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 netAmount: amount - fee,
                 status: "COMPLETED",
                 paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: session.payment_intent as string | undefined,
-                stripeChargeId: session.payment_intent as string | undefined
+                stripePaymentIntentId: paymentIntentId,
+                stripeChargeId: stripeChargeId
               }
             });
             finTxId = finTx.id;
@@ -179,7 +190,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
         // 4. Handle Accessibility Service Executions
         const execution = await prisma.accessibilityExecution.findFirst({
-          where: { stripePaymentIntentId: session.payment_intent ?? session.id }
+          where: { stripePaymentIntentId: paymentIntentId ?? session.id }
         });
         if (execution && execution.status !== "PAID") {
           const amount = Number(execution.approvedBudget || 0);
@@ -195,8 +206,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 source: "SERVICE",
                 amount, fee, netAmount: amount - fee,
                 status: "COMPLETED", paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: session.payment_intent as string | undefined,
-                stripeChargeId: session.payment_intent as string | undefined
+                stripePaymentIntentId: paymentIntentId,
+                stripeChargeId: stripeChargeId
               }
             });
             finTxId = finTx.id;
@@ -224,8 +235,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               source: "DONATION",
               amount, fee, netAmount: amount - fee,
               status: "COMPLETED", paymentMethod: "CREDIT_CARD",
-              stripePaymentIntentId: session.payment_intent as string | undefined,
-              stripeChargeId: session.payment_intent as string | undefined
+              stripePaymentIntentId: paymentIntentId,
+              stripeChargeId: stripeChargeId
             }
           });
 
@@ -344,6 +355,14 @@ router.post("/stripe", async (req: Request, res: Response) => {
         break;
       }
     }
+
+    // Marca o evento como processado no banco apenas em caso de sucesso
+    await prisma.stripeWebhookEvent.create({
+      data: {
+        id: event.id,
+        type: event.type
+      }
+    });
   } catch (err) {
     console.error(`[Stripe Webhook Processing Error]:`, err);
     return res.status(500).send("Internal Server Error");

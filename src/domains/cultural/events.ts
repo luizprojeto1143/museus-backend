@@ -826,11 +826,13 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         }
       });
 
-      // 4. Atomic Increment
-      await tx.ticket.update({
-        where: { id: ticketId },
-        data: { sold: { increment: quantity } }
-      });
+      // 4. Atomic Increment (somente para ingressos GRATUITOS; pagos incrementam no webhook)
+      if (!isPaid) {
+        await tx.ticket.update({
+          where: { id: ticketId },
+          data: { sold: { increment: quantity } }
+        });
+      }
 
       return { registration, isPaid, ticketName: ticket.name, eventTitle: event.title, totalAmount: Number(ticket.price) * quantity };
     });

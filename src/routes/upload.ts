@@ -400,6 +400,29 @@ router.get("/proxy", async (req, res) => {
     const httpModule = imageUrl.startsWith("https") ? https : http;
 
     httpModule.get(imageUrl, (response) => {
+      const MAX_PROXY_SIZE = 10 * 1024 * 1024; // 10MB
+
+      // 1. Validar Content-Length no cabeçalho
+      const contentLength = response.headers['content-length'];
+      if (contentLength && parseInt(contentLength, 10) > MAX_PROXY_SIZE) {
+        response.destroy();
+        return res.status(413).send("Payload Too Large: Imagem excede o limite de 10MB");
+      }
+
+      // 2. Monitorar bytes baixados incrementalmente (caso omitam o Content-Length)
+      let downloadedBytes = 0;
+      response.on('data', (chunk) => {
+        downloadedBytes += chunk.length;
+        if (downloadedBytes > MAX_PROXY_SIZE) {
+          response.destroy();
+          if (!res.headersSent) {
+            res.status(413).send("Payload Too Large: Imagem excede o limite de 10MB");
+          } else {
+            res.end();
+          }
+        }
+      });
+
       // Forward the content-type from the external response
       if (response.headers['content-type']) {
         res.setHeader('Content-Type', response.headers['content-type']);
@@ -412,7 +435,7 @@ router.get("/proxy", async (req, res) => {
       response.pipe(res);
     }).on('error', (err) => {
       console.error("Erro no proxy de imagem:", err);
-      res.status(500).send("Error fetching image");
+      if (!res.headersSent) res.status(500).send("Error fetching image");
     });
   } catch (err) {
     console.error("Erro no proxy de imagem (try/catch):", err);

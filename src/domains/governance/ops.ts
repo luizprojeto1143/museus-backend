@@ -56,6 +56,9 @@ router.get("/error-logs", async (req, res) => {
 });
 
 router.get("/debug-env", (req, res) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(404).json({ message: "Not found" });
+    }
     // Get the origin from the app's closure if possible, or just re-calculate
     res.json({
       node_env: process.env.NODE_ENV,

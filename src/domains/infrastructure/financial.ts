@@ -500,17 +500,50 @@ router.get('/payouts', async (req: Request, res: Response): Promise<any> => {
       { stripeAccount: tenant.stripeConnectId }
     );
 
+    // Sincroniza payouts com a tabela local PayoutLedger
+    if (payouts.data && payouts.data.length > 0) {
+      await Promise.all(
+        payouts.data.map(async (p) => {
+          const val = p.amount / 100;
+          await prisma.payoutLedger.upsert({
+            where: { stripePayoutId: p.id },
+            create: {
+              tenantId,
+              stripePayoutId: p.id,
+              amount: val,
+              fee: 0,
+              netAmount: val,
+              status: p.status.toUpperCase(),
+              currency: p.currency.toUpperCase(),
+              arrivalDate: new Date(p.arrival_date * 1000)
+            },
+            update: {
+              status: p.status.toUpperCase(),
+              arrivalDate: new Date(p.arrival_date * 1000)
+            }
+          });
+        })
+      );
+    }
+
+    // Busca os dados consolidados do ledger local do banco de dados
+    const localPayouts = await prisma.payoutLedger.findMany({
+      where: { tenantId },
+      orderBy: { arrivalDate: 'desc' },
+      take: limit
+    });
+
     return res.json({
       tenantId,
       stripeConnectId: tenant.stripeConnectId,
-      payouts: payouts.data.map(p => ({
-        id:           p.id,
-        amount:       p.amount / 100,
-        currency:     p.currency.toUpperCase(),
-        status:       p.status,
-        arrivalDate:  new Date(p.arrival_date * 1000).toISOString(),
-        description:  p.description,
-        method:       p.method
+      payouts: localPayouts.map(p => ({
+        id:           p.stripePayoutId,
+        amount:       Number(p.amount),
+        fee:          Number(p.fee),
+        netAmount:    Number(p.netAmount),
+        status:       p.status.toLowerCase(),
+        arrivalDate:  p.arrivalDate ? p.arrivalDate.toISOString() : null,
+        currency:     p.currency
       })),
       hasMore: payouts.has_more
     });

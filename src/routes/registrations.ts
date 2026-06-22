@@ -168,7 +168,7 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // POST /:code/check-in (Validate and Check-in Ticket)
-router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER', 'OPERADOR']), async (req, res) => {
     try {
         const { code } = req.params;
         const user = req.user!;
@@ -273,7 +273,7 @@ router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER']),
 });
 
 // GET / (List Registrations)
-router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER', 'OPERADOR']), async (req, res) => {
     try {
         const user = req.user!;
         const tenantId = user.tenantId;

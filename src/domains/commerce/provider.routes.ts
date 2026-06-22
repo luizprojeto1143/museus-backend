@@ -5,7 +5,7 @@ import { Role } from '@prisma/client';
 
 const router = Router({ mergeParams: true });
 
-router.use(authMiddleware, requireRole([Role.PRODUCER, Role.MASTER]));
+router.use(authMiddleware, requireRole([Role.PRODUCER, Role.MASTER, Role.PRESTADOR]));
 
 // Dashboard Analytics
 router.get('/dashboard', ProviderDashboardController.getDashboardStats);

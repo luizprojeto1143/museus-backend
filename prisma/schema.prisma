@@ -1677,6 +1677,7 @@ model Tenant {
   chargebacks                  Chargeback[]
   costCenters                  CostCenter[]
   accountingCategories         AccountingCategory[]
+  payoutLedgers                PayoutLedger[]
 
   @@index([parentId])
 }
@@ -2573,5 +2574,23 @@ model AccountingCategory {
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model PayoutLedger {
+  id              String    @id @default(uuid())
+  tenantId        String
+  amount          Decimal   @db.Decimal(10, 2)
+  fee             Decimal   @db.Decimal(10, 2) @default(0.00)
+  netAmount       Decimal   @db.Decimal(10, 2)
+  stripePayoutId  String    @unique
+  status          String    // paid | pending | failed | canceled
+  currency        String    @default("BRL")
+  arrivalDate     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([tenantId])
 }
