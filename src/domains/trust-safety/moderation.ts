@@ -7,7 +7,7 @@ const router = Router();
 // GET /moderation — List reviews with moderation status (admin)
 router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         const status = req.query.status as string; // "pending", "flagged", "approved"
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
 
@@ -63,7 +63,7 @@ router.post('/:reviewId', authMiddleware, requireRole(['ADMIN', 'MASTER']), asyn
 // GET /moderation/stats — Moderation statistics
 router.get('/stats', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
 
         const totalReviews = await prisma.review.count({ where: { work: { tenantId } } });

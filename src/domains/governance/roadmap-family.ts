@@ -75,7 +75,7 @@ router.post('/submissions', authMiddleware, async (req, res) => {
 // ADMIN: GET /submissions — List submissions for review
 router.get('/submissions', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         const { status } = req.query;
 
         const submissions = await prisma.workSubmission.findMany({

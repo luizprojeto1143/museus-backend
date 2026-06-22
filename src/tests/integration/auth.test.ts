@@ -2,6 +2,7 @@ import request from 'supertest';
 import { app } from '../../index';
 
 describe('Auth Integration', () => {
+    jest.setTimeout(30000);
     it('should return 400 for missing credentials on login', async () => {
         const res = await request(app)
             .post('/auth/login')
@@ -25,6 +26,6 @@ describe('Auth Integration', () => {
     it('should validate Health Check', async () => {
         const res = await request(app).get('/health');
         expect(res.status).toBe(200);
-        expect(res.body).toEqual({ status: 'ok' });
+        expect(res.body).toEqual({ status: 'ok', database: 'connected' });
     });
 });

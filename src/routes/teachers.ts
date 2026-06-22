@@ -7,7 +7,7 @@ const router = Router();
 // GET /teachers — List teachers for this tenant
 router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
 
         const teachers = await prisma.teacherProfile.findMany({
@@ -42,7 +42,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 // GET /teachers/visits — List school visits
 router.get('/visits', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
 
         const visits = await prisma.schoolVisit.findMany({

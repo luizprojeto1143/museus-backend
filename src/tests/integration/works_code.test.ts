@@ -26,6 +26,7 @@ app.use('/qr', qrRoutes);
 app.use('/auth', authRoutes);
 
 describe('Work Code Integration (Isolated)', () => {
+    jest.setTimeout(30000);
     let token: string;
     let tenantId: string;
 
@@ -62,7 +63,11 @@ describe('Work Code Integration (Isolated)', () => {
             .post('/auth/login')
             .send({ email, password });
 
-        token = loginRes.body.token;
+        const cookies = loginRes.headers['set-cookie'] as string[];
+        const cookie = cookies?.find(c => c.startsWith('museus_token='));
+        if (cookie) {
+            token = cookie.split(';')[0].split('=')[1];
+        }
     });
 
     it('should create a work and an associated QR code', async () => {

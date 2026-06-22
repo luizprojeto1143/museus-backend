@@ -7,7 +7,7 @@ const router = Router();
 // GET /conservation — List records for a work or tenant
 router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         const workId = req.query.workId as string;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const records = await prisma.conservationRecord.findMany({
@@ -45,7 +45,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 // GET /work-loans — List loans
 router.get('/loans', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const loans = await prisma.workLoan.findMany({
             where: { tenantId },

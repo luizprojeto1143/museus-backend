@@ -107,7 +107,7 @@ router.post('/earn/:cardId', authMiddleware, async (req, res) => {
 // GET /collectibles/stats — Admin stats
 router.get('/stats', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const [totalCards, totalOwned, byRarity] = await Promise.all([
             prisma.collectibleCard.count({ where: { tenantId } }),

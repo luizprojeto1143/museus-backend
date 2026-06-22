@@ -7,7 +7,7 @@ const router = Router();
 // GET /volunteers — List volunteers
 router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const volunteers = await prisma.volunteer.findMany({
             where: { tenantId },

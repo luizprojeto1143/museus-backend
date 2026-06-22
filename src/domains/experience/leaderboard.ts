@@ -12,13 +12,13 @@ router.get("/", authMiddleware, async (req, res) => {
         const user = req.user;
         const userEmail = user?.email;
 
-        // 1. Determine Context (Tenant)
-        // If ?tenantId is provided (switching context), use it. Otherwise use user's home tenant.
-        const tenantId = (req.query.tenantId as string) || user?.tenantId;
-
         if (!user) {
             return res.status(401).json({ message: "Não autenticado" });
         }
+
+        // 1. Determine Context (Tenant)
+        // If ?tenantId is provided (switching context), use it. Otherwise use user's home tenant.
+        const tenantId = (user.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : user.tenantId;
 
         if (!tenantId) {
             return res.status(400).json({ message: "Tenant não identificado." });

@@ -223,9 +223,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         radius: radius ? Number(radius) : 5,
         lat: lat ? Number(lat) : null,
         lng: lng ? Number(lng) : null,
-        captureRadiusM: captureRadiusM ? Number(captureRadiusM) : null,
+        captureRadiusM: captureRadiusM ? Number(captureRadiusM) : undefined,
         vestigeActive: vestigeActive === true || vestigeActive === "true", // L8 Fix
-        vestigeType: vestigeType || null,
+        vestigeType: vestigeType || undefined,
         vestigeExpiresAt: vestigeExpiresAt ? new Date(vestigeExpiresAt) : null,
         vestigeImageUrl: vestigeImageUrl || null,
         tenantId,
@@ -438,6 +438,12 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
       console.log(`[Work] Hard deleted work ${id} by MASTER`);
     } else {
       // Soft Delete
+      // 1. Delete associated QR code
+      await prisma.qRCode.deleteMany({
+        where: { referenceId: id, type: QRType.WORK }
+      });
+
+      // 2. Soft delete work
       await prisma.work.update({
         where: { id },
         data: { deletedAt: new Date(), published: false }

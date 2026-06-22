@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
 router.get('/all', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const user = req.user!;
-        const tenantId = (req.query.tenantId as string) || user.tenantId;
+        const tenantId = (user.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : user.tenantId;
 
         if (!tenantId) {
             return res.status(400).json({ message: 'tenantId obrigatório' });

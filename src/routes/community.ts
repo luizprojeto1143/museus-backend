@@ -58,7 +58,7 @@ router.post('/', authMiddleware, async (req, res) => {
 // GET /community/admin — List posts for moderation (Admin)
 router.get('/admin', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         const { status } = req.query; // PENDING, APPROVED, REJECTED
 
         const posts = await prisma.communityPost.findMany({

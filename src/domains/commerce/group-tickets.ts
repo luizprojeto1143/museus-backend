@@ -24,7 +24,7 @@ router.post('/', async (req, res) => {
 // GET /group-tickets — List (admin)
 router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const tickets = await prisma.groupTicket.findMany({
             where: { tenantId },

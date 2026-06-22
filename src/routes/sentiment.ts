@@ -7,7 +7,7 @@ const router = Router();
 // GET /sentiment/report — Generate sentiment analysis from reviews (Admin)
 router.get('/report', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.query.tenantId as string) || req.user!.tenantId;
+        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
         const months = parseInt(req.query.months as string) || 3;
 
         if (!tenantId) {

@@ -123,6 +123,7 @@ model Achievement {
   tenantId           String
   tenant             Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   visitorAchievements VisitorAchievement[]
+  @@index([tenantId])
 }
 
 model AuditLog {
@@ -139,6 +140,7 @@ model AuditLog {
   tenantId  String
   createdAt DateTime @default(now())
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, createdAt])
 }
 
 model B2BBundle {
@@ -152,6 +154,7 @@ model B2BBundle {
   createdAt         DateTime        @default(now())
   serviceProvider   ServiceProvider @relation(fields: [primaryProviderId], references: [id], onDelete: Cascade)
   tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model BadgeRequest {
@@ -175,6 +178,7 @@ model BadgeRequest {
   deliveredAt   DateTime?
   tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   visitor       Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model Booking {
@@ -220,6 +224,7 @@ model Category {
   spaces       Space[]
   trails       Trail[]
   works        Work[]
+  @@index([tenantId])
 }
 
 model Certificate {
@@ -236,6 +241,7 @@ model Certificate {
   certificateTemplate CertificateTemplate? @relation(fields: [templateId], references: [id])
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   visitor             Visitor              @relation(fields: [visitorId], references: [id])
+  @@index([tenantId])
 }
 
 model CertificateRule {
@@ -250,6 +256,7 @@ model CertificateRule {
   updatedAt           DateTime @updatedAt
   certificateTemplate CertificateTemplate @relation(fields: [actionTemplateId], references: [id])
   tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model CertificateTemplate {
@@ -264,6 +271,7 @@ model CertificateTemplate {
   certificates     Certificate[]
   certificateRules CertificateRule[]
   tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model CharacterBase {
@@ -295,6 +303,7 @@ model ChatPersona {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model Clue {
@@ -309,6 +318,7 @@ model Clue {
   updatedAt DateTime @updatedAt
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   work      Work?    @relation(fields: [workId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model CollectibleCard {
@@ -375,6 +385,7 @@ model ContactRequest {
   tenantId  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  @@index([tenantId])
 }
 
 model ContractPlan {
@@ -522,6 +533,7 @@ model DailyChallenge {
   createdAt                DateTime                   @default(now())
   tenant                   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   dailyChallengeCompletions DailyChallengeCompletion[]
+  @@index([tenantId])
 }
 
 model DailyChallengeCompletion {
@@ -555,6 +567,7 @@ model DeviceToken {
   @@index([active])
   @@index([userId])
   @@index([visitorId])
+  @@index([tenantId])
 }
 
 model Donation {
@@ -575,6 +588,7 @@ model Donation {
   tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   financialTransactionId String?
   financialTransaction  FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
+  @@index([tenantId])
 }
 
 model EquipamentoCheckin {
@@ -829,6 +843,7 @@ model GuestbookEntry {
   createdAt DateTime @default(now())
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   visitor   Visitor  @relation(fields: [visitorId], references: [id])
+  @@index([tenantId])
 }
 
 model InPersonService {
@@ -956,6 +971,7 @@ model NewsletterSubscription {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([email, tenantId])
+  @@index([tenantId])
 }
 
 model NotificationPreference {
@@ -1084,6 +1100,7 @@ model Product {
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([sku, tenantId])
+  @@index([tenantId])
 }
 
 model ProviderProduct {
@@ -1099,6 +1116,7 @@ model ProviderProduct {
   updatedAt         DateTime @updatedAt
   serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
   tenant            Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model ProviderReview {
@@ -1155,6 +1173,7 @@ model QRCode {
   tenantId    String
   createdAt   DateTime @default(now())
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model Quiz {
@@ -1325,6 +1344,7 @@ model ScavengerHunt {
   tenant                     Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   scavengerHuntParticipations ScavengerHuntParticipation[]
   scavengerHuntSteps          ScavengerHuntStep[]
+  @@index([tenantId])
 }
 
 model ScavengerHuntParticipation {
@@ -1440,6 +1460,7 @@ model Skin {
   visitorAvatarCaches VisitorAvatarCache[]
   visitorRPGs         VisitorRPG[]
   visitorSkins        VisitorSkin[]
+  @@index([tenantId])
 }
 
 model SocialCheckin {
@@ -1825,6 +1846,7 @@ model Trail {
   visitor             Visitor?             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   visitorVisits        VisitorVisit[]
+  @@index([tenantId])
 }
 
 model Transaction {
@@ -1881,6 +1903,7 @@ model User {
   serviceProviders       ServiceProvider[]
   tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workSubmissions        WorkSubmission[]
+  @@index([tenantId])
 }
 
 model VestigeAlert {
@@ -1893,6 +1916,7 @@ model VestigeAlert {
   expiresAt DateTime?
   createdAt DateTime  @default(now())
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model Visitor {
@@ -2461,6 +2485,7 @@ model FinancialTransaction {
   registrations          Registration[]
   transactions           Transaction[]
   accessibilityExecutions AccessibilityExecution[]
+  @@index([tenantId, createdAt])
 }
 
 model AccountsReceivable {
@@ -2482,6 +2507,7 @@ model AccountsReceivable {
   updatedAt             DateTime  @updatedAt
 
   tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model AccountsPayable {
@@ -2504,6 +2530,7 @@ model AccountsPayable {
   updatedAt             DateTime  @updatedAt
 
   tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 model Refund {
@@ -2518,6 +2545,7 @@ model Refund {
   updatedAt             DateTime @updatedAt
 
   tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
 }
 
 // ============================================
