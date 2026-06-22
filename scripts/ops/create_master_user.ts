@@ -6,7 +6,13 @@ const prisma = new PrismaClient();
 async function main() {
     console.log("🔍 Verificando usuário Master...");
 
-    const email = "admin@museu.com";
+    const email = process.env.MASTER_EMAIL;
+    const password = process.env.MASTER_PASSWORD;
+
+    if (!email || !password) {
+        console.error("❌ ERRO: MASTER_EMAIL e MASTER_PASSWORD precisam ser definidos nas variáveis de ambiente!");
+        process.exit(1);
+    }
 
     // Verificar se o usuário já existe
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -19,12 +25,12 @@ async function main() {
         console.log(`   TenantId: ${existingUser.tenantId}`);
 
         // Resetar a senha para garantir que funciona
-        const newPassword = await bcrypt.hash("123456", 10);
+        const newPassword = await bcrypt.hash(password, 10);
         await prisma.user.update({
             where: { email },
             data: { password: newPassword }
         });
-        console.log("🔑 Senha resetada para: 123456");
+        console.log("🔑 Senha resetada para o valor de MASTER_PASSWORD.");
     } else {
         console.log("❌ Usuário Master não encontrado. Criando...");
 
@@ -43,7 +49,7 @@ async function main() {
             });
         }
 
-        const hashedPassword = await bcrypt.hash("123456", 10);
+        const hashedPassword = await bcrypt.hash(password, 10);
 
         const user = await prisma.user.create({
             data: {
@@ -58,7 +64,6 @@ async function main() {
         console.log("✅ Usuário Master criado!");
         console.log(`   ID: ${user.id}`);
         console.log(`   Email: ${user.email}`);
-        console.log(`   Senha: 123456`);
     }
 
     // Listar todos os usuários

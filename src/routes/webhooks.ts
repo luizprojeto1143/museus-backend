@@ -68,24 +68,29 @@ router.post("/stripe", async (req: Request, res: Response) => {
         const stripeChargeId = realChargeId ?? paymentIntentId;
 
         // 1. Handle Registration (Tickets)
-        const registration = await prisma.registration.findFirst({
+        const registrations = await prisma.registration.findMany({
           where: { stripeCheckoutSessionId: session.id },
           include: { event: true }
         });
-        if (registration && registration.status === "PENDING") {
-          const amount = Number(registration.pricePaid);
-          const fee = Number(registration.platformFee || 0);
+        const pendingRegistrations = registrations.filter(r => r.status === "PENDING");
+        if (pendingRegistrations.length > 0) {
+          const firstReg = pendingRegistrations[0];
+          const ticketId = firstReg.ticketId;
+          const quantity = pendingRegistrations.length;
+          
+          const totalAmount = pendingRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
+          const totalFee = pendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
 
           let finTxId: string | undefined;
-          if (registration.event?.tenantId) {
+          if (firstReg.event?.tenantId) {
             const finTx = await prisma.financialTransaction.create({
               data: {
-                tenantId: registration.event.tenantId,
+                tenantId: firstReg.event.tenantId,
                 type: "PAYMENT",
                 source: "REGISTRATION",
-                amount,
-                fee,
-                netAmount: amount - fee,
+                amount: totalAmount,
+                fee: totalFee,
+                netAmount: totalAmount - totalFee,
                 status: "COMPLETED",
                 paymentMethod: "CREDIT_CARD",
                 stripePaymentIntentId: paymentIntentId,
@@ -95,28 +100,29 @@ router.post("/stripe", async (req: Request, res: Response) => {
             finTxId = finTx.id;
           }
 
-          // Confirmar registro + incrementar sold atomicamente
+          // Confirmar registros + incrementar sold atomicamente
           await prisma.$transaction([
-            prisma.registration.update({
-              where: { id: registration.id },
+            prisma.registration.updateMany({
+              where: { id: { in: pendingRegistrations.map(r => r.id) } },
               data: { status: "CONFIRMED", financialTransactionId: finTxId }
             }),
-            // Incrementa sold apenas agora, após pagamento confirmado
             prisma.ticket.update({
-              where: { id: registration.ticketId, sold: { lt: prisma.ticket.fields.quantity } },
-              data: { sold: { increment: 1 } }
+              where: { id: ticketId },
+              data: { sold: { increment: quantity } }
             })
           ]);
-          console.log(`[Webhook] Registration ${registration.code} CONFIRMED + sold incrementado!`);
+          console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
           
           // Send Ticket Email
-          const eventData = await prisma.event.findUnique({ where: { id: registration.eventId } });
-          mailService.sendTicketEmail(
-            registration.guestEmail,
-            eventData?.title || "Evento",
-            registration.guestName,
-            registration.code
-          );
+          const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
+          for (const reg of pendingRegistrations) {
+            mailService.sendTicketEmail(
+              reg.guestEmail,
+              eventData?.title || "Evento",
+              reg.guestName,
+              reg.code
+            );
+          }
         }
 
         // 2. Handle Shop Orders
@@ -153,17 +159,22 @@ router.post("/stripe", async (req: Request, res: Response) => {
         // Transaction usa stripeCheckoutSessionId (checkout session ID) para lookup
         // e session.payment_intent para salvar o stripePaymentIntentId real
         const transaction = await prisma.transaction.findFirst({
-          where: { stripePaymentIntentId: paymentIntentId ?? session.id },
+          where: { stripePaymentIntentId: session.id },
           include: { conversation: { include: { accessibilityProvider: true } } }
         });
         if (transaction && transaction.status === "PENDING") {
           const amount = Number(transaction.amount);
-          // Taxa dinâmica do provider, fallback 10%
-          const fee = Number(amount * 0.1);
-
+          
           let finTxId: string | undefined;
           const tenantId = transaction.conversation.accessibilityProvider.tenantId;
           if (tenantId) {
+            const tenant = await prisma.tenant.findUnique({
+              where: { id: tenantId },
+              select: { feePercentage: true }
+            });
+            const feeRate = (tenant?.feePercentage ?? 10) / 100;
+            const fee = Number(amount * feeRate);
+
             const finTx = await prisma.financialTransaction.create({
               data: {
                 tenantId,
@@ -190,15 +201,21 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
         // 4. Handle Accessibility Service Executions
         const execution = await prisma.accessibilityExecution.findFirst({
-          where: { stripePaymentIntentId: paymentIntentId ?? session.id }
+          where: { stripePaymentIntentId: session.id }
         });
         if (execution && execution.status !== "PAID") {
           const amount = Number(execution.approvedBudget || 0);
-          const fee = Number(amount * 0.1);
           const tenantId = execution.tenantId;
 
           let finTxId: string | undefined;
           if (tenantId) {
+            const tenant = await prisma.tenant.findUnique({
+              where: { id: tenantId },
+              select: { feePercentage: true }
+            });
+            const feeRate = (tenant?.feePercentage ?? 10) / 100;
+            const fee = Number(amount * feeRate);
+
             const finTx = await prisma.financialTransaction.create({
               data: {
                 tenantId,
@@ -245,6 +262,41 @@ router.post("/stripe", async (req: Request, res: Response) => {
             data: { status: "COMPLETED", financialTransactionId: finTx.id }
           });
           console.log(`[Webhook] Donation ${donation.id} COMPLETED!`);
+        }
+
+        // 6. Handle Memberships
+        const membership = await prisma.membership.findFirst({
+          where: { paymentId: session.id }
+        });
+        if (membership && membership.status === "PENDING") {
+          const amount = Number(session.amount_total) / 100;
+          const tenant = await prisma.tenant.findUnique({
+            where: { id: membership.tenantId },
+            select: { feePercentage: true }
+          });
+          const feeRate = (tenant?.feePercentage ?? 5) / 100;
+          const fee = Number(amount * feeRate);
+
+          const finTx = await prisma.financialTransaction.create({
+            data: {
+              tenantId: membership.tenantId,
+              type: "PAYMENT",
+              source: "MEMBERSHIP",
+              amount,
+              fee,
+              netAmount: amount - fee,
+              status: "COMPLETED",
+              paymentMethod: "CREDIT_CARD",
+              stripePaymentIntentId: paymentIntentId,
+              stripeChargeId: stripeChargeId
+            }
+          });
+
+          await prisma.membership.update({
+            where: { id: membership.id },
+            data: { status: "ACTIVE" }
+          });
+          console.log(`[Webhook] Membership ${membership.id} activated!`);
         }
         break;
       }

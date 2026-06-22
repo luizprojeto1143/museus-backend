@@ -5,9 +5,14 @@ const prisma = new PrismaClient();
 
 async function createMasterUser() {
   try {
-    const email = 'Culturaviva1143@gmail.com';
-    const password = 'Museu1143';
+    const email = process.env.MASTER_EMAIL;
+    const password = process.env.MASTER_PASSWORD;
     const name = 'Master Admin';
+
+    if (!email || !password) {
+      console.error("❌ ERRO: MASTER_EMAIL e MASTER_PASSWORD precisam ser definidos nas variáveis de ambiente!");
+      process.exit(1);
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -23,17 +28,18 @@ async function createMasterUser() {
 
     console.log('✅ Usuário master criado com sucesso!');
     console.log('Email:', email);
-    console.log('Senha:', password);
     console.log('ID:', user.id);
 
   } catch (error) {
     if (error.code === 'P2002') {
+      const email = process.env.MASTER_EMAIL;
+      const password = process.env.MASTER_PASSWORD;
       console.log('⚠️ Usuário já existe. Atualizando senha...');
 
-      const hashedPassword = await bcrypt.hash('Museu1143', 10);
+      const hashedPassword = await bcrypt.hash(password, 10);
 
       await prisma.user.update({
-        where: { email: 'Culturaviva1143@gmail.com' },
+        where: { email },
         data: {
           password: hashedPassword,
           role: 'MASTER',
@@ -42,8 +48,7 @@ async function createMasterUser() {
       });
 
       console.log('✅ Senha atualizada com sucesso!');
-      console.log('Email: Culturaviva1143@gmail.com');
-      console.log('Senha: Museu1143');
+      console.log('Email:', email);
     } else {
       console.error('❌ Erro:', error.message);
     }

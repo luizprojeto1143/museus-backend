@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "crypto";
 import { prisma } from "../../prisma.js";
 import { authMiddleware, softAuthMiddleware, requireRole, requirePermission } from "../../middleware/auth.js";
 import { Role } from "@prisma/client";
@@ -808,23 +809,27 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       });
       if (!visitor) throw new Error("Perfil de visitante não encontrado");
 
-      // 3. Create Registration
-      const code = `TKT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+      // 3. Create Registrations
       const isPaid = Number(ticket.price) > 0;
+      const registrations = [];
 
-      const registration = await tx.registration.create({
-        data: {
-          eventId: id,
-          ticketId,
-          visitorId: visitor.id,
-          guestName: visitor.name || "Visitante",
-          guestEmail: visitor.email || user.email,
-          code,
-          status: isPaid ? "PENDING" : "CONFIRMED",
-          pricePaid: Number(ticket.price),
-          customFormData: customFormData || undefined
-        }
-      });
+      for (let i = 0; i < quantity; i++) {
+        const code = `TKT-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+        const reg = await tx.registration.create({
+          data: {
+            eventId: id,
+            ticketId,
+            visitorId: visitor.id,
+            guestName: visitor.name || "Visitante",
+            guestEmail: visitor.email || user.email,
+            code,
+            status: isPaid ? "PENDING" : "CONFIRMED",
+            pricePaid: Number(ticket.price),
+            customFormData: customFormData || undefined
+          }
+        });
+        registrations.push(reg);
+      }
 
       // 4. Atomic Increment (somente para ingressos GRATUITOS; pagos incrementam no webhook)
       if (!isPaid) {
@@ -834,7 +839,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         });
       }
 
-      return { registration, isPaid, ticketName: ticket.name, eventTitle: event.title, totalAmount: Number(ticket.price) * quantity };
+      return { registrations, isPaid, ticketName: ticket.name, eventTitle: event.title, totalAmount: Number(ticket.price) * quantity };
     });
 
     if (result.isPaid) {
@@ -879,25 +884,30 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         successUrl: `${frontendUrl}/meus-ingressos?success=true`,
         cancelUrl: `${frontendUrl}/meus-ingressos?canceled=true`,
         metadata: {
-          registrationId: result.registration.id,
+          registrationIds: result.registrations.map(r => r.id).join(","),
           eventId: id
         }
       });
 
-      // Update registration with Stripe Session ID
-      await prisma.registration.update({
-        where: { id: result.registration.id },
+      // Update registrations with Stripe Session ID
+      await prisma.registration.updateMany({
+        where: { id: { in: result.registrations.map(r => r.id) } },
         data: { stripeCheckoutSessionId: session.id }
       });
 
       return res.status(201).json({
         message: "Inscrição pendente de pagamento",
-        registration: result.registration,
+        registration: result.registrations[0],
+        registrations: result.registrations,
         payment: { checkoutUrl: session.url }
       });
     }
 
-    return res.status(201).json({ message: "Inscrição realizada!", registration: result.registration });
+    return res.status(201).json({ 
+      message: "Inscrição realizada!", 
+      registration: result.registrations[0],
+      registrations: result.registrations
+    });
 
   } catch (err: unknown) {
     console.error("Erro inscrição evento", err);

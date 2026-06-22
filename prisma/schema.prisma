@@ -1248,8 +1248,8 @@ model Registration {
   asaasPaymentId        String?
   asaasPaymentStatus    String?
   deletedAt             DateTime?
-  stripePaymentIntentId  String?            @unique
-  stripeCheckoutSessionId String?           @unique
+  stripePaymentIntentId  String?
+  stripeCheckoutSessionId String?
   event                 Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
   ticket                Ticket             @relation(fields: [ticketId], references: [id])
   visitor               Visitor?           @relation(fields: [visitorId], references: [id])
@@ -1260,6 +1260,8 @@ model Registration {
   @@index([eventId])
   @@index([status])
   @@index([visitorId])
+  @@index([stripeCheckoutSessionId])
+  @@index([stripePaymentIntentId])
 }
 
 model Review {
@@ -1903,6 +1905,7 @@ model User {
   serviceProviders       ServiceProvider[]
   tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workSubmissions        WorkSubmission[]
+  workSponsorships       WorkSponsorship[]
   @@index([tenantId])
 }
 
@@ -2206,9 +2209,12 @@ model WorkSponsorship {
   tier                 SponsorshipTier   @default(SHARED)
   tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   work                 Work              @relation(fields: [workId], references: [id], onDelete: Cascade)
+  sponsorUserId        String?
+  sponsorUser          User?             @relation(fields: [sponsorUserId], references: [id])
 
   @@index([tenantId])
   @@index([workId])
+  @@index([sponsorUserId])
 }
 
 model WorkSubmission {

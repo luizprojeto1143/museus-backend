@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../../prisma.js";
 import { authMiddleware, requireRole } from "../../middleware/auth.js";
 import { Role } from "@prisma/client";
+import { formLimiter } from "../../middleware/rateLimiter.js";
 import { z } from "zod";
 import { createAuditLog } from "../governance/audit.js";
 
@@ -85,7 +86,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // GENERATOR: Smart Route (Public)
-router.post("/generate", async (req, res) => {
+router.post("/generate", formLimiter, async (req, res) => {
   try {
     const { tenantId, minutes } = req.body;
 

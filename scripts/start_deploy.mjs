@@ -162,20 +162,6 @@ async function main() {
       }
     }
 
-    // 2. Garantir usuário Master (Rescue)
-    console.log("👤 Garantindo usuário Master (Rescue)...");
-    try {
-      // Usamos node direto no arquivo compilado se disponível, ou ts-node com limite de memória
-      execSync("node scripts/rescue_master.mjs", { 
-        env: { ...process.env, DATABASE_URL: poolerUrl },
-        stdio: "inherit",
-        timeout: 60000
-      });
-    } catch (error) {
-      console.log("⚠️ Erro ao executar rescue_master, mas continuando...");
-      console.error(error);
-    }
-
     console.log("🚀 [Render-Boost] Iniciando servidor...");
     process.env.DATABASE_URL = poolerUrl;
     

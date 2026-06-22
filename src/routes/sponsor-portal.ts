@@ -146,7 +146,8 @@ router.post("/subscribe", authMiddleware, async (req: Request, res: Response) =>
         sponsorUrl,
         message,
         workId,
-        tenantId: work.tenantId
+        tenantId: work.tenantId,
+        sponsorUserId: user.id
       }
     });
 
@@ -187,9 +188,13 @@ router.post("/subscribe", authMiddleware, async (req: Request, res: Response) =>
 router.get("/my-sponsorships", authMiddleware, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    // Identificar patrocínios pelo email do usuário logado (simplificação)
     const sponsorships = await prisma.workSponsorship.findMany({
-      where: { sponsorEmail: user.email },
+      where: {
+        OR: [
+          { sponsorUserId: user.id },
+          { sponsorEmail: user.email }
+        ]
+      },
       include: { work: true }
     });
     return res.json(sponsorships);
@@ -210,7 +215,7 @@ router.delete("/:id/cancel", authMiddleware, async (req: Request, res: Response)
       return res.status(404).json({ error: "Patrocínio não encontrado." });
     }
 
-    if (sponsorship.sponsorEmail !== user.email && user.role !== Role.MASTER) {
+    if (sponsorship.sponsorUserId !== user.id && sponsorship.sponsorEmail !== user.email && user.role !== Role.MASTER) {
       return res.status(403).json({ error: "Acesso negado." });
     }
 
@@ -254,7 +259,7 @@ router.post("/webhook", async (req: Request, res: Response) => {
 
   try {
     event = stripe.webhooks.constructEvent(
-      (req as any).rawBody || JSON.stringify(req.body),
+      req.body,
       sig as string,
       endpointSecret as string
     );

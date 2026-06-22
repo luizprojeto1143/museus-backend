@@ -16,7 +16,18 @@ const openai = process.env.OPENAI_API_KEY
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 // Configuração do multer para extração de PDF (temporário)
-const upload = multer({ dest: "uploads/temp/" });
+const upload = multer({ 
+  dest: "uploads/temp/",
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype !== "application/pdf") {
+      return cb(new Error("Apenas arquivos PDF são permitidos") as any);
+    }
+    cb(null, true);
+  }
+});
 if (!fs.existsSync("uploads/temp/")) {
   fs.mkdirSync("uploads/temp/", { recursive: true });
 }
@@ -135,7 +146,7 @@ router.post("/chat", authMiddleware, aiLimiter, async (req, res) => {
 });
 
 // Streaming Chat using Server-Sent Events (SSE)
-router.post("/chat/stream", authMiddleware, async (req, res) => {
+router.post("/chat/stream", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -155,7 +166,22 @@ router.post("/chat/stream", authMiddleware, async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    // Secure CORS on SSE
+    const origin = req.headers.origin;
+    const allowedOrigin = process.env.NODE_ENV === "production" ? (process.env.FRONTEND_URL || "") : "*";
+    if (allowedOrigin === "*") {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } else if (origin && allowedOrigin.split(",").map(o => o.trim()).includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else {
+      const firstAllowed = allowedOrigin.split(",")[0]?.trim();
+      if (firstAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', firstAllowed);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+    }
 
     // Build context (same as regular chat)
     const persona = await prisma.chatPersona.findUnique({
@@ -245,7 +271,7 @@ router.post("/chat/stream", authMiddleware, async (req, res) => {
 });
 
 // Rota de teste para o Admin (sem salvar persona)
-router.post("/test", authMiddleware, async (req, res) => {
+router.post("/test", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -277,7 +303,7 @@ router.post("/test", authMiddleware, async (req, res) => {
 });
 
 // Souvenir simples
-router.post("/souvenir", async (req, res) => {
+router.post("/souvenir", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -328,7 +354,7 @@ router.post("/souvenir", async (req, res) => {
 });
 
 // Roteiro Inteligente
-router.post("/itinerary", authMiddleware, async (req, res) => {
+router.post("/itinerary", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -404,7 +430,7 @@ router.post("/itinerary", authMiddleware, async (req, res) => {
 });
 
 // TTS Endpoint (requires auth to prevent abuse)
-router.post("/tts", authMiddleware, async (req, res) => {
+router.post("/tts", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -439,7 +465,7 @@ router.post("/tts", authMiddleware, async (req, res) => {
 });
 
 // Auto-Translation Endpoint
-router.post("/translate", authMiddleware, async (req, res) => {
+router.post("/translate", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
@@ -496,9 +522,10 @@ Descrição: ${description || ""}`;
 });
 
 // Rota para extração de dados de PDF
-router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, res) => {
+router.post("/extract-pdf", authMiddleware, upload.single("file"), aiLimiter, async (req, res) => {
   try {
     if (!openai) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });
     }
 
@@ -507,12 +534,28 @@ router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, r
       return res.status(400).json({ message: "Arquivo PDF é obrigatório" });
     }
 
-    const dataBuffer = fs.readFileSync(req.file.path);
-    const data = await (pdf as any)(dataBuffer);
-    const text = data.text;
+    let text = "";
+    try {
+      const dataBuffer = fs.readFileSync(req.file.path);
+      // Validate magic bytes: %PDF-
+      if (dataBuffer.length < 5 || dataBuffer.toString("utf8", 0, 5) !== "%PDF-") {
+        return res.status(400).json({ message: "Arquivo inválido. Apenas arquivos PDF reais são permitidos." });
+      }
 
-    // Remove o arquivo temporário
-    fs.unlinkSync(req.file.path);
+      const data = await (pdf as any)(dataBuffer);
+      text = data.text;
+    } catch (e: any) {
+      console.error("Erro ao ler/parsear PDF:", e);
+      return res.status(400).json({ message: "Erro ao parsear arquivo PDF. Certifique-se de que é um PDF válido." });
+    } finally {
+      if (req.file && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {
+          console.error("Erro deletando arquivo temporário:", e);
+        }
+      }
+    }
 
     if (!text || text.trim().length === 0) {
       return res.status(400).json({ message: "Não foi possível extrair texto do PDF. O arquivo pode estar vazio ou ser apenas imagem." });
@@ -570,8 +613,6 @@ router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, r
 
   } catch (err) {
     console.error("❌ Erro na extração de PDF:", err);
-    if (err instanceof Error) console.error("Stack:", err.stack);
-    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     return res.status(500).json({ 
       message: "Erro ao extrair informações do PDF", 
       error: err instanceof Error ? err.message : String(err) 
@@ -580,7 +621,7 @@ router.post("/extract-pdf", authMiddleware, upload.single("file"), async (req, r
 });
 
 // Refinar Proposta Cultural (Ajudante do Agente Cultural)
-router.post("/refine-proposal", authMiddleware, async (req, res) => {
+router.post("/refine-proposal", authMiddleware, aiLimiter, async (req, res) => {
   try {
     if (!openai) {
       return res.status(500).json({ message: "OPENAI_API_KEY não configurada" });

@@ -24,7 +24,8 @@ const OPTIONAL_ENV_VARS = [
 const PRODUCTION_REQUIRED_ENV_VARS = [
     "FRONTEND_URL",
     "GAME_SECRET",
-    "ASAAS_API_KEY"
+    "ASAAS_API_KEY",
+    "STRIPE_SECRET_KEY"
 ];
 
 export function validateEnv(): void {
@@ -37,12 +38,11 @@ export function validateEnv(): void {
         }
     }
 
-    // In production, log warnings for these instead of exiting, to allow demo/deployments
+    // In production, these variables are strictly REQUIRED
     if (isProduction) {
         for (const varName of PRODUCTION_REQUIRED_ENV_VARS) {
             if (!process.env[varName]) {
-                console.warn(`⚠️  WARNING: Missing recommended environment variable: ${varName}`);
-                console.warn(`   The application will continue, but some features may be limited.`);
+                missing.push(varName);
             }
         }
     }

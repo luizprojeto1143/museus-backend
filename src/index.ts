@@ -119,11 +119,12 @@ import { tenantMiddleware } from "./middleware/tenant.js";
 // Validate critical environment variables on boot
 validateEnv();
 
+const isProd = process.env.NODE_ENV === "production";
 const app = express();
 app.set('trust proxy', 1);
 
 const corsOrigin = (() => {
-  if (process.env.NODE_ENV === "production") {
+  if (isProd) {
     if (!process.env.FRONTEND_URL) {
       // C2: Never fall back to '*' in production — fail fast so the problem is visible immediately.
       console.error("❌ FATAL: FRONTEND_URL is required in production. Set this environment variable and redeploy.");
@@ -137,15 +138,17 @@ const corsOrigin = (() => {
   return "*";
 })();
 
-app.use(cors({
+const corsOptions = {
   origin: corsOrigin,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-ID", "X-Requested-With", "Accept", "X-CSRF-Token"],
   credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly
-app.options("*", cors());
+app.options("*", cors(corsOptions));
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -156,11 +159,11 @@ app.use(helmet({
       // If inline scripts are needed in the future, use per-request nonces instead.
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "https://fonts.googleapis.com"],
-      imgSrc: ["'self'", "data:", "https:", "http:"],
-      connectSrc: ["'self'", "https:", "http:"],
+      imgSrc: ["'self'", "data:", "https:", ...(isProd ? [] : ["http:"])],
+      connectSrc: ["'self'", "https:", ...(isProd ? [] : ["http:"])],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       objectSrc: ["'none'"],
-      mediaSrc: ["'self'", "https:", "http:"],
+      mediaSrc: ["'self'", "https:", ...(isProd ? [] : ["http:"])],
       frameSrc: ["'none'"]
     }
   },
@@ -173,8 +176,9 @@ app.use(compression());
 // Specific routes (auth, AI, upload) have their own tighter limiters applied locally.
 app.use(limiter);
 
+app.use('/sponsor-portal/webhook', express.raw({ type: 'application/json' }));
 app.use('/webhooks/stripe', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: "2mb" })); // Reduced from 10mb for general security. Upload routes have their own multer limit.
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // --- Observability (Logging Estruturado e Rastreio) ---
@@ -337,7 +341,6 @@ const PORT = process.env.PORT || 3000;
 // Global Error Handler
  
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const isProd = process.env.NODE_ENV === "production";
 
   // Always log full detail server-side
   const sanitizedBody = { ..._req.body };
@@ -404,9 +407,14 @@ if (process.env.NODE_ENV !== 'test') {
       console.log("⏳ Connecting to database...");
       await prisma.$connect();
       console.log("🔌 Connected to database successfully.");
-    } catch (e) {
+    } catch (e: any) {
       console.error("❌ Failed to connect to database on startup:", e);
-      console.warn("⚠️ Server will CONTINUE to start, but database requests may fail.");
+      if (isProd) {
+        console.error("❌ CRITICAL: Database connection failed in production. Crashing server.");
+        process.exit(1);
+      } else {
+        console.warn("⚠️ Server will CONTINUE to start, but database requests may fail.");
+      }
     }
 
     const server = app.listen(PORT, () => {

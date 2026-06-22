@@ -5,16 +5,30 @@ import { Role } from "@prisma/client";
 
 const router = Router();
 
-router.post("/", async (req, res) => {
+router.post("/", authMiddleware, async (req, res) => {
   try {
-    const { visitorId, workId } = req.body as {
-      visitorId?: string;
+    const { workId } = req.body as {
       workId?: string;
     };
+    const user = req.user!;
 
-    if (!visitorId || !workId) {
-      return res.status(400).json({ message: "visitorId e workId são obrigatórios" });
+    if (!workId) {
+      return res.status(400).json({ message: "workId é obrigatório" });
     }
+
+    // Buscar a obra para verificar o tenantId
+    const work = await prisma.work.findUnique({ where: { id: workId } });
+    if (!work) return res.status(404).json({ message: "Obra não encontrada" });
+
+    // Buscar o visitante do usuário logado correspondente ao tenantId da obra
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: user.email.toLowerCase(), tenantId: work.tenantId }
+    });
+    if (!visitor) {
+      return res.status(404).json({ message: "Perfil de visitante não encontrado para este museu" });
+    }
+
+    const visitorId = visitor.id;
 
     // 3. Verificar se já capturou
     const existing = await (prisma.passportStamp as any).findUnique({

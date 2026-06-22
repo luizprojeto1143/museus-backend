@@ -4,8 +4,14 @@ import bcrypt from "bcrypt";
 const prisma = new PrismaClient();
 
 async function main() {
-  const email = "admin@museu.com";
-  const password = "123456";
+  const email = process.env.MASTER_EMAIL;
+  const password = process.env.MASTER_PASSWORD;
+
+  if (!email || !password) {
+    console.error("❌ ERRO: MASTER_EMAIL e MASTER_PASSWORD precisam ser definidos nas variáveis de ambiente!");
+    process.exit(1);
+  }
+
   const hashedPassword = await bcrypt.hash(password, 10);
 
   console.log(`Checking user ${email}...`);

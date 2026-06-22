@@ -20,12 +20,22 @@ const ACCESS_TOKEN_EXPIRES_IN = "15m";
 // Refresh Token: 7 dias (Longa duração para UX)
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 const isProd = process.env.NODE_ENV === "production";
+const COOKIE_SAME_SITE = (process.env.COOKIE_SAME_SITE || "lax") as "lax" | "none" | "strict";
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: isProd,
-  sameSite: isProd ? ("none" as const) : ("lax" as const),
+  sameSite: COOKIE_SAME_SITE,
   maxAge: REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000
 };
+
+function maskEmail(email: string): string {
+  if (!email || !email.includes("@")) return "invalid-email";
+  const parts = email.split("@");
+  const name = parts[0];
+  const domain = parts[1];
+  const maskedName = name.substring(0, Math.min(3, name.length)) + "...";
+  return `${maskedName}@${domain}`;
+}
 
 // Helper para gerar tokens
 const generateTokens = async (userId: string, email: string, role: Role, tenantId: string | null, tenantType: any, name?: string, permissions?: any) => {
@@ -63,7 +73,7 @@ const generateTokens = async (userId: string, email: string, role: Role, tenantI
 router.post("/login", authLimiter, validate(loginSchema), async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password } = req.body;
-    console.log(`[AUTH] Attempting login for: ${email}`);
+    console.log(`[AUTH] Attempting login for: ${maskEmail(email)}`);
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
@@ -73,14 +83,14 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     });
 
     if (!user) {
-      console.log(`[AUTH] User not found: ${email}`);
+      console.log(`[AUTH] User not found: ${maskEmail(email)}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
     console.log(`[AUTH] User found, comparing password...`);
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
-      console.log(`[AUTH] Password mismatch for: ${email}`);
+      console.log(`[AUTH] Password mismatch for: ${maskEmail(email)}`);
       return res.status(401).json({ message: "Credenciais inválidas" });
     }
 
@@ -134,7 +144,7 @@ router.post("/login", authLimiter, validate(loginSchema), async (req: Request, r
     res.cookie("museus_token", tokens.accessToken, COOKIE_OPTIONS);
     res.cookie("museus_refresh_token", tokens.refreshToken, COOKIE_OPTIONS);
 
-    console.log(`[AUTH] Login successful for: ${email}`);
+    console.log(`[AUTH] Login successful for: ${maskEmail(email)}`);
 
     // Audit Log (Non-blocking)
     try {
@@ -273,8 +283,8 @@ router.post("/logout", async (req: Request, res: Response): Promise<any> => {
             console.error("Failed to blacklist access token", e);
         }
     }
-    res.clearCookie("museus_token", { sameSite: isProd ? "none" : "lax", secure: isProd });
-    res.clearCookie("museus_refresh_token", { sameSite: isProd ? "none" : "lax", secure: isProd });
+    res.clearCookie("museus_token", { sameSite: COOKIE_SAME_SITE, secure: isProd, httpOnly: true });
+    res.clearCookie("museus_refresh_token", { sameSite: COOKIE_SAME_SITE, secure: isProd, httpOnly: true });
     return res.status(200).json({ message: "Logout realizado com sucesso" });
   } catch (err) {
     console.error("Erro logout", err);

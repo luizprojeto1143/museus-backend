@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { stripeService } from '../services/stripeService.js';
 
 const router = Router();
 
@@ -55,17 +56,74 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
 });
 
 // POST /memberships — Subscribe (visitor)
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
     try {
         const { planId, visitorEmail, visitorName, tenantId } = req.body;
         if (!planId || !visitorEmail || !tenantId) return res.status(400).json({ message: 'Dados incompletos' });
 
         const plan = await prisma.membershipPlan.findUnique({ where: { id: planId } });
         if (!plan) return res.status(404).json({ message: 'Plano não encontrado' });
+        if (plan.tenantId !== tenantId) return res.status(400).json({ message: 'Plano pertence a outro inquilino' });
+
+        const isPaid = Number(plan.monthlyPrice) > 0;
 
         const membership = await prisma.membership.create({
-            data: { planId, visitorEmail, visitorName, tenantId, renewDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) }
+            data: { 
+                planId, 
+                visitorEmail, 
+                visitorName, 
+                tenantId, 
+                status: isPaid ? "PENDING" : "ACTIVE",
+                renewDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) 
+            }
         });
+
+        if (isPaid) {
+            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+            const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+            const stripeConnectId = tenant?.stripeConnectId;
+
+            if (!stripeConnectId) {
+                return res.status(400).json({ message: "Inquilino não configurado para pagamentos via Stripe Connect." });
+            }
+
+            const amountInCents = Math.round(Number(plan.monthlyPrice) * 100);
+            const feeRate = (tenant?.feePercentage ?? 5) / 100;
+            const appFeeInCents = Math.round(amountInCents * feeRate);
+
+            const user = req.user!;
+            const customerId = await stripeService.createCustomer({
+                name: user.name || visitorName || "Assinante",
+                email: user.email || visitorEmail,
+                userId: user.id
+            });
+
+            const session = await stripeService.createSplitPaymentSession({
+                customerId,
+                amount: amountInCents,
+                description: `Assinatura Plano: ${plan.name}`,
+                connectedAccountId: stripeConnectId,
+                applicationFeeAmount: appFeeInCents,
+                successUrl: `${frontendUrl}/club-membership?success=true`,
+                cancelUrl: `${frontendUrl}/club-membership?canceled=true`,
+                metadata: {
+                    membershipId: membership.id,
+                    tenantId
+                }
+            });
+
+            await prisma.membership.update({
+                where: { id: membership.id },
+                data: { paymentId: session.id }
+            });
+
+            return res.status(201).json({
+                message: "Assinatura pendente de pagamento",
+                membership,
+                checkoutUrl: session.url
+            });
+        }
+
         res.status(201).json(membership);
     } catch (error) {
         console.error(error);
