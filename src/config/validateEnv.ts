@@ -20,8 +20,8 @@ const OPTIONAL_ENV_VARS = [
     "S3_SECRET_KEY"
 ];
 
-// Variables that are REQUIRED in production but optional in development
-const PRODUCTION_REQUIRED_ENV_VARS = [
+// Variables that are recommended in production but optional in development
+const PRODUCTION_RECOMMENDED_ENV_VARS = [
     "FRONTEND_URL",
     "GAME_SECRET",
     "ASAAS_API_KEY",
@@ -38,11 +38,11 @@ export function validateEnv(): void {
         }
     }
 
-    // In production, these variables are strictly REQUIRED
+    // In production, log warning if these variables are missing instead of crashing
     if (isProduction) {
-        for (const varName of PRODUCTION_REQUIRED_ENV_VARS) {
+        for (const varName of PRODUCTION_RECOMMENDED_ENV_VARS) {
             if (!process.env[varName]) {
-                missing.push(varName);
+                console.warn(`⚠️  WARNING: Production environment variable "${varName}" is missing. Some features/integrations will be disabled.`);
             }
         }
     }

@@ -132,33 +132,41 @@ async function main() {
     // -------------------------------------------------------------------------
     // SCHEMA SYNC:
     // -------------------------------------------------------------------------
-    // 1. Sincronizar banco de dados (prisma db push)
     console.log("🛠️ Sincronizando esquema do banco de dados...");
     let migrationSuccess = false;
 
-    try {
-      console.log("📡 Tentando Migração via URL Direta (Porta 5432)...");
-      execSync("npx prisma migrate deploy", { 
-        env: { ...process.env, DATABASE_URL: finalDirectUrl },
-        stdio: "inherit",
-        timeout: 90000 
-      });
-      migrationSuccess = true;
-      console.log("✅ Migração concluída via URL Direta.");
-    } catch (error) {
-      console.warn("⚠️ Falha na URL Direta. Tentando via URL de Conexão Principal...");
+    const isDirectPortOpen = await testConnectivity(directUrl.hostname, 5432);
+
+    if (isDirectPortOpen) {
+        try {
+          console.log("📡 Tentando Migração via URL Direta (Porta 5432)...");
+          execSync("npx prisma migrate deploy", { 
+            env: { ...process.env, DATABASE_URL: finalDirectUrl },
+            stdio: "inherit",
+            timeout: 30000 
+          });
+          migrationSuccess = true;
+          console.log("✅ Migração concluída via URL Direta.");
+        } catch (error) {
+          console.warn("⚠️ Falha na URL Direta:", error.message);
+        }
+    } else {
+        console.log("ℹ️ Porta 5432 fechada/inacessível no host de migração. Pulando tentativa direta para evitar timeout.");
+    }
+
+    if (!migrationSuccess) {
+      console.log("📡 Tentando Migração via URL de Conexão Principal...");
       try {
         execSync("npx prisma migrate deploy", { 
           env: { ...process.env, DATABASE_URL: poolerUrl },
           stdio: "inherit",
-          timeout: 90000 
+          timeout: 30000 
         });
         migrationSuccess = true;
         console.log("✅ Migração concluída via URL Principal.");
       } catch (error2) {
         console.error("❌ ERRO CRÍTICO: Não foi possível aplicar migrações no banco de dados.");
-        console.error("Erro Direto:", error.message);
-        console.error("Erro Principal:", error2.message);
+        console.error("Erro:", error2.message);
       }
     }
 
