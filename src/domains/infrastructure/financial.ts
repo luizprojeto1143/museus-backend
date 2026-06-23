@@ -729,6 +729,18 @@ router.put('/payables/:id/baixa', async (req: Request, res: Response): Promise<a
   return res.json(updated);
 });
 
+function escapeCSVField(val: any): string {
+  if (val === null || val === undefined) return '';
+  let str = String(val);
+  if (str.startsWith('=') || str.startsWith('+') || str.startsWith('-') || str.startsWith('@') || str.startsWith('\r') || str.startsWith('\t')) {
+    str = "'" + str;
+  }
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    str = `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 // ==========================================
 // GET /financial/export
 // Exportação contábil de transações (CSV ou JSON)
@@ -757,15 +769,15 @@ router.get('/export', async (req: Request, res: Response): Promise<any> => {
     const header = 'id,tipo,fonte,valor_bruto,taxa,valor_liquido,status,metodo_pagamento,data\n';
     const rows = transactions.map(t =>
       [
-        t.id,
-        t.type,
-        t.source,
-        Number(t.amount).toFixed(2),
-        Number(t.fee).toFixed(2),
-        Number(t.netAmount).toFixed(2),
-        t.status,
-        t.paymentMethod,
-        t.createdAt.toISOString()
+        escapeCSVField(t.id),
+        escapeCSVField(t.type),
+        escapeCSVField(t.source),
+        escapeCSVField(Number(t.amount).toFixed(2)),
+        escapeCSVField(Number(t.fee).toFixed(2)),
+        escapeCSVField(Number(t.netAmount).toFixed(2)),
+        escapeCSVField(t.status),
+        escapeCSVField(t.paymentMethod),
+        escapeCSVField(t.createdAt.toISOString())
       ].join(',')
     ).join('\n');
 

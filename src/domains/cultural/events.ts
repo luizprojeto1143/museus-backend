@@ -863,64 +863,78 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
     });
 
     if (result.isPaid) {
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-      
-      // 1. Identify recipient Stripe Connect Account (either producer or tenant)
-      let stripeConnectId: string | null = null;
-      if (event.producerId) {
-        const prod = await prisma.user.findUnique({ where: { id: event.producerId } });
-        if (prod?.stripeConnectId) stripeConnectId = prod.stripeConnectId;
-      }
-      if (!stripeConnectId) {
-        const tenant = await prisma.tenant.findUnique({ where: { id: event.tenantId } });
-        if (tenant?.stripeConnectId) stripeConnectId = tenant.stripeConnectId;
-      }
-
-      if (!stripeConnectId) {
-        return res.status(400).json({ 
-          message: "Este evento não possui uma conta Stripe Connect vinculada para receber pagamentos." 
-        });
-      }
-
-      const customerId = await stripeService.createCustomer({
-        name: user.name || "Visitante",
-        email: user.email,
-        userId: user.id
-      });
-
-      const amountInCents = Math.round(result.totalAmount * 100);
-      // Taxa dinâmica: lê do tenant (fallback 5%)
-      const eventTenant = await prisma.tenant.findUnique({ where: { id: event.tenantId }, select: { feePercentage: true } });
-      const feeRate = (eventTenant?.feePercentage ?? 5) / 100;
-      const appFeeInCents = Math.round(amountInCents * feeRate);
-
-      // 3. Create Stripe Checkout session with Connect Split
-      const session = await stripeService.createSplitPaymentSession({
-        customerId,
-        amount: amountInCents,
-        description: `Ingresso: ${result.eventTitle} - ${result.ticketName}`,
-        connectedAccountId: stripeConnectId,
-        applicationFeeAmount: appFeeInCents,
-        successUrl: `${frontendUrl}/meus-ingressos?success=true`,
-        cancelUrl: `${frontendUrl}/meus-ingressos?canceled=true`,
-        metadata: {
-          registrationIds: result.registrations.map(r => r.id).join(","),
-          eventId: id
+      try {
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        
+        // 1. Identify recipient Stripe Connect Account (either producer or tenant)
+        let stripeConnectId: string | null = null;
+        if (event.producerId) {
+          const prod = await prisma.user.findUnique({ where: { id: event.producerId } });
+          if (prod?.stripeConnectId) stripeConnectId = prod.stripeConnectId;
         }
-      });
+        if (!stripeConnectId) {
+          const tenant = await prisma.tenant.findUnique({ where: { id: event.tenantId } });
+          if (tenant?.stripeConnectId) stripeConnectId = tenant.stripeConnectId;
+        }
 
-      // Update registrations with Stripe Session ID
-      await prisma.registration.updateMany({
-        where: { id: { in: result.registrations.map(r => r.id) } },
-        data: { stripeCheckoutSessionId: session.id }
-      });
+        if (!stripeConnectId) {
+          await prisma.registration.updateMany({
+            where: { id: { in: result.registrations.map(r => r.id) } },
+            data: { status: "CANCELED" }
+          });
+          return res.status(400).json({ 
+            message: "Este evento não possui uma conta Stripe Connect vinculada para receber pagamentos." 
+          });
+        }
 
-      return res.status(201).json({
-        message: "Inscrição pendente de pagamento",
-        registration: result.registrations[0],
-        registrations: result.registrations,
-        payment: { checkoutUrl: session.url }
-      });
+        const customerId = await stripeService.createCustomer({
+          name: user.name || "Visitante",
+          email: user.email,
+          userId: user.id
+        });
+
+        const amountInCents = Math.round(result.totalAmount * 100);
+        // Taxa dinâmica: lê do tenant (fallback 5%)
+        const eventTenant = await prisma.tenant.findUnique({ where: { id: event.tenantId }, select: { feePercentage: true } });
+        const feeRate = (eventTenant?.feePercentage ?? 5) / 100;
+        const appFeeInCents = Math.round(amountInCents * feeRate);
+
+        // 3. Create Stripe Checkout session with Connect Split
+        const session = await stripeService.createSplitPaymentSession({
+          customerId,
+          amount: amountInCents,
+          description: `Ingresso: ${result.eventTitle} - ${result.ticketName}`,
+          connectedAccountId: stripeConnectId,
+          applicationFeeAmount: appFeeInCents,
+          successUrl: `${frontendUrl}/meus-ingressos?success=true`,
+          cancelUrl: `${frontendUrl}/meus-ingressos?canceled=true`,
+          metadata: {
+            registrationIds: result.registrations.map(r => r.id).join(","),
+            eventId: id
+          }
+        });
+
+        // Update registrations with Stripe Session ID
+        await prisma.registration.updateMany({
+          where: { id: { in: result.registrations.map(r => r.id) } },
+          data: { stripeCheckoutSessionId: session.id }
+        });
+
+        return res.status(201).json({
+          message: "Inscrição pendente de pagamento",
+          registration: result.registrations[0],
+          registrations: result.registrations,
+          payment: { checkoutUrl: session.url }
+        });
+      } catch (stripeErr) {
+        console.error("Erro no checkout Stripe (Event Register):", stripeErr);
+        // COMPENSAÇÃO: cancela inscrições criadas para liberar estoque
+        await prisma.registration.updateMany({
+          where: { id: { in: result.registrations.map(r => r.id) } },
+          data: { status: "CANCELED" }
+        });
+        return res.status(500).json({ message: "Erro ao gerar pagamento via Stripe" });
+      }
     }
 
     return res.status(201).json({ 
@@ -1216,7 +1230,7 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
       // Generate tickets
       const registrations = [];
       for (let i = 0; i < quantity; i++) {
-        const code = `PDV-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+        const code = `PDV-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
         
         const registration = await tx.registration.create({
           data: {

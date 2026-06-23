@@ -7,7 +7,7 @@ async function main() {
         process.exit(1);
     }
     const email = "Culturaviva1143@gmail.com";
-    const password = "123456";
+    const password = process.env.DEMO_USER_PASSWORD || "123456";
 
     const user = await prisma.user.findUnique({
         where: { email }
@@ -22,7 +22,7 @@ async function main() {
     console.log(`User: ${user.email}`);
     console.log(`Role: ${user.role}`);
     console.log(`Active: ${user.active}`);
-    console.log(`Password '123456' valid? ${isValid}`);
+    console.log(`Password valid? ${isValid}`);
 }
 
 main()

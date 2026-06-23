@@ -41,11 +41,25 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
 router.patch('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { status } = req.body;
-        const ticket = await prisma.groupTicket.update({
+        const user = req.user!;
+
+        const ticket = await prisma.groupTicket.findUnique({
+            where: { id: req.params.id }
+        });
+
+        if (!ticket) {
+            return res.status(404).json({ message: 'Ingresso de grupo não encontrado' });
+        }
+
+        if (user.role !== 'MASTER' && ticket.tenantId !== user.tenantId) {
+            return res.status(403).json({ message: 'Sem permissão para atualizar ingressos de outro tenant' });
+        }
+
+        const updated = await prisma.groupTicket.update({
             where: { id: req.params.id },
             data: { status }
         });
-        res.json(ticket);
+        res.json(updated);
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erro ao atualizar' });

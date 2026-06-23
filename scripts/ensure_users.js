@@ -10,7 +10,7 @@ async function main() {
         process.exit(1);
     }
     console.log("🛠️ Ensuring demo user accounts...");
-    const hashedPassword = await bcrypt.hash("123456", 10);
+    const hashedPassword = await bcrypt.hash(process.env.DEMO_USER_PASSWORD || "123456", 10);
     const tenant = await prisma.tenant.findFirst({ where: { slug: "museu-demo" } });
     
     if (!tenant) {

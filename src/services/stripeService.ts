@@ -11,6 +11,14 @@ export const stripe = new Stripe(STRIPE_SECRET_KEY, {
     apiVersion: '2025-01-27' as any, // Updated to latest stable for current SDK
 });
 
+const PAYMENTS_DISABLED = process.env.PAYMENTS_DISABLED === "true";
+
+function checkPaymentsEnabled() {
+    if (PAYMENTS_DISABLED) {
+        throw new Error("Os pagamentos estão desativados nesta instância do servidor.");
+    }
+}
+
 const IS_PLACEHOLDER = STRIPE_SECRET_KEY.includes('missing_key') && process.env.NODE_ENV !== 'production';
 
 interface CustomerData {
@@ -25,6 +33,7 @@ export const stripeService = {
      * Creates or retrieves a customer in Stripe
      */
     async createCustomer(data: CustomerData) {
+        checkPaymentsEnabled();
         if (IS_PLACEHOLDER) {
             console.log("💳 [STRIPE SIMULATION] Creating dummy customer for:", data.email);
             return `cus_dummy_${Math.random().toString(36).substring(7)}`;
@@ -61,6 +70,7 @@ export const stripeService = {
      * Creates a Checkout Session for Subscriptions (R$ 50/month)
      */
     async createSubscriptionSession(customerId: string, priceId: string, successUrl: string, cancelUrl: string) {
+        checkPaymentsEnabled();
         if (IS_PLACEHOLDER) {
             console.log("💳 [STRIPE SIMULATION] Skipping subscription session, redirecting to successUrl.");
             return { url: successUrl } as any;
@@ -100,6 +110,7 @@ export const stripeService = {
         cancelUrl: string;
         metadata?: Record<string, string>;
     }) {
+        checkPaymentsEnabled();
         if (IS_PLACEHOLDER) {
             console.log("💳 [STRIPE SIMULATION] Skipping split payment session, redirecting to successUrl.");
             return { url: data.successUrl } as any;
@@ -150,6 +161,7 @@ export const stripeService = {
      * Creates a new Connected Account (Express)
      */
     async createConnectedAccount(email: string, name: string) {
+        checkPaymentsEnabled();
         if (IS_PLACEHOLDER) {
             console.log("💳 [STRIPE SIMULATION] Creating dummy connected account.");
             return { id: `acct_dummy_${Math.random().toString(36).substring(7)}` } as any;
@@ -177,6 +189,7 @@ export const stripeService = {
      * Creates an Account Link for Onboarding
      */
     async createAccountLink(accountId: string, refreshUrl: string, returnUrl: string) {
+        checkPaymentsEnabled();
         if (IS_PLACEHOLDER) {
             console.log("💳 [STRIPE SIMULATION] Creating dummy account link.");
             return { url: returnUrl } as any;

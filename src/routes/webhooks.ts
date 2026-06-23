@@ -43,6 +43,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
   console.log(`[Stripe Webhook] Received event: ${event.type}`);
 
+  let eventStored = false;
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -81,36 +82,49 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const totalAmount = pendingRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
           const totalFee = pendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
 
-          let finTxId: string | undefined;
-          if (firstReg.event?.tenantId) {
-            const finTx = await prisma.financialTransaction.create({
-              data: {
-                tenantId: firstReg.event.tenantId,
-                type: "PAYMENT",
-                source: "REGISTRATION",
-                amount: totalAmount,
-                fee: totalFee,
-                netAmount: totalAmount - totalFee,
-                status: "COMPLETED",
-                paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: paymentIntentId,
-                stripeChargeId: stripeChargeId
-              }
+          await prisma.$transaction(async (tx) => {
+            const duplicate = await tx.stripeWebhookEvent.findUnique({
+              where: { id: event.id }
             });
-            finTxId = finTx.id;
-          }
+            if (duplicate) return;
 
-          // Confirmar registros + incrementar sold atomicamente
-          await prisma.$transaction([
-            prisma.registration.updateMany({
+            let finTxId: string | undefined;
+            if (firstReg.event?.tenantId) {
+              const finTx = await tx.financialTransaction.create({
+                data: {
+                  tenantId: firstReg.event.tenantId,
+                  type: "PAYMENT",
+                  source: "REGISTRATION",
+                  amount: totalAmount,
+                  fee: totalFee,
+                  netAmount: totalAmount - totalFee,
+                  status: "COMPLETED",
+                  paymentMethod: "CREDIT_CARD",
+                  stripePaymentIntentId: paymentIntentId,
+                  stripeChargeId: stripeChargeId
+                }
+              });
+              finTxId = finTx.id;
+            }
+
+            // Confirmar registros + incrementar sold atomicamente
+            await tx.registration.updateMany({
               where: { id: { in: pendingRegistrations.map(r => r.id) } },
               data: { status: "CONFIRMED", financialTransactionId: finTxId }
-            }),
-            prisma.ticket.update({
+            });
+            await tx.ticket.update({
               where: { id: ticketId },
               data: { sold: { increment: quantity } }
-            })
-          ]);
+            });
+            await tx.stripeWebhookEvent.create({
+              data: {
+                id: event.id,
+                type: event.type
+              }
+            });
+          });
+
+          eventStored = true;
           console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
           
           // Send Ticket Email
@@ -133,53 +147,15 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const amount = Number(order.total);
           const fee = Number(order.platformFee || 0);
 
-          const finTx = await prisma.financialTransaction.create({
-            data: {
-              tenantId: order.tenantId,
-              type: "PAYMENT",
-              source: "ORDER",
-              amount,
-              fee,
-              netAmount: amount - fee,
-              status: "COMPLETED",
-              paymentMethod: "CREDIT_CARD",
-              stripePaymentIntentId: paymentIntentId,
-              stripeChargeId: stripeChargeId
-            }
-          });
+          await prisma.$transaction(async (tx) => {
+            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
+            if (duplicate) return;
 
-          await prisma.order.update({
-            where: { id: order.id },
-            data: { status: "PAID", financialTransactionId: finTx.id }
-          });
-          console.log(`[Webhook] Order ${order.id} PAID!`);
-        }
-
-        // 3. Handle Service Transactions (Chat)
-        // Transaction usa stripeCheckoutSessionId (checkout session ID) para lookup
-        // e session.payment_intent para salvar o stripePaymentIntentId real
-        const transaction = await prisma.transaction.findFirst({
-          where: { stripePaymentIntentId: session.id },
-          include: { conversation: { include: { accessibilityProvider: true } } }
-        });
-        if (transaction && transaction.status === "PENDING") {
-          const amount = Number(transaction.amount);
-          
-          let finTxId: string | undefined;
-          const tenantId = transaction.conversation.accessibilityProvider.tenantId;
-          if (tenantId) {
-            const tenant = await prisma.tenant.findUnique({
-              where: { id: tenantId },
-              select: { feePercentage: true }
-            });
-            const feeRate = (tenant?.feePercentage ?? 10) / 100;
-            const fee = Number(amount * feeRate);
-
-            const finTx = await prisma.financialTransaction.create({
+            const finTx = await tx.financialTransaction.create({
               data: {
-                tenantId,
+                tenantId: order.tenantId,
                 type: "PAYMENT",
-                source: "SERVICE",
+                source: "ORDER",
                 amount,
                 fee,
                 netAmount: amount - fee,
@@ -189,13 +165,77 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 stripeChargeId: stripeChargeId
               }
             });
-            finTxId = finTx.id;
-          }
 
-          await prisma.transaction.update({
-            where: { id: transaction.id },
-            data: { status: "PAID", paidAt: new Date(), financialTransactionId: finTxId }
+            await tx.order.update({
+              where: { id: order.id },
+              data: { status: "PAID", financialTransactionId: finTx.id }
+            });
+
+            await tx.stripeWebhookEvent.create({
+              data: {
+                id: event.id,
+                type: event.type
+              }
+            });
           });
+
+          eventStored = true;
+          console.log(`[Webhook] Order ${order.id} PAID!`);
+        }
+
+        // 3. Handle Service Transactions (Chat)
+        const transaction = await prisma.transaction.findFirst({
+          where: { stripePaymentIntentId: session.id },
+          include: { conversation: { include: { accessibilityProvider: true } } }
+        });
+        if (transaction && transaction.status === "PENDING") {
+          const amount = Number(transaction.amount);
+          const tenantId = transaction.conversation.accessibilityProvider.tenantId;
+
+          await prisma.$transaction(async (tx) => {
+            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
+            if (duplicate) return;
+
+            let finTxId: string | undefined;
+            if (tenantId) {
+              const tenant = await tx.tenant.findUnique({
+                where: { id: tenantId },
+                select: { feePercentage: true }
+              });
+              const feeRate = (tenant?.feePercentage ?? 10) / 100;
+              const fee = Number(amount * feeRate);
+
+              const finTx = await tx.financialTransaction.create({
+                data: {
+                  tenantId,
+                  type: "PAYMENT",
+                  source: "SERVICE",
+                  amount,
+                  fee,
+                  netAmount: amount - fee,
+                  status: "COMPLETED",
+                  paymentMethod: "CREDIT_CARD",
+                  stripePaymentIntentId: paymentIntentId,
+                  stripeChargeId: stripeChargeId
+                }
+              });
+              finTxId = finTx.id;
+            }
+
+            await tx.transaction.update({
+              where: { id: transaction.id },
+              data: { status: "PAID", paidAt: new Date(), financialTransactionId: finTxId }
+            });
+
+            await tx.stripeWebhookEvent.create({
+              data: {
+                id: event.id,
+                type: event.type
+              }
+            });
+          });
+
+          eventStored = true;
           console.log(`[Webhook] Service Transaction ${transaction.id} PAID!`);
         }
 
@@ -207,33 +247,47 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const amount = Number(execution.approvedBudget || 0);
           const tenantId = execution.tenantId;
 
-          let finTxId: string | undefined;
-          if (tenantId) {
-            const tenant = await prisma.tenant.findUnique({
-              where: { id: tenantId },
-              select: { feePercentage: true }
-            });
-            const feeRate = (tenant?.feePercentage ?? 10) / 100;
-            const fee = Number(amount * feeRate);
+          await prisma.$transaction(async (tx) => {
+            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
+            if (duplicate) return;
 
-            const finTx = await prisma.financialTransaction.create({
+            let finTxId: string | undefined;
+            if (tenantId) {
+              const tenant = await tx.tenant.findUnique({
+                where: { id: tenantId },
+                select: { feePercentage: true }
+              });
+              const feeRate = (tenant?.feePercentage ?? 10) / 100;
+              const fee = Number(amount * feeRate);
+
+              const finTx = await tx.financialTransaction.create({
+                data: {
+                  tenantId,
+                  type: "PAYMENT",
+                  source: "SERVICE",
+                  amount, fee, netAmount: amount - fee,
+                  status: "COMPLETED", paymentMethod: "CREDIT_CARD",
+                  stripePaymentIntentId: paymentIntentId,
+                  stripeChargeId: stripeChargeId
+                }
+              });
+              finTxId = finTx.id;
+            }
+
+            await tx.accessibilityExecution.update({
+              where: { id: execution.id },
+              data: { status: "PAID", financialTransactionId: finTxId }
+            });
+
+            await tx.stripeWebhookEvent.create({
               data: {
-                tenantId,
-                type: "PAYMENT",
-                source: "SERVICE",
-                amount, fee, netAmount: amount - fee,
-                status: "COMPLETED", paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: paymentIntentId,
-                stripeChargeId: stripeChargeId
+                id: event.id,
+                type: event.type
               }
             });
-            finTxId = finTx.id;
-          }
-
-          await prisma.accessibilityExecution.update({
-            where: { id: execution.id },
-            data: { status: "PAID", financialTransactionId: finTxId }
           });
+
+          eventStored = true;
           console.log(`[Webhook] Accessibility Execution ${execution.id} PAID!`);
         }
 
@@ -245,22 +299,36 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const amount = Number(donation.amount);
           const fee = Number(donation.platformFee || 0);
           
-          const finTx = await prisma.financialTransaction.create({
-            data: {
-              tenantId: donation.tenantId,
-              type: "PAYMENT",
-              source: "DONATION",
-              amount, fee, netAmount: amount - fee,
-              status: "COMPLETED", paymentMethod: "CREDIT_CARD",
-              stripePaymentIntentId: paymentIntentId,
-              stripeChargeId: stripeChargeId
-            }
+          await prisma.$transaction(async (tx) => {
+            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
+            if (duplicate) return;
+
+            const finTx = await tx.financialTransaction.create({
+              data: {
+                tenantId: donation.tenantId,
+                type: "PAYMENT",
+                source: "DONATION",
+                amount, fee, netAmount: amount - fee,
+                status: "COMPLETED", paymentMethod: "CREDIT_CARD",
+                stripePaymentIntentId: paymentIntentId,
+                stripeChargeId: stripeChargeId
+              }
+            });
+
+            await tx.donation.update({
+              where: { id: donation.id },
+              data: { status: "COMPLETED", financialTransactionId: finTx.id }
+            });
+
+            await tx.stripeWebhookEvent.create({
+              data: {
+                id: event.id,
+                type: event.type
+              }
+            });
           });
 
-          await prisma.donation.update({
-            where: { id: donation.id },
-            data: { status: "COMPLETED", financialTransactionId: finTx.id }
-          });
+          eventStored = true;
           console.log(`[Webhook] Donation ${donation.id} COMPLETED!`);
         }
 
@@ -270,32 +338,47 @@ router.post("/stripe", async (req: Request, res: Response) => {
         });
         if (membership && membership.status === "PENDING") {
           const amount = Number(session.amount_total) / 100;
-          const tenant = await prisma.tenant.findUnique({
-            where: { id: membership.tenantId },
-            select: { feePercentage: true }
-          });
-          const feeRate = (tenant?.feePercentage ?? 5) / 100;
-          const fee = Number(amount * feeRate);
 
-          const finTx = await prisma.financialTransaction.create({
-            data: {
-              tenantId: membership.tenantId,
-              type: "PAYMENT",
-              source: "MEMBERSHIP",
-              amount,
-              fee,
-              netAmount: amount - fee,
-              status: "COMPLETED",
-              paymentMethod: "CREDIT_CARD",
-              stripePaymentIntentId: paymentIntentId,
-              stripeChargeId: stripeChargeId
-            }
+          await prisma.$transaction(async (tx) => {
+            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
+            if (duplicate) return;
+
+            const tenant = await tx.tenant.findUnique({
+              where: { id: membership.tenantId },
+              select: { feePercentage: true }
+            });
+            const feeRate = (tenant?.feePercentage ?? 5) / 100;
+            const fee = Number(amount * feeRate);
+
+            const finTx = await tx.financialTransaction.create({
+              data: {
+                tenantId: membership.tenantId,
+                type: "PAYMENT",
+                source: "MEMBERSHIP",
+                amount,
+                fee,
+                netAmount: amount - fee,
+                status: "COMPLETED",
+                paymentMethod: "CREDIT_CARD",
+                stripePaymentIntentId: paymentIntentId,
+                stripeChargeId: stripeChargeId
+              }
+            });
+
+            await tx.membership.update({
+              where: { id: membership.id },
+              data: { status: "ACTIVE" }
+            });
+
+            await tx.stripeWebhookEvent.create({
+              data: {
+                id: event.id,
+                type: event.type
+              }
+            });
           });
 
-          await prisma.membership.update({
-            where: { id: membership.id },
-            data: { status: "ACTIVE" }
-          });
+          eventStored = true;
           console.log(`[Webhook] Membership ${membership.id} activated!`);
         }
         break;
@@ -408,13 +491,14 @@ router.post("/stripe", async (req: Request, res: Response) => {
       }
     }
 
-    // Marca o evento como processado no banco apenas em caso de sucesso
-    await prisma.stripeWebhookEvent.create({
-      data: {
-        id: event.id,
-        type: event.type
-      }
-    });
+    if (!eventStored) {
+      await prisma.stripeWebhookEvent.create({
+        data: {
+          id: event.id,
+          type: event.type
+        }
+      });
+    };
   } catch (err) {
     console.error(`[Stripe Webhook Processing Error]:`, err);
     return res.status(500).send("Internal Server Error");

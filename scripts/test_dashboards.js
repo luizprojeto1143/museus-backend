@@ -32,7 +32,7 @@ async function run() {
     console.log("🔑 Logging in...");
     const loginRes = await axios.post(`${baseUrl}/auth/login`, {
         email: "demo@museu.com",
-        password: "123456"
+        password: process.env.DEMO_USER_PASSWORD || "123456"
     });
     const token = loginRes.data.accessToken;
     console.log("✅ Token acquired.");

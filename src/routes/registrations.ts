@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { z } from 'zod';
-import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { authMiddleware, requireRole, softAuthMiddleware } from '../middleware/auth.js';
 import { mailService, sendCertificateEmail } from '../services/email.js';
 import { getPlatformFeeRate } from '../utils/fees.js';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.post('/', authMiddleware, async (req, res) => {
         // 2. Perform pessimistic locking & validation within transaction
         let registration;
         let tenantId;
-        const code = `TKT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+        const code = `TKT-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
         try {
             registration = await prisma.$transaction(async (tx) => {
@@ -418,14 +419,57 @@ router.get('/my-registrations', authMiddleware, async (req, res) => {
 });
 
 // GET /registrations/:code
-router.get('/:code', async (req, res) => {
+router.get('/:code', softAuthMiddleware, async (req, res) => {
     const { code } = req.params;
     const registration = await prisma.registration.findUnique({
         where: { code },
         include: { event: true, ticket: true }
     });
     if (!registration) return res.status(404).json({ error: 'Not found' });
-    res.json(registration);
+
+    // Se o usuário for administrador (ADMIN, MASTER, OPERADOR, PRODUCER), retornar completo
+    const isAuthorized = req.user && ['ADMIN', 'MASTER', 'OPERADOR', 'PRODUCER'].includes(req.user.role);
+    if (isAuthorized) {
+        return res.json(registration);
+    }
+
+    // Se for chamada pública ou anônima, mascarar dados confidenciais
+    const maskName = (name: string) => {
+        if (!name) return "";
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 1) {
+            const first = parts[0];
+            if (first.length <= 2) return first;
+            return first[0] + first[1] + "*".repeat(first.length - 2);
+        }
+        const first = parts[0];
+        const last = parts[parts.length - 1];
+        const maskedLast = last[0] + "*".repeat(Math.max(0, last.length - 1));
+        return `${first} ${maskedLast}`;
+    };
+
+    const sanitizedRegistration = {
+        id: registration.id,
+        code: registration.code,
+        eventId: registration.eventId,
+        ticketId: registration.ticketId,
+        guestName: maskName(registration.guestName),
+        status: registration.status,
+        checkInDate: registration.checkInDate,
+        createdAt: registration.createdAt,
+        event: {
+            title: registration.event.title,
+            startDate: registration.event.startDate,
+            location: registration.event.location,
+        },
+        ticket: {
+            name: registration.ticket.name,
+            type: registration.ticket.type,
+            price: registration.ticket.price
+        }
+    };
+
+    return res.json(sanitizedRegistration);
 });
 
 // GET /stats/today

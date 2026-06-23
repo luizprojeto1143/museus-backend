@@ -7,7 +7,7 @@ async function main() {
         process.exit(1);
     }
     const email = "Culturaviva1143@gmail.com";
-    const newPass = "123456";
+    const newPass = process.env.RESET_USER_PASSWORD || "123456";
     const hash = await bcrypt.hash(newPass, 10);
 
     await prisma.user.update({

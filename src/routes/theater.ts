@@ -85,6 +85,16 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
 
         // Transaction to prevent overbooking
         const result = await prisma.$transaction(async (tx) => {
+            // Clean up expired reservations first
+            await tx.theaterSeatReservation.deleteMany({
+                where: {
+                    eventId: id,
+                    status: "RESERVED",
+                    expiresAt: { lt: new Date() }
+                }
+            });
+
+            // Find existing active reservations/sales
             const existing = await tx.theaterSeatReservation.findMany({
                 where: {
                     eventId: id,
@@ -93,7 +103,7 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
             });
 
             if (existing.length > 0) {
-                throw new Error("Um ou mais assentos já estão reservados");
+                throw new Error("Um ou mais assentos já estão reservados ou ocupados");
             }
 
             const reservations = await Promise.all(seatIds.map(seatId => 
@@ -135,6 +145,28 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
         }).parse(req.body);
 
         const result = await prisma.$transaction(async (tx) => {
+            // Clean up expired reservations first
+            await tx.theaterSeatReservation.deleteMany({
+                where: {
+                    eventId: id,
+                    status: "RESERVED",
+                    expiresAt: { lt: new Date() }
+                }
+            });
+
+            // Find existing active reservations/sales
+            const existing = await tx.theaterSeatReservation.findMany({
+                where: {
+                    eventId: id,
+                    seatId: { in: seatIds }
+                }
+            });
+
+            const alreadySold = existing.filter(r => r.status === "SOLD");
+            if (alreadySold.length > 0) {
+                throw new Error(`Um ou mais assentos já foram vendidos: ${alreadySold.map(a => a.seatId).join(", ")}`);
+            }
+
             // Buscar informações de comissão do tenant
             const tenant = await tx.tenant.findUnique({ where: { id: session.tenantId } });
             if (!tenant) throw new Error("Tenant não encontrado");
@@ -153,7 +185,7 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
             for (const seatId of seatIds) {
                 await tx.theaterSeatReservation.upsert({
                     where: { eventId_seatId: { eventId: id, seatId } },
-                    update: { status: "SOLD", visitorId, ticketId: ticket?.id },
+                    update: { status: "SOLD", visitorId, ticketId: ticket?.id, expiresAt: null },
                     create: { eventId: id, seatId, status: "SOLD", visitorId, ticketId: ticket?.id }
                 });
             }

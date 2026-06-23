@@ -387,10 +387,11 @@ router.post("/track", authMiddleware, async (req, res) => {
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const tenantId = (req as any).tenantId || req.query.tenantId;
+    const user = req.user!;
 
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório para isolamento de dados" });
@@ -425,6 +426,14 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ message: "Visitante não encontrado ou pertence a outro museu" });
     }
 
+    const isMaster = user.role === 'MASTER';
+    const isTenantAdmin = (user.role === 'ADMIN' || user.role === 'PRODUCER' || user.role === 'COLLABORATOR') && user.tenantId === visitor.tenantId;
+    const isSelf = visitor.email && visitor.email.toLowerCase() === user.email.toLowerCase();
+
+    if (!isMaster && !isTenantAdmin && !isSelf) {
+      return res.status(403).json({ message: "Acesso negado: sem permissão para ver este perfil" });
+    }
+
     return res.json(visitor);
   } catch (err) {
     console.error("Erro ao buscar detalhes do visitante", err);
@@ -435,7 +444,7 @@ router.get("/:id", async (req, res) => {
 // Registra visita vinda do fluxo de QR do front (/visitors/visit-from-qr)
 router.post("/visit-from-qr", async (req, res) => {
   try {
-    const { code, email: bodyEmail } = req.body as { code?: string; email?: string };
+    const { code } = req.body as { code?: string };
     if (!code) {
       return res.status(400).json({ message: "code é obrigatório" });
     }
@@ -448,12 +457,11 @@ router.post("/visit-from-qr", async (req, res) => {
     // Tentar identificar o visitante
     let visitorEmail: string | null = null;
 
-    // 1. Tentar pelo token JWT
+    // Tentar pelo token JWT (exclusivamente)
     const authHeader = req.headers.authorization;
     if (authHeader) {
       const token = authHeader.split(" ")[1];
       try {
-        // SECURITY FIX: Remove fallback "dev-secret". rely on env.
         const JWT_SECRET = process.env.JWT_SECRET!;
         const decoded = jwt.verify(token, JWT_SECRET) as { email: string };
         if (decoded && decoded.email) {
@@ -463,11 +471,6 @@ router.post("/visit-from-qr", async (req, res) => {
         // Token inválido ou expirado, ignorar e tentar outras formas
         console.warn("Token inválido em visit-from-qr", e);
       }
-    }
-
-    // 2. Se não achou no token, tentar pelo body (fallback)
-    if (!visitorEmail && bodyEmail) {
-      visitorEmail = bodyEmail;
     }
 
     // Busca (ou cria) o visitante

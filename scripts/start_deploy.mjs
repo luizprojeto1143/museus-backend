@@ -170,6 +170,11 @@ async function main() {
       }
     }
 
+    if (!migrationSuccess && process.env.SKIP_MIGRATION_BOOT_CHECK !== "true") {
+      console.error("❌ ERRO CRÍTICO: Abortando boot porque a migração falhou e SKIP_MIGRATION_BOOT_CHECK não é 'true'.");
+      process.exit(1);
+    }
+
     console.log("🚀 [Render-Boost] Iniciando servidor...");
     process.env.DATABASE_URL = poolerUrl;
     
