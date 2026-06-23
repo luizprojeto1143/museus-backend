@@ -77,65 +77,157 @@ router.post("/stripe", async (req: Request, res: Response) => {
         if (pendingRegistrations.length > 0) {
           const firstReg = pendingRegistrations[0];
           const ticketId = firstReg.ticketId;
-          const quantity = pendingRegistrations.length;
+
+          // Check for expiration (30 minutes)
+          const now = new Date();
+          const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
           
-          const totalAmount = pendingRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
-          const totalFee = pendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
+          const expiredRegs = pendingRegistrations.filter(r => r.createdAt < thirtyMinutesAgo);
+          const validPendingRegistrations = pendingRegistrations.filter(r => r.createdAt >= thirtyMinutesAgo);
 
-          await prisma.$transaction(async (tx) => {
-            const duplicate = await tx.stripeWebhookEvent.findUnique({
-              where: { id: event.id }
+          if (expiredRegs.length > 0) {
+            await prisma.registration.updateMany({
+              where: { id: { in: expiredRegs.map(r => r.id) } },
+              data: { status: "CANCELED" }
             });
-            if (duplicate) return;
+            console.log(`[Webhook] Marked ${expiredRegs.length} expired registrations as CANCELED.`);
+          }
 
-            let finTxId: string | undefined;
-            if (firstReg.event?.tenantId) {
-              const finTx = await tx.financialTransaction.create({
+          if (validPendingRegistrations.length > 0) {
+            const quantity = validPendingRegistrations.length;
+            const totalAmount = validPendingRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
+            const totalFee = validPendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
+
+            await prisma.$transaction(async (tx) => {
+              const duplicate = await tx.stripeWebhookEvent.findUnique({
+                where: { id: event.id }
+              });
+              if (duplicate) return;
+
+              let finTxId: string | undefined;
+              if (firstReg.event?.tenantId) {
+                const finTx = await tx.financialTransaction.create({
+                  data: {
+                    tenantId: firstReg.event.tenantId,
+                    type: "PAYMENT",
+                    source: "REGISTRATION",
+                    amount: totalAmount,
+                    fee: totalFee,
+                    netAmount: totalAmount - totalFee,
+                    status: "COMPLETED",
+                    paymentMethod: "CREDIT_CARD",
+                    stripePaymentIntentId: paymentIntentId,
+                    stripeChargeId: stripeChargeId
+                  }
+                });
+                finTxId = finTx.id;
+              }
+
+              // Confirmar registros + incrementar sold atomicamente
+              await tx.registration.updateMany({
+                where: { id: { in: validPendingRegistrations.map(r => r.id) } },
+                data: { status: "CONFIRMED", financialTransactionId: finTxId }
+              });
+              await tx.ticket.update({
+                where: { id: ticketId },
+                data: { sold: { increment: quantity } }
+              });
+              await tx.stripeWebhookEvent.create({
                 data: {
-                  tenantId: firstReg.event.tenantId,
+                  id: event.id,
+                  type: event.type
+                }
+              });
+            });
+
+            eventStored = true;
+            console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
+            
+            // Send Ticket Email
+            const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
+            for (const reg of validPendingRegistrations) {
+              mailService.sendTicketEmail(
+                reg.guestEmail,
+                eventData?.title || "Evento",
+                reg.guestName,
+                reg.code
+              );
+            }
+          } else {
+            // All registrations were expired. Record the webhook event to avoid unprocessed state
+            await prisma.stripeWebhookEvent.create({
+              data: {
+                id: event.id,
+                type: event.type
+              }
+            });
+            eventStored = true;
+          }
+        }
+
+        // 1.5. Handle Theater Sessions (Seats)
+        if (metadata && metadata.type === "THEATER") {
+          const eventId = metadata.eventId;
+          const seatIds = JSON.parse(metadata.seatIds || "[]") as string[];
+          const visitorId = metadata.visitorId || null;
+          const tenantId = metadata.tenantId;
+          const ticketId = metadata.ticketId || null;
+
+          if (seatIds.length > 0) {
+            await prisma.$transaction(async (tx) => {
+              const duplicate = await tx.stripeWebhookEvent.findUnique({
+                where: { id: event.id }
+              });
+              if (duplicate) return;
+
+              // Confirm/upsert seats as SOLD
+              for (const seatId of seatIds) {
+                await tx.theaterSeatReservation.upsert({
+                  where: { eventId_seatId: { eventId, seatId } },
+                  update: { status: "SOLD", visitorId, ticketId, expiresAt: null },
+                  create: { eventId, seatId, status: "SOLD", visitorId, ticketId }
+                });
+              }
+
+              // Calculate price and fee
+              const totalAmount = Number(session.amount_total || 0) / 100;
+              
+              // Resolve platform fee
+              let feeVal = 0;
+              if (session.application_fee_amount) {
+                feeVal = Number(session.application_fee_amount) / 100;
+              } else {
+                const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+                const feePercentage = tenant?.feePercentage ?? 10.0;
+                feeVal = totalAmount * (feePercentage / 100);
+              }
+
+              // Log FinancialTransaction for auditing
+              await tx.financialTransaction.create({
+                data: {
+                  tenantId,
                   type: "PAYMENT",
-                  source: "REGISTRATION",
+                  source: "THEATER",
                   amount: totalAmount,
-                  fee: totalFee,
-                  netAmount: totalAmount - totalFee,
+                  fee: feeVal,
+                  netAmount: totalAmount - feeVal,
                   status: "COMPLETED",
                   paymentMethod: "CREDIT_CARD",
                   stripePaymentIntentId: paymentIntentId,
                   stripeChargeId: stripeChargeId
                 }
               });
-              finTxId = finTx.id;
-            }
 
-            // Confirmar registros + incrementar sold atomicamente
-            await tx.registration.updateMany({
-              where: { id: { in: pendingRegistrations.map(r => r.id) } },
-              data: { status: "CONFIRMED", financialTransactionId: finTxId }
+              await tx.stripeWebhookEvent.create({
+                data: {
+                  id: event.id,
+                  type: event.type
+                }
+              });
             });
-            await tx.ticket.update({
-              where: { id: ticketId },
-              data: { sold: { increment: quantity } }
-            });
-            await tx.stripeWebhookEvent.create({
-              data: {
-                id: event.id,
-                type: event.type
-              }
-            });
-          });
 
-          eventStored = true;
-          console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
-          
-          // Send Ticket Email
-          const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
-          for (const reg of pendingRegistrations) {
-            mailService.sendTicketEmail(
-              reg.guestEmail,
-              eventData?.title || "Evento",
-              reg.guestName,
-              reg.code
-            );
+            eventStored = true;
+            console.log(`[Webhook] Theater seats ${seatIds.join(", ")} SOLD!`);
           }
         }
 

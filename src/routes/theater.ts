@@ -112,7 +112,7 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
                         eventId: id,
                         seatId,
                         status: "RESERVED",
-                        expiresAt: new Date(Date.now() + 15 * 60 * 1000) // 15 min
+                        expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 min
                     }
                 })
             ));
@@ -167,6 +167,13 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                 throw new Error(`Um ou mais assentos já foram vendidos: ${alreadySold.map(a => a.seatId).join(", ")}`);
             }
 
+            // Validar se o assento já possui um visitorId reservado por outro fluxo e recusar a venda se o visitorId requisitado diferir
+            const activeReservations = existing.filter(r => r.status === "RESERVED" && (r.expiresAt === null || r.expiresAt > new Date()));
+            const reservationsWithDifferentOwner = activeReservations.filter(r => r.visitorId && r.visitorId !== visitorId);
+            if (reservationsWithDifferentOwner.length > 0) {
+                throw new Error(`Um ou mais assentos estão reservados por outro usuário: ${reservationsWithDifferentOwner.map(r => r.seatId).join(", ")}`);
+            }
+
             // Buscar informações de comissão do tenant
             const tenant = await tx.tenant.findUnique({ where: { id: session.tenantId } });
             if (!tenant) throw new Error("Tenant não encontrado");
@@ -181,31 +188,125 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
             const feePercentage = tenant.feePercentage ?? 10.0;
             const totalFee = totalAmount * (feePercentage / 100);
 
-            // Update or create reservations as SOLD
-            for (const seatId of seatIds) {
-                await tx.theaterSeatReservation.upsert({
-                    where: { eventId_seatId: { eventId: id, seatId } },
-                    update: { status: "SOLD", visitorId, ticketId: ticket?.id, expiresAt: null },
-                    create: { eventId: id, seatId, status: "SOLD", visitorId, ticketId: ticket?.id }
-                });
-            }
+            const isDigital = paymentMethod === "CARD" || paymentMethod === "PIX";
 
-            // Criar a transação financeira da venda do ingresso do teatro
-            const finTx = await tx.financialTransaction.create({
-                data: {
+            if (isDigital) {
+                // Update or create reservations as RESERVED for 30 minutes
+                const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+                for (const seatId of seatIds) {
+                    await tx.theaterSeatReservation.upsert({
+                        where: { eventId_seatId: { eventId: id, seatId } },
+                        update: { status: "RESERVED", visitorId, ticketId: ticket?.id, expiresAt },
+                        create: { eventId: id, seatId, status: "RESERVED", visitorId, ticketId: ticket?.id, expiresAt }
+                    });
+                }
+
+                // Resolve Connect account
+                let connectedAccountId = '';
+                if (session.producerId) {
+                    const producer = await tx.user.findUnique({
+                        where: { id: session.producerId },
+                        select: { stripeConnectId: true }
+                    });
+                    if (producer?.stripeConnectId) {
+                        connectedAccountId = producer.stripeConnectId;
+                    }
+                }
+                if (!connectedAccountId && session.tenantId) {
+                    const t = await tx.tenant.findUnique({
+                        where: { id: session.tenantId },
+                        select: { stripeConnectId: true }
+                    });
+                    if (t?.stripeConnectId) {
+                        connectedAccountId = t.stripeConnectId;
+                    }
+                }
+
+                if (!connectedAccountId) {
+                    throw new Error("O recebedor deste evento ainda não configurou pagamentos via Stripe Connect.");
+                }
+
+                // Resolve/Create Stripe Customer
+                const visitor = visitorId ? await tx.visitor.findUnique({ where: { id: visitorId } }) : null;
+                const customerEmail = visitor?.email || req.user!.email;
+                const customerName = visitor?.name || req.user!.name || "Theater Customer";
+
+                return {
+                    isDigital: true,
+                    customerEmail,
+                    customerName,
+                    connectedAccountId,
+                    totalAmount,
+                    totalFee,
+                    ticketId: ticket?.id
+                };
+            } else {
+                // Update or create reservations as SOLD
+                for (const seatId of seatIds) {
+                    await tx.theaterSeatReservation.upsert({
+                        where: { eventId_seatId: { eventId: id, seatId } },
+                        update: { status: "SOLD", visitorId, ticketId: ticket?.id, expiresAt: null },
+                        create: { eventId: id, seatId, status: "SOLD", visitorId, ticketId: ticket?.id }
+                    });
+                }
+
+                // Criar a transação financeira da venda do ingresso do teatro
+                const finTx = await tx.financialTransaction.create({
+                    data: {
+                        tenantId: session.tenantId,
+                        type: "PAYMENT",
+                        source: "THEATER",
+                        amount: totalAmount,
+                        fee: totalFee,
+                        netAmount: totalAmount - totalFee,
+                        status: "COMPLETED",
+                        paymentMethod: paymentMethod || "CASH"
+                    }
+                });
+
+                return { isDigital: false, success: true, amount: totalAmount, transactionId: finTx.id };
+            }
+        });
+
+        if (result.isDigital) {
+            const digitalResult = result as {
+                isDigital: true;
+                customerEmail: string;
+                customerName: string;
+                connectedAccountId: string;
+                totalAmount: number;
+                totalFee: number;
+                ticketId?: string;
+            };
+
+            const { stripeService } = await import("../services/stripeService.js");
+            const stripeCustomerId = await stripeService.createCustomer({
+                name: digitalResult.customerName,
+                email: digitalResult.customerEmail,
+                userId: visitorId || req.user!.id
+            });
+
+            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+            const sessionCheckout = await stripeService.createSplitPaymentSession({
+                customerId: stripeCustomerId,
+                amount: Math.round(digitalResult.totalAmount * 100),
+                description: `Ingressos Teatro: ${session.title} (Assentos: ${seatIds.join(", ")})`,
+                connectedAccountId: digitalResult.connectedAccountId,
+                applicationFeeAmount: Math.round(digitalResult.totalFee * 100),
+                successUrl: `${frontendUrl}/theater/success?session_id={CHECKOUT_SESSION_ID}`,
+                cancelUrl: `${frontendUrl}/theater/cancel`,
+                metadata: {
+                    type: "THEATER",
+                    eventId: id,
+                    seatIds: JSON.stringify(seatIds),
+                    visitorId: visitorId || "",
                     tenantId: session.tenantId,
-                    type: "PAYMENT",
-                    source: "THEATER",
-                    amount: totalAmount,
-                    fee: totalFee,
-                    netAmount: totalAmount - totalFee,
-                    status: "COMPLETED",
-                    paymentMethod: paymentMethod || "CASH"
+                    ticketId: digitalResult.ticketId || ""
                 }
             });
 
-            return { success: true, amount: totalAmount, transactionId: finTx.id };
-        });
+            return res.json({ success: true, checkoutUrl: sessionCheckout.url });
+        }
 
         return res.json(result);
     } catch (err: any) {

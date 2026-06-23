@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import jwt from "jsonwebtoken";
-import { authMiddleware, requireRole } from "../middleware/auth.js";
+import { authMiddleware, requireRole, softAuthMiddleware } from "../middleware/auth.js";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { CertificateEngine } from "../services/certificate-engine.js";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -141,13 +142,18 @@ router.get("/me", authMiddleware, async (req, res) => {
 });
 
 // Resumo do visitante atual (por email/tenantId)
-router.get("/me/summary", async (req, res) => {
+router.get("/me/summary", authMiddleware, async (req, res) => {
   try {
     const { email } = req.query as { email?: string };
     const tenantId = (req as any).tenantId || req.query.tenantId;
 
     if (!email || !tenantId) {
       return res.status(400).json({ message: "email e tenantId são obrigatórios" });
+    }
+
+    // Permitir se for o próprio usuário, ou se for admin/master
+    if (req.user?.email?.toLowerCase() !== email.toLowerCase() && req.user?.role !== Role.ADMIN && req.user?.role !== Role.MASTER) {
+      return res.status(403).json({ message: "Acesso negado." });
     }
 
     const visitor = await prisma.visitor.findFirst({
@@ -246,7 +252,7 @@ router.get("/me/summary", async (req, res) => {
 // --- PUBLIC ROUTES (Define before param routes) ---
 
 // Cria visitante anônimo simples vinculado a um tenant
-router.post("/register", async (req, res) => {
+router.post("/register", softAuthMiddleware, async (req, res) => {
   try {
     const registerSchema = z.object({
       tenantId: z.string().min(1, "Tenant ID é obrigatório"),
@@ -265,6 +271,12 @@ router.post("/register", async (req, res) => {
 
     // Use upsert to handle case where Visitor exists (orphan) but User is new
     if (email) {
+      if (!req.user) {
+        return res.status(401).json({ message: "Autenticação necessária para registrar com e-mail." });
+      }
+      if (req.user.email.toLowerCase() !== email.toLowerCase()) {
+        return res.status(403).json({ message: "O e-mail fornecido deve corresponder ao usuário autenticado." });
+      }
       const normalizedEmail = email.toLowerCase();
       const visitor = await prisma.visitor.upsert({
         where: {
@@ -449,7 +461,35 @@ router.post("/visit-from-qr", async (req, res) => {
       return res.status(400).json({ message: "code é obrigatório" });
     }
 
-    const qr = await prisma.qRCode.findUnique({ where: { code } });
+    let finalCode = code;
+
+    if (code.includes('.')) {
+      const parts = code.split('.');
+      if (parts.length === 3) {
+        const [realCode, timestampStr, signature] = parts;
+        const timestamp = parseInt(timestampStr, 10);
+        
+        // 1. Check expiration (5 minutes = 300,000 ms)
+        const nowMs = Date.now();
+        if (isNaN(timestamp) || Math.abs(nowMs - timestamp) > 5 * 60 * 1000) {
+          return res.status(400).json({ message: "QR Code expirado ou horário do dispositivo inválido." });
+        }
+        
+        // 2. Validate HMAC signature
+        const GAME_SECRET = process.env.GAME_SECRET || "default_game_secret_key_minimum_length_32_characters";
+        const hmac = crypto.createHmac("sha256", GAME_SECRET);
+        hmac.update(`${realCode}.${timestampStr}`);
+        const expectedSignature = hmac.digest("hex");
+        
+        if (signature !== expectedSignature) {
+          return res.status(400).json({ message: "Assinatura do QR Code inválida." });
+        }
+        
+        finalCode = realCode;
+      }
+    }
+
+    const qr = await prisma.qRCode.findUnique({ where: { code: finalCode } });
     if (!qr) {
       return res.status(404).json({ message: "QR Code não encontrado" });
     }
@@ -472,6 +512,8 @@ router.post("/visit-from-qr", async (req, res) => {
         console.warn("Token inválido em visit-from-qr", e);
       }
     }
+
+    const deviceToken = (req.body.deviceToken || req.headers["x-device-token"]) as string | undefined;
 
     // Busca (ou cria) o visitante
     let visitor;
@@ -496,19 +538,36 @@ router.post("/visit-from-qr", async (req, res) => {
         });
       }
     } else {
-      // Fluxo anônimo (mantém lógica anterior)
-      visitor = await prisma.visitor.findFirst({
-        where: { tenantId: qr.tenantId, email: null }
-      });
-
-      if (!visitor) {
-        visitor = await prisma.visitor.create({
-          data: {
-            tenantId: qr.tenantId,
-            name: "Visitante Anônimo",
-            email: null
-          }
+      // Fluxo anônimo
+      if (deviceToken) {
+        visitor = await prisma.visitor.findFirst({
+          where: { tenantId: qr.tenantId, email: null, deviceToken }
         });
+
+        if (!visitor) {
+          visitor = await prisma.visitor.create({
+            data: {
+              tenantId: qr.tenantId,
+              name: "Visitante Anônimo",
+              email: null,
+              deviceToken
+            }
+          });
+        }
+      } else {
+        visitor = await prisma.visitor.findFirst({
+          where: { tenantId: qr.tenantId, email: null, deviceToken: null }
+        });
+
+        if (!visitor) {
+          visitor = await prisma.visitor.create({
+            data: {
+              tenantId: qr.tenantId,
+              name: "Visitante Anônimo",
+              email: null
+            }
+          });
+        }
       }
     }
 
@@ -735,7 +794,7 @@ router.post("/visit-from-qr", async (req, res) => {
 });
 
 // Summary do visitante pelo id (ainda pode ser usado em integrações futuras)
-router.get("/:visitorId/summary", async (req, res) => {
+router.get("/:visitorId/summary", authMiddleware, async (req, res) => {
   try {
     const { visitorId } = req.params;
 
@@ -749,6 +808,14 @@ router.get("/:visitorId/summary", async (req, res) => {
 
     if (!visitor) {
       return res.status(404).json({ message: "Visitante não encontrado" });
+    }
+
+    // Permitir se for o próprio usuário, ou se for admin/master
+    const isOwner = req.user?.email && visitor.email && req.user.email.toLowerCase() === visitor.email.toLowerCase();
+    const isAdminOfTenant = (req.user?.role === Role.ADMIN || req.user?.role === Role.MASTER) && req.user.tenantId === visitor.tenantId;
+
+    if (!isOwner && !isAdminOfTenant) {
+      return res.status(403).json({ message: "Acesso negado." });
     }
 
     const stamps = visitor.visitorVisits

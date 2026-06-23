@@ -267,101 +267,129 @@ router.post("/webhook", async (req: Request, res: Response) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Idempotency Check: Prevent duplicate processing of the same Stripe event
   try {
-    const existingEvent = await prisma.stripeWebhookEvent.findUnique({
-      where: { id: event.id }
-    });
-    if (existingEvent) {
-      console.log(`[Stripe Sponsor Webhook] Event ${event.id} already processed. Skipping.`);
-      return res.status(200).send({ received: true, duplicate: true });
-    }
-  } catch (err) {
-    console.error(`[Stripe Sponsor Webhook] Idempotency check failed:`, err);
-  }
+    // Process inside transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Check idempotency
+      const existingEvent = await tx.stripeWebhookEvent.findUnique({
+        where: { id: event.id }
+      });
+      if (existingEvent && (existingEvent.status === "PROCESSED" || existingEvent.status === "PROCESSING")) {
+        return { duplicate: true };
+      }
 
-  try {
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as any;
-      const metadata = session.metadata;
+      // 2. Mark as PROCESSING (upsert to handle retries of failed ones)
+      await tx.stripeWebhookEvent.upsert({
+        where: { id: event.id },
+        update: { status: "PROCESSING" },
+        create: { id: event.id, type: event.type, status: "PROCESSING" }
+      });
 
-      if (metadata && metadata.sponsorshipId) {
-        const sponsorship = await prisma.workSponsorship.findUnique({
-          where: { id: metadata.sponsorshipId }
-        });
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object as any;
+        const metadata = session.metadata;
 
-        if (sponsorship && sponsorship.status === 'PENDING') {
-          await prisma.workSponsorship.update({
-            where: { id: sponsorship.id },
-            data: { 
-              status: 'ACTIVE',
-              stripeSubscriptionId: session.subscription,
-              stripeCustomerId: session.customer as string
-            }
+        if (metadata && metadata.sponsorshipId) {
+          const sponsorship = await tx.workSponsorship.findUnique({
+            where: { id: metadata.sponsorshipId }
           });
 
-          // Lógica de Split de Receita
-          const work = await prisma.work.findUnique({ 
-            where: { id: sponsorship.workId },
-            include: { tenant: true }
-          });
-
-          if (work && work.tenant) {
-            const amountReceived = (session.amount_total || 0); // em centavos
-            const platformFee = amountReceived * (sponsorship.platformFeePercent / 100);
-            const netAmount = amountReceived - platformFee;
-
-            // Log FinancialTransaction for auditing
-            await prisma.financialTransaction.create({
-              data: {
-                tenantId: work.tenantId,
-                type: "PAYMENT",
-                source: "SPONSORSHIP",
-                amount: amountReceived / 100,
-                fee: platformFee / 100,
-                netAmount: netAmount / 100,
-                status: "COMPLETED",
-                paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: session.payment_intent as string
+          if (sponsorship && sponsorship.status === 'PENDING') {
+            await tx.workSponsorship.update({
+              where: { id: sponsorship.id },
+              data: { 
+                status: 'ACTIVE',
+                stripeSubscriptionId: session.subscription,
+                stripeCustomerId: session.customer as string
               }
             });
 
-            if (work.tenant.isPublicInstitution && work.tenant.parentId) {
-              const secretaria = await prisma.tenant.findUnique({ where: { id: work.tenant.parentId } });
-              if (secretaria && secretaria.stripeConnectId) {
+            // Lógica de Split de Receita
+            const work = await tx.work.findUnique({ 
+              where: { id: sponsorship.workId },
+              include: { tenant: true }
+            });
+
+            if (work && work.tenant) {
+              const amountReceived = (session.amount_total || 0); // em centavos
+              const platformFee = amountReceived * (sponsorship.platformFeePercent / 100);
+              const netAmount = amountReceived - platformFee;
+
+              // Log FinancialTransaction for auditing
+              await tx.financialTransaction.create({
+                data: {
+                  tenantId: work.tenantId,
+                  type: "PAYMENT",
+                  source: "SPONSORSHIP",
+                  amount: amountReceived / 100,
+                  fee: platformFee / 100,
+                  netAmount: netAmount / 100,
+                  status: "COMPLETED",
+                  paymentMethod: "CREDIT_CARD",
+                  stripePaymentIntentId: session.payment_intent as string
+                }
+              });
+
+              // Repasse
+              let connectAccountId: string | null = null;
+              if (work.tenant.isPublicInstitution && work.tenant.parentId) {
+                const secretaria = await tx.tenant.findUnique({ where: { id: work.tenant.parentId } });
+                if (secretaria?.stripeConnectId) {
+                  connectAccountId = secretaria.stripeConnectId;
+                }
+              } else if (!work.tenant.isPublicInstitution && work.tenant.stripeConnectId) {
+                connectAccountId = work.tenant.stripeConnectId;
+              }
+
+              if (connectAccountId) {
                 await stripe.transfers.create({
                   amount: Math.round(netAmount),
                   currency: 'brl',
-                  destination: secretaria.stripeConnectId,
+                  destination: connectAccountId,
                   description: `Repasse Patrocínio: ${work.title}`
+                }, {
+                  idempotencyKey: `transfer-sponsor-${sponsorship.id}-${event.id}`
                 });
               }
-            } else if (!work.tenant.isPublicInstitution && work.tenant.stripeConnectId) {
-              await stripe.transfers.create({
-                amount: Math.round(netAmount),
-                currency: 'brl',
-                destination: work.tenant.stripeConnectId,
-                description: `Repasse Patrocínio: ${work.title}`
-              });
             }
           }
         }
+      } else if (event.type === 'customer.subscription.deleted') {
+        const subscription = event.data.object as any;
+        await tx.workSponsorship.updateMany({
+          where: { stripeSubscriptionId: subscription.id },
+          data: { status: 'EXPIRED', active: false, endDate: new Date() }
+        });
       }
-    } else if (event.type === 'customer.subscription.deleted') {
-      const subscription = event.data.object as any;
-      await prisma.workSponsorship.updateMany({
-        where: { stripeSubscriptionId: subscription.id },
-        data: { status: 'EXPIRED', active: false, endDate: new Date() }
-      });
-    }
 
-    // Save StripeWebhookEvent to database for idempotency
-    await prisma.stripeWebhookEvent.create({
-      data: { id: event.id, type: event.type }
+      // 3. Mark as PROCESSED
+      await tx.stripeWebhookEvent.update({
+        where: { id: event.id },
+        data: { status: "PROCESSED" }
+      });
+
+      return { duplicate: false };
     });
+
+    if (result.duplicate) {
+      console.log(`[Stripe Sponsor Webhook] Event ${event.id} already processed. Skipping.`);
+      return res.status(200).send({ received: true, duplicate: true });
+    }
 
   } catch (error) {
     console.error("Erro processando webhook sponsor-portal:", error);
+    
+    // Tentativa de marcar o evento como FAILED se possível, fora da transação que falhou
+    try {
+      await prisma.stripeWebhookEvent.upsert({
+        where: { id: event.id },
+        update: { status: "FAILED" },
+        create: { id: event.id, type: event.type, status: "FAILED" }
+      });
+    } catch (dbErr) {
+      console.error("Erro ao salvar status de falha do webhook no banco:", dbErr);
+    }
+    
     return res.status(500).send("Internal Server Error");
   }
 

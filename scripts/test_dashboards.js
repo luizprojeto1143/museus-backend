@@ -21,8 +21,8 @@ async function testEndpoint(name, url, token) {
 }
 
 async function run() {
-    if (process.env.NODE_ENV === "production") {
-        console.error("❌ Operação abortada: Scripts de teste/demo são bloqueados em produção por motivos de segurança.");
+    if (process.env.NODE_ENV === "production" && process.env.I_AM_SURE_RESET_PRODUCTION !== "true") {
+        console.error("❌ Operação abortada: Scripts de teste/demo são bloqueados em produção por motivos de segurança. Para forçar, defina I_AM_SURE_RESET_PRODUCTION=true.");
         process.exit(1);
     }
     const baseUrl = "https://museus-backend-1.onrender.com";

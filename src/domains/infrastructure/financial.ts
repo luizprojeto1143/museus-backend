@@ -310,7 +310,9 @@ router.put('/payables/:id', async (req: Request, res: Response): Promise<any> =>
 // ==========================================
 const refundSchema = z.object({
   amount: z.number().positive().optional(), // Se omitido, reembolso total
-  reason: z.enum(['duplicate', 'fraudulent', 'requested_by_customer']).optional()
+  reason: z.enum(['duplicate', 'fraudulent', 'requested_by_customer']).optional(),
+  registrationId: z.string().uuid().optional(),
+  orderId: z.string().uuid().optional()
 });
 
 router.post('/refund/:transactionId', async (req: Request, res: Response): Promise<any> => {
@@ -333,17 +335,65 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
     return res.status(400).json({ message: 'Transação sem ID Stripe — reembolso manual necessário' });
   }
 
-  const refundAmountCents = parse.data.amount
-    ? Math.round(parse.data.amount * 100)
-    : undefined; // undefined = reembolso total
+  // 1.5. Validar o saldo restante reembolsável localmente
+  const completedRefunds = await prisma.refund.findMany({
+    where: { transactionId: tx.id, status: 'COMPLETED' }
+  });
+  const totalRefundedAlready = completedRefunds.reduce((sum, r) => sum + Number(r.amount), 0);
+  const remainingRefundable = Number(tx.amount) - totalRefundedAlready;
+
+  let requestedAmount = parse.data.amount || remainingRefundable;
+
+  // Se um registrationId for enviado, validar e efetuar o reembolso daquele ingresso
+  if (parse.data.registrationId) {
+    const registration = await prisma.registration.findUnique({
+      where: { id: parse.data.registrationId }
+    });
+    if (!registration) {
+      return res.status(404).json({ message: 'Ingresso correspondente não encontrado' });
+    }
+    if (registration.financialTransactionId !== tx.id) {
+      return res.status(400).json({ message: 'Ingresso não pertence a esta transação' });
+    }
+    if (registration.status === 'CANCELED') {
+      return res.status(400).json({ message: 'Ingresso já foi cancelado' });
+    }
+    if (!parse.data.amount) {
+      requestedAmount = Number(registration.pricePaid);
+    }
+  }
+
+  // Se um orderId for enviado, validar e efetuar o reembolso daquela compra
+  if (parse.data.orderId) {
+    const order = await prisma.order.findUnique({
+      where: { id: parse.data.orderId }
+    });
+    if (!order) {
+      return res.status(404).json({ message: 'Pedido correspondente não encontrado' });
+    }
+    if (order.financialTransactionId !== tx.id) {
+      return res.status(400).json({ message: 'Pedido não pertence a esta transação' });
+    }
+    if (order.status === 'REFUNDED') {
+      return res.status(400).json({ message: 'Pedido já foi reembolsado' });
+    }
+    if (!parse.data.amount) {
+      requestedAmount = Number(order.total);
+    }
+  }
+
+  if (requestedAmount > remainingRefundable + 0.01) {
+    return res.status(400).json({ message: `Montante solicitado excede o saldo restante reembolsável. Saldo restante: R$ ${remainingRefundable.toFixed(2)}` });
+  }
 
   try {
     // 2. Emitir refund no Stripe
+    const refundAmountCents = Math.round(requestedAmount * 100);
     const stripeRefund = await stripe.refunds.create({
       ...(tx.stripeChargeId
         ? { charge: tx.stripeChargeId }
         : { payment_intent: tx.stripePaymentIntentId! }),
-      ...(refundAmountCents && { amount: refundAmountCents }),
+      amount: refundAmountCents,
       reason: (parse.data.reason || 'requested_by_customer') as any
     });
 
@@ -358,22 +408,24 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
           amount:        refundedAmount,
           reason:        parse.data.reason || 'requested_by_customer',
           status:        stripeRefund.status === 'succeeded' ? 'COMPLETED' : 'PENDING',
-          stripeRefundId: stripeRefund.id
+          stripeRefundId: stripeRefund.id,
+          registrationId: parse.data.registrationId || null,
+          orderId:        parse.data.orderId || null
         }
       });
 
-      // Calcular o montante total reembolsado até agora
+      // Calcular o montante total reembolsado
       const allCompletedRefunds = await txPrisma.refund.findMany({
         where: { transactionId: tx.id, status: 'COMPLETED' }
       });
 
       const totalRefunded = allCompletedRefunds.reduce((sum, r) => sum + Number(r.amount), 0);
-      const isFullRefund = totalRefunded >= Number(tx.amount);
+      const isFullRefund = totalRefunded >= Number(tx.amount) - 0.01;
       
       const finalTxStatus = isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
       const pendingStatus = isFullRefund ? 'REFUND_PENDING' : 'PARTIAL_REFUND_PENDING';
 
-      // Atualizar status da transação financeira de acordo com o total reembolsado
+      // Atualizar status da transação financeira
       await txPrisma.financialTransaction.update({
         where: { id: tx.id },
         data: {
@@ -381,48 +433,106 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
         }
       });
 
-      // 4. Update the related source objects on full refund to keep dashboards consistent
-      if (stripeRefund.status === 'succeeded' && isFullRefund) {
-        // A. Registrations (Tickets)
-        const registrations = await txPrisma.registration.findMany({
-          where: { financialTransactionId: tx.id }
-        });
-        for (const reg of registrations) {
-          await txPrisma.registration.update({
-            where: { id: reg.id },
-            data: { status: "CANCELED" }
+      // 4. Update the related source objects
+      if (stripeRefund.status === 'succeeded') {
+        if (isFullRefund) {
+          // A. Registrations (Tickets)
+          const registrations = await txPrisma.registration.findMany({
+            where: { financialTransactionId: tx.id }
           });
-          // Decrement ticket sold count
-          await txPrisma.ticket.update({
-            where: { id: reg.ticketId },
-            data: { sold: { decrement: 1 } }
+          for (const reg of registrations) {
+            await txPrisma.registration.update({
+              where: { id: reg.id },
+              data: { status: "CANCELED" }
+            });
+            // Decrement ticket sold count
+            await txPrisma.ticket.update({
+              where: { id: reg.ticketId },
+              data: { sold: { decrement: 1 } }
+            });
+          }
+
+          // B. Orders
+          await txPrisma.order.updateMany({
+            where: { financialTransactionId: tx.id },
+            data: { status: "REFUNDED" }
           });
-        }
 
-        // B. Orders
-        await txPrisma.order.updateMany({
-          where: { financialTransactionId: tx.id },
-          data: { status: "REFUNDED" }
-        });
-
-        // C. Donations
-        await txPrisma.donation.updateMany({
-          where: { financialTransactionId: tx.id },
-          data: { status: "REFUNDED" }
-        });
-
-        // D. Transactions (Chat)
-        await txPrisma.transaction.updateMany({
-          where: { financialTransactionId: tx.id },
-          data: { status: "REFUNDED" }
-        });
-
-        // E. Memberships
-        if (tx.stripePaymentIntentId) {
-          await txPrisma.membership.updateMany({
-            where: { paymentId: tx.stripePaymentIntentId },
-            data: { status: "CANCELLED", cancelledAt: new Date() }
+          // C. Donations
+          await txPrisma.donation.updateMany({
+            where: { financialTransactionId: tx.id },
+            data: { status: "REFUNDED" }
           });
+
+          // D. Transactions (Chat)
+          await txPrisma.transaction.updateMany({
+            where: { financialTransactionId: tx.id },
+            data: { status: "REFUNDED" }
+          });
+
+          // E. Memberships
+          if (tx.stripePaymentIntentId) {
+            await txPrisma.membership.updateMany({
+              where: { paymentId: tx.stripePaymentIntentId },
+              data: { status: "CANCELLED", cancelledAt: new Date() }
+            });
+          }
+        } else {
+          // Reembolso parcial
+          if (parse.data.registrationId) {
+            const reg = await txPrisma.registration.findUnique({
+              where: { id: parse.data.registrationId }
+            });
+            if (reg && reg.status !== "CANCELED") {
+              await txPrisma.registration.update({
+                where: { id: reg.id },
+                data: { status: "CANCELED" }
+              });
+              await txPrisma.ticket.update({
+                where: { id: reg.ticketId },
+                data: { sold: { decrement: 1 } }
+              });
+            }
+          }
+
+          if (parse.data.orderId) {
+            await txPrisma.order.update({
+              where: { id: parse.data.orderId },
+              data: { status: "PARTIALLY_REFUNDED" }
+            });
+          }
+
+          // Reembolso parcial genérico: cancela inscrições de forma proporcional
+          if (!parse.data.registrationId && !parse.data.orderId) {
+            const registrations = await txPrisma.registration.findMany({
+              where: { financialTransactionId: tx.id, status: { not: "CANCELED" } }
+            });
+            let amountToCancel = refundedAmount;
+            for (const reg of registrations) {
+              const regPrice = Number(reg.pricePaid);
+              if (amountToCancel >= regPrice - 0.01) {
+                await txPrisma.registration.update({
+                  where: { id: reg.id },
+                  data: { status: "CANCELED" }
+                });
+                await txPrisma.ticket.update({
+                  where: { id: reg.ticketId },
+                  data: { sold: { decrement: 1 } }
+                });
+                amountToCancel -= regPrice;
+              }
+            }
+
+            await txPrisma.order.updateMany({
+              where: { financialTransactionId: tx.id },
+              data: { status: "PARTIALLY_REFUNDED" }
+            });
+
+            await txPrisma.donation.updateMany({
+              where: { financialTransactionId: tx.id },
+              data: { status: "PARTIALLY_REFUNDED" }
+            });
+          }
         }
       }
 

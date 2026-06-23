@@ -1,8 +1,9 @@
 import { Router, Request, Response } from "express";
-import { SurveyQuestionType } from "@prisma/client";
+import { SurveyQuestionType, Role } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
-import { authMiddleware as authenticate } from "../middleware/auth.js";
+import { authMiddleware as authenticate, requireRole } from "../middleware/auth.js";
+import { checkEntityOwnership } from "../utils/ownership.js";
 
 const router = Router();
 
@@ -54,19 +55,17 @@ router.get("/events/:eventId/survey", async (req: Request, res: Response) => {
 });
 
 // POST /events/:eventId/survey - Create/update survey questions (admin)
-router.post("/events/:eventId/survey", authenticate, async (req: Request, res: Response) => {
+router.post("/events/:eventId/survey", authenticate, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
+        const ownership = await checkEntityOwnership('event', eventId, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        const event = ownership.record;
+
         const parsed = saveQuestionsSchema.safeParse(req.body);
 
         if (!parsed.success) {
             return res.status(400).json({ error: parsed.error.errors[0].message });
-        }
-
-        // Verify event exists
-        const event = await prisma.event.findUnique({ where: { id: eventId } });
-        if (!event) {
-            return res.status(404).json({ error: "Evento não encontrado" });
         }
 
         // 1. Get existing questions to know what to archive
@@ -124,9 +123,11 @@ router.post("/events/:eventId/survey", authenticate, async (req: Request, res: R
 });
 
 // GET /events/:eventId/survey/results - Get aggregated survey results (admin)
-router.get("/events/:eventId/survey/results", authenticate, async (req: Request, res: Response) => {
+router.get("/events/:eventId/survey/results", authenticate, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
+        const ownership = await checkEntityOwnership('event', eventId, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
 
         const questions = await prisma.surveyQuestion.findMany({
             where: { eventId },

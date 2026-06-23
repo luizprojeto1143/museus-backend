@@ -5,8 +5,8 @@ import { createPrismaClient } from "./prisma_helper.js";
 const prisma = createPrismaClient();
 
 async function main() {
-    if (process.env.NODE_ENV === "production") {
-        console.error("❌ Operação abortada: Scripts de teste/demo são bloqueados em produção por motivos de segurança.");
+    if (process.env.NODE_ENV === "production" && process.env.I_AM_SURE_RESET_PRODUCTION !== "true") {
+        console.error("❌ Operação abortada: Scripts de teste/demo são bloqueados em produção por motivos de segurança. Para forçar, defina I_AM_SURE_RESET_PRODUCTION=true.");
         process.exit(1);
     }
     console.log("🛠️ Ensuring demo user accounts...");

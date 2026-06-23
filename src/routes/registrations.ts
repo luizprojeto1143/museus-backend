@@ -22,12 +22,12 @@ router.post('/', authMiddleware, async (req, res) => {
         const { eventId, ticketId, visitorId, guestName, guestEmail } = req.body;
 
         // 1. Clean up expired registrations first to free up stock
-        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
         await prisma.registration.updateMany({
             where: {
                 ticketId,
                 status: 'PENDING',
-                createdAt: { lt: fifteenMinutesAgo }
+                createdAt: { lt: thirtyMinutesAgo }
             },
             data: { status: 'CANCELED' }
         });
@@ -51,7 +51,7 @@ router.post('/', authMiddleware, async (req, res) => {
                     where: {
                         ticketId,
                         status: 'PENDING',
-                        createdAt: { gte: fifteenMinutesAgo }
+                        createdAt: { gte: thirtyMinutesAgo }
                     }
                 });
 
@@ -520,6 +520,11 @@ router.get('/:code/wallet/apple', async (req, res) => {
 
         if (!registration) return res.status(404).json({ error: 'Ingresso não encontrado' });
 
+        // Assert ticket is CONFIRMED or CHECKED_IN
+        if (registration.status !== 'CONFIRMED' && registration.status !== 'CHECKED_IN') {
+            return res.status(400).json({ error: 'Ingresso ainda não confirmado ou cancelado.' });
+        }
+
         try {
             const { PKPass } = await import('passkit-generator');
             const pass = new (PKPass as any)({
@@ -561,6 +566,11 @@ router.get('/:code/wallet/apple', async (req, res) => {
             res.set('Content-Disposition', `attachment; filename="${registration.code}.pkpass"`);
             res.send(buffer);
         } catch (e) {
+            const isProduction = process.env.NODE_ENV === "production";
+            if (isProduction) {
+                console.error("Erro ao gerar pkpass em produção:", e);
+                return res.status(500).json({ error: 'Erro ao gerar carteira Apple.' });
+            }
             res.json({
                 message: "Wallet pass generated. (Note: Real .pkpass requires certificates).",
                 mockData: { code: registration.code, event: registration.event.title }

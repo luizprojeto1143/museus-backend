@@ -41,17 +41,12 @@ export function validateEnv(): void {
     // In production, require critical Stripe variables and frontend URL to avoid runtime payment failures
     if (isProduction) {
         const paymentsDisabled = process.env.PAYMENTS_DISABLED === "true";
-        const prodRequired = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "FRONTEND_URL"];
+        const prodRequired = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_SPONSOR_WEBHOOK_SECRET", "FRONTEND_URL"];
         
         if (!paymentsDisabled) {
-            const skipStripeCheck = process.env.SKIP_STRIPE_BOOT_CHECK === "true" || process.env.RENDER === "true";
             for (const varName of prodRequired) {
                 if (!process.env[varName]) {
-                    if (skipStripeCheck) {
-                        console.warn(`⚠️  WARNING: Production environment variable "${varName}" is missing. (Bypassed via SKIP_STRIPE_BOOT_CHECK/RENDER environment)`);
-                    } else {
-                        missing.push(varName);
-                    }
+                    missing.push(varName);
                 }
             }
         } else {
