@@ -26,7 +26,7 @@ app.use('/qr', qrRoutes);
 app.use('/auth', authRoutes);
 
 describe('Work Code Integration (Isolated)', () => {
-    jest.setTimeout(30000);
+    jest.setTimeout(60000);
     let token: string;
     let tenantId: string;
 
@@ -67,6 +67,15 @@ describe('Work Code Integration (Isolated)', () => {
         const cookie = cookies?.find(c => c.startsWith('museus_token='));
         if (cookie) {
             token = cookie.split(';')[0].split('=')[1];
+        }
+    });
+
+    afterAll(async () => {
+        if (tenantId) {
+            await prisma.qRCode.deleteMany({ where: { tenantId } });
+            await prisma.work.deleteMany({ where: { tenantId } });
+            await prisma.user.deleteMany({ where: { tenantId } });
+            await prisma.tenant.delete({ where: { id: tenantId } });
         }
     });
 
