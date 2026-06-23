@@ -141,9 +141,9 @@ async function main() {
         try {
           console.log("📡 Tentando Migração via URL Direta (Porta 5432)...");
           execSync("npx prisma migrate deploy", { 
-            env: { ...process.env, DATABASE_URL: finalDirectUrl },
+            env: { ...process.env, DATABASE_URL: finalDirectUrl, DIRECT_URL: finalDirectUrl },
             stdio: "inherit",
-            timeout: 30000 
+            timeout: 60000 
           });
           migrationSuccess = true;
           console.log("✅ Migração concluída via URL Direta.");
@@ -158,9 +158,9 @@ async function main() {
       console.log("📡 Tentando Migração via URL de Conexão Principal...");
       try {
         execSync("npx prisma migrate deploy", { 
-          env: { ...process.env, DATABASE_URL: poolerUrl },
+          env: { ...process.env, DATABASE_URL: poolerUrl, DIRECT_URL: poolerUrl },
           stdio: "inherit",
-          timeout: 30000 
+          timeout: 60000 
         });
         migrationSuccess = true;
         console.log("✅ Migração concluída via URL Principal.");
