@@ -69,6 +69,18 @@ const uploadImage = multer({ storage, fileFilter: createFileFilter('images'), li
 const uploadAudio = multer({ storage, fileFilter: createFileFilter('audio'), limits: { fileSize: MAX_VIDEO_SIZE } });
 const uploadVideo = multer({ storage, fileFilter: createFileFilter('video'), limits: { fileSize: MAX_VIDEO_SIZE } });
 const uploadDocument = multer({ storage, fileFilter: createFileFilter('documents'), limits: { fileSize: MAX_DOC_SIZE } });
+const uploadGeneric = multer({
+  storage,
+  fileFilter: (_req, file, cb) => {
+    const allAllowed = Object.values(ALLOWED_MIME_TYPES).flat();
+    if (allAllowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Tipo de arquivo não permitido: ${file.mimetype}`));
+    }
+  },
+  limits: { fileSize: MAX_VIDEO_SIZE }
+});
 
 // R2 HELPERS
 function hasR2Config() {
@@ -222,7 +234,7 @@ router.post("/video",    authMiddleware, uploadLimiter, uploadVideo.single("file
 router.post("/document", authMiddleware, uploadLimiter, uploadDocument.single("file"), (req, res, next) => validateMagicBytes(req, res, next, 'document'), (req, res) => handleUpload(req, res, "document"));
 
 // Generic upload (used by AdminUploads.tsx – validates MIME server-side + magic bytes)
-router.post("/", authMiddleware, uploadLimiter, uploadImage.single("file"),
+router.post("/", authMiddleware, uploadLimiter, uploadGeneric.single("file"),
   // Passo 1: Validação MIME
   async (req: Request, res: Response, next: NextFunction) => {
     const file = req.file;

@@ -187,6 +187,36 @@ router.get("/accessibility-timeline", authMiddleware, requireRole([Role.ADMIN, R
 
         if (!tenantId) return res.status(400).json({ message: "Tenant obrigatório" });
 
+        // SECURITY: Validate childTenantId and projectId against secretary's tenant hierarchy
+        if (user.role !== Role.MASTER) {
+            if (childTenantId && typeof childTenantId === 'string') {
+                const childTenant = await prisma.tenant.findUnique({
+                    where: { id: childTenantId },
+                    select: { parentId: true }
+                });
+                if (!childTenant || (childTenantId !== tenantId && childTenant.parentId !== tenantId)) {
+                    return res.status(403).json({ message: "Sem permissão para este museu/tenant" });
+                }
+            }
+
+            if (projectId && typeof projectId === 'string') {
+                const project = await prisma.culturalProject.findUnique({
+                    where: { id: projectId },
+                    select: { tenantId: true }
+                });
+                if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+                if (project.tenantId !== tenantId) {
+                    const childTenant = await prisma.tenant.findUnique({
+                        where: { id: project.tenantId },
+                        select: { parentId: true }
+                    });
+                    if (!childTenant || childTenant.parentId !== tenantId) {
+                        return res.status(403).json({ message: "Sem permissão para este projeto" });
+                    }
+                }
+            }
+        }
+
         const where: any = {};
 
         if (childTenantId) {

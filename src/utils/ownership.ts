@@ -2,7 +2,20 @@ import { prisma } from "../prisma.js";
 import { Role } from "@prisma/client";
 
 export async function checkEntityOwnership(
-  entityName: 'accessibilityExecution' | 'event' | 'work' | 'space' | 'theaterMember' | 'theaterCue',
+  entityName:
+    | 'accessibilityExecution'
+    | 'event'
+    | 'work'
+    | 'space'
+    | 'theaterMember'
+    | 'theaterCue'
+    | 'qRCode'
+    | 'workTranslation'
+    | 'teacherProfile'
+    | 'volunteer'
+    | 'volunteerShift'
+    | 'schoolVisit'
+    | 'postVisitActivity',
   id: string,
   user: { id: string; role: Role; tenantId?: string | null }
 ): Promise<{ success: boolean; record?: any; status: number; message: string }> {
@@ -28,6 +41,11 @@ export async function checkEntityOwnership(
       if (entityName === 'theaterCue') {
         const event = await prisma.event.findUnique({ where: { id: record.eventId } });
         if (!event || event.tenantId !== user.tenantId) {
+          return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+        }
+      } else if (entityName === 'volunteerShift') {
+        const volunteer = await prisma.volunteer.findUnique({ where: { id: record.volunteerId } });
+        if (!volunteer || volunteer.tenantId !== user.tenantId) {
           return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
         }
       } else if (record.tenantId !== user.tenantId) {

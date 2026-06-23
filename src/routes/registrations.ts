@@ -20,32 +20,105 @@ router.post('/', authMiddleware, async (req, res) => {
     try {
         const { eventId, ticketId, visitorId, guestName, guestEmail } = req.body;
 
-        // 1. Verify Ticket Stock and Get Event/Tenant Info
-        const ticket = await prisma.ticket.findUnique({
-            where: { id: ticketId },
-            include: { event: { select: { tenantId: true, producerId: true } } }
+        // 1. Clean up expired registrations first to free up stock
+        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+        await prisma.registration.updateMany({
+            where: {
+                ticketId,
+                status: 'PENDING',
+                createdAt: { lt: fifteenMinutesAgo }
+            },
+            data: { status: 'CANCELED' }
         });
 
-        if (!ticket) return res.status(404).json({ error: 'Ingresso não encontrado' });
-        if (ticket.quantity <= ticket.sold) return res.status(400).json({ error: 'Esgotado' });
-
-        const tenantId = ticket.event.tenantId;
-
-        // 2. Create Code
+        // 2. Perform pessimistic locking & validation within transaction
+        let registration;
+        let tenantId;
         const code = `TKT-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+
+        try {
+            registration = await prisma.$transaction(async (tx) => {
+                // Pessimistic lock the ticket to prevent concurrent modifications
+                const tickets = await tx.$queryRaw<any[]>`SELECT * FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
+                const ticketLock = tickets[0];
+                if (!ticketLock) {
+                    throw new Error('NOT_FOUND');
+                }
+
+                // Verify count of active pending registrations
+                const activePendingCount = await tx.registration.count({
+                    where: {
+                        ticketId,
+                        status: 'PENDING',
+                        createdAt: { gte: fifteenMinutesAgo }
+                    }
+                });
+
+                if (ticketLock.quantity <= ticketLock.sold + activePendingCount) {
+                    throw new Error('OUT_OF_STOCK');
+                }
+
+                // Get event/tenant info
+                const event = await tx.event.findUnique({
+                    where: { id: eventId },
+                    select: { tenantId: true, producerId: true }
+                });
+                if (!event) throw new Error('EVENT_NOT_FOUND');
+                tenantId = event.tenantId;
+
+                const feeRate = await getPlatformFeeRate(tenantId);
+                const platformFeeVal = ticketLock.price ? Number(ticketLock.price) * feeRate : 0;
+
+                const reg = await tx.registration.create({
+                    data: {
+                        eventId,
+                        ticketId,
+                        visitorId: visitorId || req.user?.id,
+                        guestName,
+                        guestEmail,
+                        code,
+                        pricePaid: ticketLock.price || 0,
+                        platformFee: platformFeeVal,
+                        status: ticketLock.type === 'PAID' ? 'PENDING' : 'CONFIRMED'
+                    }
+                });
+
+                if (ticketLock.type === 'FREE') {
+                    await tx.ticket.update({
+                        where: { id: ticketId },
+                        data: { sold: { increment: 1 } }
+                    });
+                }
+
+                return { reg, ticket: ticketLock };
+            });
+        } catch (txError: any) {
+            if (txError.message === 'NOT_FOUND') return res.status(404).json({ error: 'Ingresso não encontrado' });
+            if (txError.message === 'OUT_OF_STOCK') return res.status(400).json({ error: 'Esgotado' });
+            throw txError;
+        }
+
+        const { reg: createdReg, ticket: lockedTicket } = registration;
+        const resolvedEvent = await prisma.event.findUnique({ where: { id: eventId }, select: { tenantId: true } });
+        tenantId = resolvedEvent?.tenantId || null;
 
         // 3. STRIPE PAYMENT INTEGRATION (Only if PAID)
         let stripePaymentData = null;
-        if (ticket.type === 'PAID' && Number(ticket.price) > 0) {
+        if (lockedTicket.type === 'PAID' && Number(lockedTicket.price) > 0) {
             try {
                 const { stripeService } = await import('../services/stripeService.js');
                 
                 let connectedAccountId = '';
                 let payeeName = 'Evento';
                 
-                if (ticket.event.producerId) {
+                const event = await prisma.event.findUnique({
+                    where: { id: eventId },
+                    select: { tenantId: true, producerId: true }
+                });
+                
+                if (event?.producerId) {
                     const producer = await prisma.user.findUnique({
-                        where: { id: ticket.event.producerId },
+                        where: { id: event.producerId },
                         select: { stripeConnectId: true, name: true }
                     });
                     if (producer?.stripeConnectId) {
@@ -54,10 +127,9 @@ router.post('/', authMiddleware, async (req, res) => {
                     }
                 }
                 
-                // Fallback to Tenant if producer has no connect ID or event is not from a producer
-                if (!connectedAccountId) {
+                if (!connectedAccountId && event?.tenantId) {
                     const tenant = await prisma.tenant.findUnique({
-                        where: { id: tenantId },
+                        where: { id: event.tenantId },
                         select: { stripeConnectId: true, name: true }
                     });
                     if (tenant?.stripeConnectId) {
@@ -67,6 +139,11 @@ router.post('/', authMiddleware, async (req, res) => {
                 }
 
                 if (!connectedAccountId) {
+                    // Release stock on fail
+                    await prisma.registration.update({
+                        where: { id: createdReg.id },
+                        data: { status: 'CANCELED' }
+                    });
                     return res.status(400).json({ 
                         error: 'O recebedor deste evento ainda não configurou pagamentos via Stripe Connect. Entre em contato com a administração.' 
                     });
@@ -80,16 +157,15 @@ router.post('/', authMiddleware, async (req, res) => {
                 });
 
                 const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-                const amountCents = Math.round(Number(ticket.price) * 100);
-                // Taxa dinâmica por tenant
-                const feeRate = await getPlatformFeeRate(tenantId);
+                const amountCents = Math.round(Number(lockedTicket.price) * 100);
+                const feeRate = await getPlatformFeeRate(event!.tenantId);
                 const platformFeeCents = Math.round(amountCents * feeRate);
 
                 // Create Checkout Session with Split
                 const session = await stripeService.createSplitPaymentSession({
                     customerId: stripeCustomerId,
                     amount: amountCents,
-                    description: `Ingresso: ${ticket.name} - ${payeeName}`,
+                    description: `Ingresso: ${lockedTicket.name} - ${payeeName}`,
                     connectedAccountId, 
                     applicationFeeAmount: platformFeeCents,
                     successUrl: `${frontendUrl}/tickets/success?code=${code}`,
@@ -101,65 +177,45 @@ router.post('/', authMiddleware, async (req, res) => {
                     checkoutUrl: session.url
                 };
 
+                // Update registration with Stripe session ID
+                await prisma.registration.update({
+                    where: { id: createdReg.id },
+                    data: { stripeCheckoutSessionId: session.id }
+                });
+
             } catch (err) {
                 console.error("Erro no checkout Stripe (Ticket):", err);
+                // Release stock on fail
+                await prisma.registration.update({
+                    where: { id: createdReg.id },
+                    data: { status: 'CANCELED' }
+                });
                 return res.status(500).json({ error: 'Erro ao gerar pagamento via Stripe' });
             }
         }
 
-        // 4. Register Transaction (Transaction Protected)
-        try {
-                    const [registration] = await prisma.$transaction([
-                prisma.registration.create({
-                    data: {
-                        eventId,
-                        ticketId,
-                        visitorId: visitorId || req.user?.id,
-                        guestName,
-                        guestEmail,
-                        code,
-                        pricePaid: ticket.price || 0,
-                        platformFee: ticket.price ? Number(ticket.price) * await getPlatformFeeRate(tenantId) : 0,
-                        status: ticket.type === 'PAID' ? 'PENDING' : 'CONFIRMED',
-                        stripeCheckoutSessionId: stripePaymentData?.id
-                    }
-                }),
-                // sold é incrementado SOMENTE após confirmação do pagamento (webhook checkout.session.completed)
-                // Para ingressos GRATUITOS, incrementamos agora
-                ...(ticket.type === 'FREE' ? [
-                    prisma.ticket.update({
-                        where: { id: ticketId, sold: { lt: ticket.quantity } },
-                        data: { sold: { increment: 1 } }
-                    })
-                ] : [])
-            ]);
-
-            // Fire and Forget Email (Free only, Paid usually after webhook)
-            if (ticket.type === 'FREE') {
-                const eventData = await prisma.event.findUnique({
-                    where: { id: eventId },
-                    select: { title: true, startDate: true, location: true }
-                });
-                const eventTitle = eventData?.title || "Evento";
-                const eventDate = eventData?.startDate ? new Date(eventData.startDate).toLocaleDateString('pt-BR', {
-                    weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
-                }) : undefined;
-                const eventLocation = eventData?.location || undefined;
-
-                mailService.sendTicketEmail(guestEmail, eventTitle, guestName, code, eventDate, eventLocation);
-            }
-
-            return res.status(201).json({
-                registration,
-                payment: stripePaymentData
+        // 4. Send Confirmation Email for Free Tickets
+        if (lockedTicket.type === 'FREE') {
+            const eventData = await prisma.event.findUnique({
+                where: { id: eventId },
+                select: { title: true, startDate: true, location: true }
             });
+            const eventTitle = eventData?.title || "Evento";
+            const eventDate = eventData?.startDate ? new Date(eventData.startDate).toLocaleDateString('pt-BR', {
+                weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+            }) : undefined;
+            const eventLocation = eventData?.location || undefined;
 
-        } catch (txError: any) {
-            if (txError.code === 'P2025') {
-                return res.status(400).json({ error: 'Esgotado (Race Condition Protected)' });
-            }
-            throw txError;
+            mailService.sendTicketEmail(guestEmail, eventTitle, guestName, code, eventDate, eventLocation);
         }
+
+        return res.status(201).json({
+            registration: {
+                ...createdReg,
+                stripeCheckoutSessionId: stripePaymentData?.id || null
+            },
+            payment: stripePaymentData
+        });
 
     } catch (e) {
         console.error("Registration error", e);

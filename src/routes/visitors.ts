@@ -315,8 +315,7 @@ router.post("/track", authMiddleware, async (req, res) => {
     const trackSchema = z.object({
       workId: z.string().optional(),
       trailId: z.string().optional(),
-      eventId: z.string().optional(),
-      xpGained: z.number().int().nonnegative().max(100, "XP máximo por ação excede limite").optional()
+      eventId: z.string().optional()
     });
 
     const parsed = trackSchema.safeParse(req.body);
@@ -324,7 +323,7 @@ router.post("/track", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Dados inválidos", errors: parsed.error.errors });
     }
 
-    const { workId, trailId, eventId, xpGained } = parsed.data;
+    const { workId, trailId, eventId } = parsed.data;
     const email = req.user!.email;
     const tenantId = (req as any).tenantId;
 
@@ -352,7 +351,13 @@ router.post("/track", authMiddleware, async (req, res) => {
       }
     });
 
-    const xpToAdd = recentVisit ? 0 : (xpGained ?? 1);
+    // Server-side XP calculation to prevent client manipulation
+    let calculatedXp = 10;
+    if (workId) calculatedXp = 15;
+    else if (eventId) calculatedXp = 30;
+    else if (trailId) calculatedXp = 50;
+
+    const xpToAdd = recentVisit ? 0 : calculatedXp;
     const xpMessage = recentVisit ? "Visita registrada (sem XP extra por frequência)" : "Visita registrada";
 
     await prisma.$transaction([
@@ -502,6 +507,29 @@ router.post("/visit-from-qr", async (req, res) => {
           }
         });
       }
+    }
+
+    // SECURITY / ANTI-CHEAT: Rate limit scans (max 1 scan per 5 seconds, max 30 scans per hour)
+    const fiveSecondsAgo = new Date(Date.now() - 5 * 1000);
+    const recentScanCount = await prisma.visitorVisit.count({
+      where: {
+        visitorId: visitor.id,
+        createdAt: { gte: fiveSecondsAgo }
+      }
+    });
+    if (recentScanCount > 0) {
+      return res.status(429).json({ message: "Muitos check-ins rápidos. Por favor, aguarde alguns segundos." });
+    }
+
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const hourlyScanCount = await prisma.visitorVisit.count({
+      where: {
+        visitorId: visitor.id,
+        createdAt: { gte: oneHourAgo }
+      }
+    });
+    if (hourlyScanCount >= 30) {
+      return res.status(429).json({ message: "Limite de visitas por hora excedido." });
     }
 
     const xpToAdd = qr.xpReward || 5;

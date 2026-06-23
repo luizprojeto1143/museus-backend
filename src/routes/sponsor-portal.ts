@@ -267,6 +267,19 @@ router.post("/webhook", async (req: Request, res: Response) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // Idempotency Check: Prevent duplicate processing of the same Stripe event
+  try {
+    const existingEvent = await prisma.stripeWebhookEvent.findUnique({
+      where: { id: event.id }
+    });
+    if (existingEvent) {
+      console.log(`[Stripe Sponsor Webhook] Event ${event.id} already processed. Skipping.`);
+      return res.status(200).send({ received: true, duplicate: true });
+    }
+  } catch (err) {
+    console.error(`[Stripe Sponsor Webhook] Idempotency check failed:`, err);
+  }
+
   try {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as any;
@@ -298,6 +311,21 @@ router.post("/webhook", async (req: Request, res: Response) => {
             const platformFee = amountReceived * (sponsorship.platformFeePercent / 100);
             const netAmount = amountReceived - platformFee;
 
+            // Log FinancialTransaction for auditing
+            await prisma.financialTransaction.create({
+              data: {
+                tenantId: work.tenantId,
+                type: "PAYMENT",
+                source: "SPONSORSHIP",
+                amount: amountReceived / 100,
+                fee: platformFee / 100,
+                netAmount: netAmount / 100,
+                status: "COMPLETED",
+                paymentMethod: "CREDIT_CARD",
+                stripePaymentIntentId: session.payment_intent as string
+              }
+            });
+
             if (work.tenant.isPublicInstitution && work.tenant.parentId) {
               const secretaria = await prisma.tenant.findUnique({ where: { id: work.tenant.parentId } });
               if (secretaria && secretaria.stripeConnectId) {
@@ -326,6 +354,12 @@ router.post("/webhook", async (req: Request, res: Response) => {
         data: { status: 'EXPIRED', active: false, endDate: new Date() }
       });
     }
+
+    // Save StripeWebhookEvent to database for idempotency
+    await prisma.stripeWebhookEvent.create({
+      data: { id: event.id, type: event.type }
+    });
+
   } catch (error) {
     console.error("Erro processando webhook sponsor-portal:", error);
     return res.status(500).send("Internal Server Error");

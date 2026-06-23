@@ -243,6 +243,9 @@ router.post("/members", authMiddleware, async (req, res) => {
         }).parse(req.body);
 
         if (data.id) {
+            const ownership = await checkEntityOwnership('theaterMember', data.id, req.user!);
+            if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
             const updated = await prisma.theaterMember.update({
                 where: { id: data.id },
                 data: { ...data, tenantId: tenantId as string } as any

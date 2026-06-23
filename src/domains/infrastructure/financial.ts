@@ -381,6 +381,51 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
         }
       });
 
+      // 4. Update the related source objects on full refund to keep dashboards consistent
+      if (stripeRefund.status === 'succeeded' && isFullRefund) {
+        // A. Registrations (Tickets)
+        const registrations = await txPrisma.registration.findMany({
+          where: { financialTransactionId: tx.id }
+        });
+        for (const reg of registrations) {
+          await txPrisma.registration.update({
+            where: { id: reg.id },
+            data: { status: "CANCELED" }
+          });
+          // Decrement ticket sold count
+          await txPrisma.ticket.update({
+            where: { id: reg.ticketId },
+            data: { sold: { decrement: 1 } }
+          });
+        }
+
+        // B. Orders
+        await txPrisma.order.updateMany({
+          where: { financialTransactionId: tx.id },
+          data: { status: "REFUNDED" }
+        });
+
+        // C. Donations
+        await txPrisma.donation.updateMany({
+          where: { financialTransactionId: tx.id },
+          data: { status: "REFUNDED" }
+        });
+
+        // D. Transactions (Chat)
+        await txPrisma.transaction.updateMany({
+          where: { financialTransactionId: tx.id },
+          data: { status: "REFUNDED" }
+        });
+
+        // E. Memberships
+        if (tx.stripePaymentIntentId) {
+          await txPrisma.membership.updateMany({
+            where: { paymentId: tx.stripePaymentIntentId },
+            data: { status: "CANCELLED", cancelledAt: new Date() }
+          });
+        }
+      }
+
       return createdRefund;
     });
 

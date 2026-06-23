@@ -38,10 +38,17 @@ export function validateEnv(): void {
         }
     }
 
-    // In production, log warning if these variables are missing instead of crashing
+    // In production, require critical Stripe variables and frontend URL to avoid runtime payment failures
     if (isProduction) {
-        for (const varName of PRODUCTION_RECOMMENDED_ENV_VARS) {
+        const prodRequired = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "FRONTEND_URL"];
+        for (const varName of prodRequired) {
             if (!process.env[varName]) {
+                missing.push(varName);
+            }
+        }
+        
+        for (const varName of PRODUCTION_RECOMMENDED_ENV_VARS) {
+            if (!prodRequired.includes(varName) && !process.env[varName]) {
                 console.warn(`⚠️  WARNING: Production environment variable "${varName}" is missing. Some features/integrations will be disabled.`);
             }
         }

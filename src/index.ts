@@ -338,23 +338,42 @@ app.use("/financial", financialRoutes);
 
 const PORT = process.env.PORT || 3000;
 
+// Recursive redaction helper to secure personal/sensitive data from logs
+function redactSensitiveData(data: any): any {
+  if (!data) return data;
+  if (Array.isArray(data)) {
+    return data.map(item => redactSensitiveData(item));
+  }
+  if (typeof data === 'object') {
+    const redacted: any = {};
+    const sensitiveKeys = [
+      'password', 'pwd', 'secret', 'token', 'key', 'auth', 'authorization', 'cookie', 'jwt',
+      'cpf', 'cnpj', 'document', 'rg', 'phone', 'celular', 'telefone', 'email', 'mail',
+      'cvv', 'card', 'creditcard', 'number', 'cvc', 'payment', 'address', 'rua', 'endereco', 'cep'
+    ];
+    for (const [key, value] of Object.entries(data)) {
+      const isSensitive = sensitiveKeys.some(sk => key.toLowerCase().includes(sk));
+      if (isSensitive) {
+        redacted[key] = "[REDACTED]";
+      } else {
+        redacted[key] = redactSensitiveData(value);
+      }
+    }
+    return redacted;
+  }
+  return data;
+}
+
 // Global Error Handler
- 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const sanitizedBody = redactSensitiveData(_req.body);
+  const sanitizedHeaders = redactSensitiveData(_req.headers);
 
-  // Always log full detail server-side
-  const sanitizedBody = { ..._req.body };
-  if (sanitizedBody.password) sanitizedBody.password = "****";
-  if (sanitizedBody.cpf) sanitizedBody.cpf = "***.***.***-**";
-  if (sanitizedBody.phone) sanitizedBody.phone = "****-****";
-
-  const sanitizedHeaders = { ..._req.headers };
-  if (sanitizedHeaders.authorization) sanitizedHeaders.authorization = "Bearer ****";
-  if (sanitizedHeaders.cookie) sanitizedHeaders.cookie = "****";
+  const shortStack = err.stack ? err.stack.split("\n").slice(0, 3).join("\n") : undefined;
 
   console.error("❌ Global Error Detail:", {
     message: err.message,
-    stack: err.stack,
+    stack: shortStack,
     name: err.name,
     code: err.code,
     path: _req.path,
@@ -376,12 +395,12 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
       entity: "SYSTEM",
       entityId: _req.path,
       userId: (err as any).userId || null,
-      userEmail: sanitizedBody.email || null,
+      userEmail: (sanitizedBody && typeof sanitizedBody === 'object') ? (sanitizedBody.email || null) : null,
       tenantId: resolvedTenantId,
       oldData: { path: _req.path, method: _req.method },
       newData: { 
         message: err.message, 
-        stack: err.stack?.substring(0, 1000), 
+        stack: shortStack, 
         code: err.code,
         body: sanitizedBody
       },

@@ -4,6 +4,7 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, QRType } from "@prisma/client";
 import crypto from "crypto";
 import { z } from "zod";
+import { checkEntityOwnership } from "../utils/ownership.js";
 
 const router = Router();
 
@@ -90,6 +91,9 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
 router.delete("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
     const { id } = req.params;
+    const check = await checkEntityOwnership('qRCode', id, req.user!);
+    if (!check.success) return res.status(check.status).json({ message: check.message });
+
     await prisma.qRCode.delete({ where: { id } });
     return res.status(204).send();
   } catch (err) {

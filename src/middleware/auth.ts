@@ -68,7 +68,19 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       permissions: payload.permissions
     };
     
-    if (payload.tenantId) {
+    // Resolve tenantId considering MASTER overrides
+    if (payload.role === 'MASTER') {
+      const headerTenant = req.headers["x-tenant-id"];
+      const queryTenant = req.query.tenantId;
+      const bodyTenant = req.body?.tenantId;
+      const override = headerTenant || queryTenant || bodyTenant;
+
+      if (override && override !== "undefined" && override !== "null" && override !== "") {
+        (req as any).tenantId = String(override);
+      } else if (payload.tenantId) {
+        (req as any).tenantId = payload.tenantId;
+      }
+    } else if (payload.tenantId) {
       (req as any).tenantId = payload.tenantId;
     }
 

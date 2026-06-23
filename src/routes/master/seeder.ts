@@ -3,20 +3,32 @@ import { prisma } from "../../prisma.js";
 import { authMiddleware, requireRole } from "../../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { fakerPT_BR as faker } from '@faker-js/faker';
+import crypto from "crypto";
 
 const router = Router();
+
+// BLOCK SEEDER IN PRODUCTION
+router.use((req, res, next) => {
+    if (process.env.NODE_ENV === "production") {
+        return res.status(403).json({ message: "Operação não permitida em ambiente de produção" });
+    }
+    next();
+});
 
 // Generate Fake Visitors
 router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
     try {
         const { tenantId, count = 10 } = req.body;
+        const finalTenantId = req.user!.role === Role.MASTER ? tenantId : req.user!.tenantId;
+        if (!finalTenantId) return res.status(400).json({ message: "Tenant ID required" });
+
         const amount = Math.min(Math.max(Number(count), 1), 50); // Min 1, Max 50 per batch
 
         const createdVisitors = [];
 
         // Get some works to create baseline visits
         const works = await prisma.work.findMany({
-            where: { tenantId },
+            where: { tenantId: finalTenantId },
             select: { id: true },
             take: 10
         });
@@ -33,7 +45,7 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
                 data: {
                     name,
                     email,
-                    tenantId,
+                    tenantId: finalTenantId,
                     isFake: true,
                     age: faker.number.int({ min: 12, max: 75 }),
                     xp: 0,
@@ -100,11 +112,12 @@ router.post("/generate", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
 router.delete("/bulk", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
     try {
         const { tenantId } = req.body;
-        if (!tenantId) return res.status(400).json({ message: "Tenant ID required" });
+        const finalTenantId = req.user!.role === Role.MASTER ? tenantId : req.user!.tenantId;
+        if (!finalTenantId) return res.status(400).json({ message: "Tenant ID required" });
 
         // Delete related data first (for visitors that are isFake)
         const fakeVisitors = await prisma.visitor.findMany({
-            where: { tenantId, isFake: true },
+            where: { tenantId: finalTenantId, isFake: true },
             select: { id: true }
         });
         const fakeIds = fakeVisitors.map(v => v.id);
@@ -134,7 +147,7 @@ router.delete("/bulk", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), a
         }
 
         const deleted = await prisma.visitor.deleteMany({
-            where: { tenantId, isFake: true }
+            where: { tenantId: finalTenantId, isFake: true }
         });
 
         return res.json({ message: `Removidos ${deleted.count} visitantes falsos e todos seus dados relacionados` });
@@ -152,6 +165,11 @@ router.post("/interact", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
         const visitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
         if (!visitor || !visitor.isFake) {
             return res.status(400).json({ message: "Visitante inválido ou real" });
+        }
+
+        // Validate that admin only interacts with their own tenant's visitors
+        if (req.user!.role !== Role.MASTER && visitor.tenantId !== req.user!.tenantId) {
+            return res.status(403).json({ message: "Sem permissão para este visitante" });
         }
 
         if (type === 'visit') {
@@ -174,49 +192,41 @@ router.post("/interact", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]),
                     where: { id: visitor.id },
                     data: { xp: { increment: 10 } }
                 });
+                return res.json({ message: `Registrada visita do visitante focado à obra: ${work.title}` });
             }
+            return res.status(400).json({ message: "Museu sem obras para simular visita" });
+
         } else if (type === 'guestbook') {
-            await prisma.guestbookEntry.create({
+            if (!content) return res.status(400).json({ message: "Conteúdo obrigatório para guestbook" });
+            const entry = await prisma.guestbookEntry.create({
                 data: {
                     visitorId: visitor.id,
                     tenantId: visitor.tenantId,
-                    message: content || faker.lorem.sentence(),
+                    message: content
                 }
             });
+            return res.json({ message: "Mensagem criada no mural", entry });
         }
 
-        return res.json({ message: "Interação simulada" });
-
+        return res.status(400).json({ message: "Tipo de interação não suportado" });
     } catch (err) {
-        console.error("Erro interacao", err);
-        return res.status(500).json({ message: "Erro simulacao" });
+        console.error("Erro interact", err);
+        return res.status(500).json({ message: "Erro na interação" });
     }
 });
 
-// ===== GUESTBOOK MESSAGES =====
 const guestbookMessages = [
-    "Experiência incrível! O acervo é maravilhoso, voltarei com certeza.",
-    "Trouxe meus filhos e eles adoraram. Parabéns pela iniciativa!",
-    "A exposição temporária está fantástica. Muito emocionante.",
-    "Que lugar especial! A curadoria é impecável.",
-    "Primeira vez aqui e já virei fã. Patrimônio cultural riquíssimo.",
-    "As obras são impressionantes. Valeu muito a pena a visita!",
-    "Achei o museu muito bem conservado e organizado. Nota 10!",
-    "Amei a trilha interativa, muito diferente de museus tradicionais.",
-    "Vim de outra cidade só para conhecer. Superou as expectativas!",
-    "O guia virtual ajudou muito. Tecnologia e cultura juntas!",
-    "Lugar perfeito para um passeio em família. Recomendo!",
-    "Fiquei encantada com a seção de arte contemporânea.",
-    "O ambiente é muito acolhedor. Senti como se viajasse no tempo.",
-    "Parabéns ao museu por preservar nossa história tão bem.",
-    "Visitei em um dia de chuva e foi a melhor decisão. Adorei!",
+    "Lindo lugar! Adorei a exposição principal.",
+    "Parabéns pela organização e acessibilidade.",
+    "Uma experiência única de imersão histórica.",
+    "Voltarei com meus alunos, infraestrutura sensacional.",
+    "Muito prático usar o guia do museu pelo celular."
 ];
 
 const reviewComments = [
-    "Obra magnífica, dá para ficar contemplando por horas.",
-    "Uma das peças mais bonitas que já vi.",
-    "Achei impressionante o nível de detalhe.",
-    "Contexto histórico muito rico. Aprendi muito!",
+    "Obra de arte fascinante.",
+    "Excelente preservação e curadoria.",
+    "Achei a descrição muito instrutiva.",
     "Simplesmente espetacular. Vale a visita só por esta obra.",
     "Interessante, mas esperava algo mais impactante.",
     "A iluminação destaca muito bem os detalhes da obra.",
@@ -229,11 +239,12 @@ const reviewComments = [
 router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
     try {
         const { tenantId, visitorCount = 5, minVisits = 1, maxVisits = 5 } = req.body;
+        const finalTenantId = req.user!.role === Role.MASTER ? tenantId : req.user!.tenantId;
+        if (!finalTenantId) return res.status(400).json({ message: "Tenant ID required" });
 
-        // 1. Get Fake Visitors
         // 1. Get Fake Visitors (Randomize selection to avoid only hitting oldest)
         const allVisitors = await prisma.visitor.findMany({
-            where: { tenantId, isFake: true },
+            where: { tenantId: finalTenantId, isFake: true },
             select: { id: true }
         });
 
@@ -252,7 +263,7 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
 
         // 2. Get Works
         const works = await prisma.work.findMany({
-            where: { tenantId },
+            where: { tenantId: finalTenantId },
             select: { id: true, title: true }
         });
 
@@ -262,12 +273,12 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
 
         // 3. Get Achievements (if any)
         const achievements = await prisma.achievement.findMany({
-            where: { tenantId, active: true },
+            where: { tenantId: finalTenantId, active: true },
             select: { id: true, xpReward: true }
         });
 
         const trails = await prisma.trail.findMany({
-            where: { tenantId, active: true },
+            where: { tenantId: finalTenantId, active: true },
             select: { id: true }
         });
 
@@ -367,7 +378,7 @@ router.post("/simulate-traffic", authMiddleware, requireRole([Role.MASTER, Role.
                 await prisma.guestbookEntry.create({
                     data: {
                         visitorId: visitor.id,
-                        tenantId,
+                        tenantId: finalTenantId,
                         message: guestbookMessages[Math.floor(Math.random() * guestbookMessages.length)],
                         createdAt: faker.date.recent({ days: 14 })
                     }

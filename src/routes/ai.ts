@@ -44,6 +44,22 @@ router.post("/chat", authMiddleware, aiLimiter, async (req, res) => {
       return res.status(400).json({ message: "tenantId e message são obrigatórios" });
     }
 
+    // SECURITY: Validate tenantId parameter based on user role to prevent cross-tenant leaks
+    if (req.user!.role !== 'MASTER') {
+      if (req.user!.role === 'VISITOR') {
+        const visitor = await prisma.visitor.findFirst({
+          where: { email: req.user!.email.toLowerCase(), tenantId }
+        });
+        if (!visitor) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      } else {
+        if (tenantId !== req.user!.tenantId) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      }
+    }
+
     const persona = await prisma.chatPersona.findUnique({
       where: { tenantId: tenantId as string },
       include: { tenant: true }
@@ -160,6 +176,22 @@ router.post("/chat/stream", authMiddleware, aiLimiter, async (req, res) => {
 
     if (!tenantId || !message) {
       return res.status(400).json({ message: "tenantId e message são obrigatórios" });
+    }
+
+    // SECURITY: Validate tenantId parameter based on user role to prevent cross-tenant leaks
+    if (req.user!.role !== 'MASTER') {
+      if (req.user!.role === 'VISITOR') {
+        const visitor = await prisma.visitor.findFirst({
+          where: { email: req.user!.email.toLowerCase(), tenantId }
+        });
+        if (!visitor) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      } else {
+        if (tenantId !== req.user!.tenantId) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      }
     }
 
     // Set up SSE headers
@@ -313,6 +345,25 @@ router.post("/souvenir", authMiddleware, aiLimiter, async (req, res) => {
       return res.status(400).json({ message: "tenantId e email são obrigatórios" });
     }
 
+    // SECURITY: Validate tenantId parameter based on user role to prevent cross-tenant leaks
+    if (req.user!.role !== 'MASTER') {
+      if (req.user!.role === 'VISITOR') {
+        if (email.toLowerCase() !== req.user!.email.toLowerCase()) {
+          return res.status(403).json({ message: "Acesso negado" });
+        }
+        const visitor = await prisma.visitor.findFirst({
+          where: { email: req.user!.email.toLowerCase(), tenantId }
+        });
+        if (!visitor) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      } else {
+        if (tenantId !== req.user!.tenantId) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      }
+    }
+
     const persona = await prisma.chatPersona.findUnique({ where: { tenantId } });
     const systemPrompt =
       persona?.systemPrompt ||
@@ -362,6 +413,22 @@ router.post("/itinerary", authMiddleware, aiLimiter, async (req, res) => {
     const { tenantId, preferences } = req.body;
     if (!tenantId || !preferences) {
       return res.status(400).json({ message: "tenantId e preferences são obrigatórios" });
+    }
+
+    // SECURITY: Validate tenantId parameter based on user role to prevent cross-tenant leaks
+    if (req.user!.role !== 'MASTER') {
+      if (req.user!.role === 'VISITOR') {
+        const visitor = await prisma.visitor.findFirst({
+          where: { email: req.user!.email.toLowerCase(), tenantId }
+        });
+        if (!visitor) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      } else {
+        if (tenantId !== req.user!.tenantId) {
+          return res.status(403).json({ message: "Acesso negado para este museu/tenant" });
+        }
+      }
     }
 
     // Buscar todas as obras do museu para a IA escolher

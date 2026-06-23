@@ -798,8 +798,28 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
 
       if (ticket.eventId !== id) throw new Error("Ingresso inválido para este evento");
 
+      // Clear expired registrations to free up stock
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+      await tx.registration.updateMany({
+        where: {
+          ticketId,
+          status: "PENDING",
+          createdAt: { lt: fifteenMinutesAgo }
+        },
+        data: { status: "CANCELED" }
+      });
+
+      // Count active pending registrations
+      const activePendingCount = await tx.registration.count({
+        where: {
+          ticketId,
+          status: "PENDING",
+          createdAt: { gte: fifteenMinutesAgo }
+        }
+      });
+
       // Strict Stock Check
-      if (ticket.sold + quantity > ticket.quantity) {
+      if (ticket.sold + activePendingCount + quantity > ticket.quantity) {
         throw new Error("Ingressos esgotados (Overbooking prevented)");
       }
 
@@ -1168,6 +1188,31 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
         throw new Error("Estoque de ingressos insuficiente.");
       }
 
+      // Fetch tenant to get feePercentage
+      const tenant = await tx.tenant.findUnique({
+        where: { id: event.tenantId },
+        select: { feePercentage: true }
+      });
+      if (!tenant) throw new Error("Tenant não encontrado");
+
+      const feePercentage = tenant.feePercentage ?? 10.0;
+      const totalAmount = Number(ticket.price) * quantity;
+      const totalFee = totalAmount * (feePercentage / 100);
+
+      // Create Financial Transaction
+      const finTx = await tx.financialTransaction.create({
+        data: {
+          tenantId: event.tenantId,
+          type: "PAYMENT",
+          source: "REGISTRATION",
+          amount: totalAmount,
+          fee: totalFee,
+          netAmount: totalAmount - totalFee,
+          status: "COMPLETED",
+          paymentMethod: paymentMethod || "CASH"
+        }
+      });
+
       // Generate tickets
       const registrations = [];
       for (let i = 0; i < quantity; i++) {
@@ -1181,7 +1226,8 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
             guestEmail: "pdv@local",
             code,
             status: "CONFIRMED", // Confirmed automatically since payment is physically received
-            pricePaid: Number(ticket.price)
+            pricePaid: Number(ticket.price),
+            financialTransactionId: finTx.id
           }
         });
         registrations.push(registration);
@@ -1193,7 +1239,7 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
         data: { sold: { increment: quantity } }
       });
 
-      return { registrations, total: Number(ticket.price) * quantity };
+      return { registrations, total: totalAmount, transactionId: finTx.id };
     });
 
     return res.json({ success: true, ...result });

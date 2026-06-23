@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { checkEntityOwnership } from '../utils/ownership.js';
 
 const router = Router();
 
@@ -42,6 +43,9 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.post('/:id/shifts', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const check = await checkEntityOwnership('volunteer', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ message: check.message });
+
         const { date, startTime, endTime, hours, activity } = req.body;
         const shift = await prisma.volunteerShift.create({
             data: { volunteerId: id, date: new Date(date), startTime, endTime, hours: hours || 0, activity }
@@ -66,6 +70,16 @@ router.post('/:id/shifts', authMiddleware, requireRole(['ADMIN', 'MASTER']), asy
 router.patch('/:id/shifts/:shiftId', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { shiftId, id } = req.params;
+        const checkVol = await checkEntityOwnership('volunteer', id, req.user!);
+        if (!checkVol.success) return res.status(checkVol.status).json({ message: checkVol.message });
+
+        const checkShift = await checkEntityOwnership('volunteerShift', shiftId, req.user!);
+        if (!checkShift.success) return res.status(checkShift.status).json({ message: checkShift.message });
+
+        if (checkShift.record.volunteerId !== id) {
+            return res.status(400).json({ message: 'Turno não pertence a este voluntário' });
+        }
+
         const shift = await prisma.volunteerShift.update({
             where: { id: shiftId },
             data: { confirmed: true }
@@ -87,6 +101,9 @@ router.patch('/:id/shifts/:shiftId', authMiddleware, requireRole(['ADMIN', 'MAST
 router.get('/:id/shifts', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const check = await checkEntityOwnership('volunteer', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ message: check.message });
+
         const shifts = await prisma.volunteerShift.findMany({
             where: { volunteerId: id },
             orderBy: { date: 'desc' }
