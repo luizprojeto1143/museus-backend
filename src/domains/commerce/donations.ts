@@ -83,17 +83,21 @@ router.post('/', limiter, async (req, res) => {
 
         } catch (err) {
             console.error("Erro na integração Stripe para doação:", err);
-            // Non-blocking but return error in payment data
+            try {
+                await prisma.donation.delete({
+                    where: { id: donation.id }
+                });
+            } catch (dbErr) {
+                console.error("Erro ao deletar doação falha do banco:", dbErr);
+            }
+            return res.status(400).json({ error: "Falha ao gerar sessão de pagamento no Stripe." });
         }
 
         res.status(201).json({
             donation,
-            payment: stripePaymentData ? {
+            payment: {
                 method: 'STRIPE',
                 checkoutUrl: stripePaymentData.checkoutUrl
-            } : {
-                method: 'STRIPE',
-                message: 'Erro ao gerar checkout do Stripe.'
             },
             message: 'Doação registrada. Redirecionando para pagamento.'
         });

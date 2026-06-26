@@ -2,8 +2,9 @@ import { Router, Request, Response } from "express";
 import { SurveyQuestionType, Role } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
-import { authMiddleware as authenticate, requireRole } from "../middleware/auth.js";
+import { authMiddleware as authenticate, requireRole, softAuthMiddleware } from "../middleware/auth.js";
 import { checkEntityOwnership } from "../utils/ownership.js";
+import { limiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
@@ -27,7 +28,8 @@ const responseSchema = z.object({
         questionId: z.string().uuid(),
         answer: z.string()
     })),
-    guestEmail: z.string().email().optional()
+    guestEmail: z.string().email().optional(),
+    ticketCode: z.string().optional()
 });
 
 // ========== ADMIN ENDPOINTS ==========
@@ -39,12 +41,7 @@ router.get("/events/:eventId/survey", async (req: Request, res: Response) => {
 
         const questions = await prisma.surveyQuestion.findMany({
             where: { eventId },
-            orderBy: { order: "asc" },
-            include: {
-                _count: {
-                    select: { surveyResponses: true }
-                }
-            }
+            orderBy: { order: "asc" }
         });
 
         res.json(questions);
@@ -225,7 +222,7 @@ router.get("/events/:eventId/survey/results", authenticate, requireRole([Role.AD
 // ========== VISITOR ENDPOINTS ==========
 
 // POST /events/:eventId/survey/respond - Submit survey responses (visitor)
-router.post("/events/:eventId/survey/respond", async (req: Request, res: Response) => {
+router.post("/events/:eventId/survey/respond", softAuthMiddleware, limiter, async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
         const parsed = responseSchema.safeParse(req.body);
@@ -234,11 +231,46 @@ router.post("/events/:eventId/survey/respond", async (req: Request, res: Respons
             return res.status(400).json({ error: parsed.error.errors[0].message });
         }
 
-        const { answers, guestEmail } = parsed.data;
-        const visitorId = (req as Request & { visitorId?: string }).visitorId || null;
+        const { answers, guestEmail, ticketCode } = parsed.data;
 
-        if (!visitorId && !guestEmail) {
-            return res.status(400).json({ error: "Informe email ou faça login" });
+        // Resolve visitorId from token session
+        let visitorId: string | null = null;
+        if (req.user) {
+            const visitor = await prisma.visitor.findFirst({
+                where: { email: req.user.email, tenantId: (req as any).tenantId || undefined }
+            });
+            if (visitor) {
+                visitorId = visitor.id;
+            }
+        }
+
+        // Verify ticket ownership for event
+        if (!visitorId) {
+            if (!guestEmail || !ticketCode) {
+                return res.status(400).json({ error: "Faça login ou informe e-mail e código do ingresso" });
+            }
+            const registration = await prisma.registration.findFirst({
+                where: {
+                    eventId,
+                    guestEmail: guestEmail.toLowerCase(),
+                    code: ticketCode,
+                    status: "CONFIRMED"
+                }
+            });
+            if (!registration) {
+                return res.status(400).json({ error: "Nenhum ingresso confirmado encontrado para este e-mail e código." });
+            }
+        } else {
+            const registration = await prisma.registration.findFirst({
+                where: {
+                    eventId,
+                    visitorId,
+                    status: "CONFIRMED"
+                }
+            });
+            if (!registration) {
+                return res.status(403).json({ error: "Apenas visitantes com ingressos confirmados podem responder à pesquisa." });
+            }
         }
 
         // Verify questions belong to this event
@@ -296,24 +328,30 @@ router.post("/events/:eventId/survey/respond", async (req: Request, res: Respons
     }
 });
 
-// GET /events/:eventId/survey/my-responses - Get visitor's responses
-router.get("/events/:eventId/survey/my-responses", async (req: Request, res: Response) => {
+// GET /events/:eventId/survey/my-responses - Get visitor's responses (auth mandatory)
+router.get("/events/:eventId/survey/my-responses", authenticate, async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
-        const visitorId = (req as Request & { visitorId?: string }).visitorId;
-        const guestEmail = req.query.email as string | undefined;
+        const userEmail = req.user!.email;
 
-        if (!visitorId && !guestEmail) {
-            return res.status(400).json({ error: "Informe email ou faça login" });
+        // Fetch event to get tenantId
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            select: { tenantId: true }
+        });
+        if (!event) return res.status(404).json({ error: "Evento não encontrado" });
+
+        const visitor = await prisma.visitor.findFirst({
+            where: { email: userEmail.toLowerCase(), tenantId: event.tenantId }
+        });
+        if (!visitor) {
+            return res.status(404).json({ error: "Visitante não encontrado" });
         }
 
         const responses = await prisma.surveyResponse.findMany({
             where: {
                 surveyQuestion: { eventId },
-                OR: [
-                    { visitorId: visitorId || undefined },
-                    { guestEmail: guestEmail || undefined }
-                ]
+                visitorId: visitor.id
             },
             include: {
                 surveyQuestion: true

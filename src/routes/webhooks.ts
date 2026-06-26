@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../prisma.js";
 import { mailService } from "../services/email.js";
 import { stripeService, stripe } from "../services/stripeService.js";
+import { applyRefundSuccess } from "../domains/infrastructure/financial.js";
 
 const router = Router();
 
@@ -16,8 +17,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
   let event;
 
   try {
-    // In express, req.body is usually parsed. For webhooks, we need the raw body.
-    // If you are using express.json({ verify: ... }), it might work.
     event = stripe.webhooks.constructEvent(
       req.body,
       sig as string,
@@ -28,29 +27,48 @@ router.post("/stripe", async (req: Request, res: Response) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Idempotency Check: Prevent duplicate processing of the same Stripe event
+  // Idempotency Lock: Use a database unique constraint to prevent duplicate concurrent runs
+  let isDuplicate = false;
   try {
+    await prisma.stripeWebhookEvent.create({
+      data: {
+        id: event.id,
+        type: event.type,
+        status: "PROCESSING"
+      }
+    });
+  } catch (err: any) {
+    if (err.code === "P2002") {
+      isDuplicate = true;
+    } else {
+      console.error(`[Stripe Webhook] Error creating lock:`, err);
+      return res.status(500).send("Internal Server Error");
+    }
+  }
+
+  if (isDuplicate) {
     const existingEvent = await prisma.stripeWebhookEvent.findUnique({
       where: { id: event.id }
     });
-    if (existingEvent) {
-      console.log(`[Stripe Webhook] Event ${event.id} already processed. Skipping.`);
+    if (existingEvent && (existingEvent.status === "PROCESSED" || existingEvent.status === "PROCESSING")) {
+      console.log(`[Stripe Webhook] Event ${event.id} already processed or processing (status=${existingEvent.status}). Skipping.`);
       return res.status(200).send({ received: true, duplicate: true });
     }
-  } catch (err) {
-    console.error(`[Stripe Webhook] Idempotency check failed:`, err);
+    // If it was FAILED, reset to PROCESSING to retry
+    await prisma.stripeWebhookEvent.update({
+      where: { id: event.id },
+      data: { status: "PROCESSING" }
+    });
   }
 
   console.log(`[Stripe Webhook] Received event: ${event.type}`);
 
-  let eventStored = false;
   try {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as any;
         const metadata = session.metadata || {};
 
-        // Recupera o ID de cobrança (charge) real a partir do PaymentIntent no Stripe
         const paymentIntentId = session.payment_intent as string | undefined;
         let realChargeId: string | undefined;
 
@@ -78,7 +96,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const firstReg = pendingRegistrations[0];
           const ticketId = firstReg.ticketId;
 
-          // Check for expiration (30 minutes)
           const now = new Date();
           const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
           
@@ -99,11 +116,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
             const totalFee = validPendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
 
             await prisma.$transaction(async (tx) => {
-              const duplicate = await tx.stripeWebhookEvent.findUnique({
-                where: { id: event.id }
-              });
-              if (duplicate) return;
-
               let finTxId: string | undefined;
               if (firstReg.event?.tenantId) {
                 const finTx = await tx.financialTransaction.create({
@@ -123,7 +135,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 finTxId = finTx.id;
               }
 
-              // Confirmar registros + incrementar sold atomicamente
               await tx.registration.updateMany({
                 where: { id: { in: validPendingRegistrations.map(r => r.id) } },
                 data: { status: "CONFIRMED", financialTransactionId: finTxId }
@@ -132,18 +143,10 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 where: { id: ticketId },
                 data: { sold: { increment: quantity } }
               });
-              await tx.stripeWebhookEvent.create({
-                data: {
-                  id: event.id,
-                  type: event.type
-                }
-              });
             });
 
-            eventStored = true;
             console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
             
-            // Send Ticket Email
             const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
             for (const reg of validPendingRegistrations) {
               mailService.sendTicketEmail(
@@ -153,15 +156,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 reg.code
               );
             }
-          } else {
-            // All registrations were expired. Record the webhook event to avoid unprocessed state
-            await prisma.stripeWebhookEvent.create({
-              data: {
-                id: event.id,
-                type: event.type
-              }
-            });
-            eventStored = true;
           }
         }
 
@@ -175,12 +169,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
 
           if (seatIds.length > 0) {
             await prisma.$transaction(async (tx) => {
-              const duplicate = await tx.stripeWebhookEvent.findUnique({
-                where: { id: event.id }
-              });
-              if (duplicate) return;
-
-              // Confirm/upsert seats as SOLD
               for (const seatId of seatIds) {
                 await tx.theaterSeatReservation.upsert({
                   where: { eventId_seatId: { eventId, seatId } },
@@ -189,10 +177,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 });
               }
 
-              // Calculate price and fee
               const totalAmount = Number(session.amount_total || 0) / 100;
               
-              // Resolve platform fee
               let feeVal = 0;
               if (session.application_fee_amount) {
                 feeVal = Number(session.application_fee_amount) / 100;
@@ -202,7 +188,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 feeVal = totalAmount * (feePercentage / 100);
               }
 
-              // Log FinancialTransaction for auditing
               await tx.financialTransaction.create({
                 data: {
                   tenantId,
@@ -217,16 +202,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                   stripeChargeId: stripeChargeId
                 }
               });
-
-              await tx.stripeWebhookEvent.create({
-                data: {
-                  id: event.id,
-                  type: event.type
-                }
-              });
             });
 
-            eventStored = true;
             console.log(`[Webhook] Theater seats ${seatIds.join(", ")} SOLD!`);
           }
         }
@@ -240,9 +217,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const fee = Number(order.platformFee || 0);
 
           await prisma.$transaction(async (tx) => {
-            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
-            if (duplicate) return;
-
             const finTx = await tx.financialTransaction.create({
               data: {
                 tenantId: order.tenantId,
@@ -262,16 +236,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               where: { id: order.id },
               data: { status: "PAID", financialTransactionId: finTx.id }
             });
-
-            await tx.stripeWebhookEvent.create({
-              data: {
-                id: event.id,
-                type: event.type
-              }
-            });
           });
 
-          eventStored = true;
           console.log(`[Webhook] Order ${order.id} PAID!`);
         }
 
@@ -285,9 +251,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const tenantId = transaction.conversation.accessibilityProvider.tenantId;
 
           await prisma.$transaction(async (tx) => {
-            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
-            if (duplicate) return;
-
             let finTxId: string | undefined;
             if (tenantId) {
               const tenant = await tx.tenant.findUnique({
@@ -318,16 +281,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               where: { id: transaction.id },
               data: { status: "PAID", paidAt: new Date(), financialTransactionId: finTxId }
             });
-
-            await tx.stripeWebhookEvent.create({
-              data: {
-                id: event.id,
-                type: event.type
-              }
-            });
           });
 
-          eventStored = true;
           console.log(`[Webhook] Service Transaction ${transaction.id} PAID!`);
         }
 
@@ -340,9 +295,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const tenantId = execution.tenantId;
 
           await prisma.$transaction(async (tx) => {
-            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
-            if (duplicate) return;
-
             let finTxId: string | undefined;
             if (tenantId) {
               const tenant = await tx.tenant.findUnique({
@@ -370,16 +322,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               where: { id: execution.id },
               data: { status: "PAID", financialTransactionId: finTxId }
             });
-
-            await tx.stripeWebhookEvent.create({
-              data: {
-                id: event.id,
-                type: event.type
-              }
-            });
           });
 
-          eventStored = true;
           console.log(`[Webhook] Accessibility Execution ${execution.id} PAID!`);
         }
 
@@ -392,9 +336,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const fee = Number(donation.platformFee || 0);
           
           await prisma.$transaction(async (tx) => {
-            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
-            if (duplicate) return;
-
             const finTx = await tx.financialTransaction.create({
               data: {
                 tenantId: donation.tenantId,
@@ -411,16 +352,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               where: { id: donation.id },
               data: { status: "COMPLETED", financialTransactionId: finTx.id }
             });
-
-            await tx.stripeWebhookEvent.create({
-              data: {
-                id: event.id,
-                type: event.type
-              }
-            });
           });
 
-          eventStored = true;
           console.log(`[Webhook] Donation ${donation.id} COMPLETED!`);
         }
 
@@ -432,9 +365,6 @@ router.post("/stripe", async (req: Request, res: Response) => {
           const amount = Number(session.amount_total) / 100;
 
           await prisma.$transaction(async (tx) => {
-            const duplicate = await tx.stripeWebhookEvent.findUnique({ where: { id: event.id } });
-            if (duplicate) return;
-
             const tenant = await tx.tenant.findUnique({
               where: { id: membership.tenantId },
               select: { feePercentage: true }
@@ -461,16 +391,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
               where: { id: membership.id },
               data: { status: "ACTIVE" }
             });
-
-            await tx.stripeWebhookEvent.create({
-              data: {
-                id: event.id,
-                type: event.type
-              }
-            });
           });
 
-          eventStored = true;
           console.log(`[Webhook] Membership ${membership.id} activated!`);
         }
         break;
@@ -480,9 +402,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
       case "customer.subscription.updated": {
         const subscription = event.data.object as any;
         const customerId = subscription.customer as string;
-        const status = subscription.status; // active, past_due, canceled, etc.
+        const status = subscription.status;
 
-        // Update Provider Subscription Status
         const provider = await prisma.accessibilityProvider.findFirst({
           where: { stripeCustomerId: customerId }
         });
@@ -521,31 +442,11 @@ router.post("/stripe", async (req: Request, res: Response) => {
         break;
       }
 
-      /*
-      case "donation.succeeded": {
-        // @ts-ignore
-        const session = event.data.object as any;
-        const donation = await prisma.donation.findFirst({
-            where: { stripePaymentIntentId: session.id }
-        });
-        if (donation && donation.status === "PENDING") {
-            await prisma.donation.update({
-                where: { id: donation.id },
-                data: { status: "COMPLETED" }
-            });
-            console.log(`[Webhook] Donation ${donation.id} COMPLETED!`);
-        }
-        break;
-      }
-      */
-
-      // Salva chargeback no banco para consulta em /financial/chargebacks
       case "charge.dispute.created":
       case "charge.dispute.updated": {
         const dispute = event.data.object as any;
         const chargeId = dispute.charge as string;
 
-        // Tenta encontrar o tenant pelo charge
         const finTx = await prisma.financialTransaction.findFirst({
           where: { stripeChargeId: chargeId }
         });
@@ -581,18 +482,59 @@ router.post("/stripe", async (req: Request, res: Response) => {
         console.log(`[Webhook] Chargeback ${dispute.id} salvo no banco (status=${dispute.status})`);
         break;
       }
+
+      case "charge.refunded": {
+        const charge = event.data.object as any;
+        const refunds = charge.refunds?.data || [];
+        for (const stripeRefund of refunds) {
+          if (stripeRefund.status === "succeeded") {
+            const localRefundId = stripeRefund.metadata?.localRefundId;
+            const stripeRefundId = stripeRefund.id;
+
+            let localRefund = null;
+            if (localRefundId) {
+              localRefund = await prisma.refund.findUnique({ where: { id: localRefundId } });
+            } else if (stripeRefundId) {
+              localRefund = await prisma.refund.findUnique({ where: { stripeRefundId } });
+            }
+
+            if (localRefund && localRefund.status === "PENDING") {
+              await prisma.$transaction(async (txPrisma) => {
+                await applyRefundSuccess(
+                  txPrisma,
+                  localRefund.id,
+                  stripeRefundId,
+                  localRefund.transactionId,
+                  Number(localRefund.amount),
+                  localRefund.tenantId,
+                  localRefund.registrationId,
+                  localRefund.orderId
+                );
+              });
+              console.log(`[Webhook] Consolidado reembolso local ${localRefund.id} (Stripe ID=${stripeRefundId})`);
+            }
+          }
+        }
+        break;
+      }
     }
 
-    if (!eventStored) {
-      await prisma.stripeWebhookEvent.create({
-        data: {
-          id: event.id,
-          type: event.type
-        }
-      });
-    };
+    // Update lock status to PROCESSED
+    await prisma.stripeWebhookEvent.update({
+      where: { id: event.id },
+      data: { status: "PROCESSED" }
+    });
+
   } catch (err) {
     console.error(`[Stripe Webhook Processing Error]:`, err);
+    try {
+      await prisma.stripeWebhookEvent.update({
+        where: { id: event.id },
+        data: { status: "FAILED" }
+      });
+    } catch (dbErr) {
+      console.error("Failed to mark webhook as FAILED:", dbErr);
+    }
     return res.status(500).send("Internal Server Error");
   }
 

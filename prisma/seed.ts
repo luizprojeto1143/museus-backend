@@ -27,6 +27,11 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
+    if (process.env.NODE_ENV === "production" && process.env.I_AM_SURE_RESET_PRODUCTION !== "true") {
+        console.error("❌ ERRO CRÍTICO: Execução de seed bloqueada em ambiente de produção!");
+        console.error("Para executar, defina a variável de ambiente: I_AM_SURE_RESET_PRODUCTION=true");
+        process.exit(1);
+    }
     console.log("🌱 Iniciando seed...");
 
     // 1. Criar Tenant Padrão (Museu Demo) se não existir
@@ -87,7 +92,7 @@ async function main() {
                 tenantId: tenant.id
             }
         });
-        console.log("🔑 Usuário Master criado! Email: admin@museu.com / Senha: [ver vari�vel DEFAULT_PASSWORD ou Museu$2026!]");
+        console.log("🔑 Usuário Master criado! Email: admin@museu.com / Senha: [ver vari�vel DEFAULT_PASSWORD ou Museu$2026!]");
     } else {
         console.log("✓ Usuário Master já existe.");
     }
@@ -109,7 +114,7 @@ async function main() {
                 tenantId: tenant.id
             }
         });
-        console.log("🔑 Usuário Admin Demo criado! Email: demo@museu.com / Senha: [ver vari�vel DEFAULT_PASSWORD ou Museu$2026!]");
+        console.log("🔑 Usuário Admin Demo criado! Email: demo@museu.com / Senha: [ver vari�vel DEFAULT_PASSWORD ou Museu$2026!]");
     } else {
         console.log("✓ Usuário Admin Demo já existe.");
     }

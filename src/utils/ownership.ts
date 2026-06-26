@@ -15,7 +15,10 @@ export async function checkEntityOwnership(
     | 'volunteer'
     | 'volunteerShift'
     | 'schoolVisit'
-    | 'postVisitActivity',
+    | 'postVisitActivity'
+    | 'intangibleHeritage'
+    | 'pPAGoal'
+    | 'badgeRequest',
   id: string,
   user: { id: string; role: Role; tenantId?: string | null }
 ): Promise<{ success: boolean; record?: any; status: number; message: string }> {

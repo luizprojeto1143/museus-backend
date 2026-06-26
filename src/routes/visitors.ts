@@ -462,30 +462,37 @@ router.post("/visit-from-qr", async (req, res) => {
     }
 
     let finalCode = code;
+    const isProduction = process.env.NODE_ENV === "production";
+    const parts = code.split('.');
 
-    if (code.includes('.')) {
-      const parts = code.split('.');
-      if (parts.length === 3) {
-        const [realCode, timestampStr, signature] = parts;
-        const timestamp = parseInt(timestampStr, 10);
-        
-        // 1. Check expiration (5 minutes = 300,000 ms)
-        const nowMs = Date.now();
-        if (isNaN(timestamp) || Math.abs(nowMs - timestamp) > 5 * 60 * 1000) {
-          return res.status(400).json({ message: "QR Code expirado ou horário do dispositivo inválido." });
-        }
-        
-        // 2. Validate HMAC signature
-        const GAME_SECRET = process.env.GAME_SECRET || "default_game_secret_key_minimum_length_32_characters";
-        const hmac = crypto.createHmac("sha256", GAME_SECRET);
-        hmac.update(`${realCode}.${timestampStr}`);
-        const expectedSignature = hmac.digest("hex");
-        
-        if (signature !== expectedSignature) {
-          return res.status(400).json({ message: "Assinatura do QR Code inválida." });
-        }
-        
-        finalCode = realCode;
+    if (parts.length === 3) {
+      const [realCode, timestampStr, signature] = parts;
+      const timestamp = parseInt(timestampStr, 10);
+      
+      // 1. Check expiration (5 minutes = 300,000 ms)
+      const nowMs = Date.now();
+      if (isNaN(timestamp) || Math.abs(nowMs - timestamp) > 5 * 60 * 1000) {
+        return res.status(400).json({ message: "QR Code expirado ou horário do dispositivo inválido." });
+      }
+      
+      // 2. Validate HMAC signature
+      const GAME_SECRET = process.env.GAME_SECRET;
+      if (!GAME_SECRET && isProduction) {
+        return res.status(500).json({ message: "GAME_SECRET não configurado no servidor." });
+      }
+      const secretKey = GAME_SECRET || "default_game_secret_key_minimum_length_32_characters";
+      const hmac = crypto.createHmac("sha256", secretKey);
+      hmac.update(`${realCode}.${timestampStr}`);
+      const expectedSignature = hmac.digest("hex");
+      
+      if (signature !== expectedSignature) {
+        return res.status(400).json({ message: "Assinatura do QR Code inválida." });
+      }
+      
+      finalCode = realCode;
+    } else {
+      if (isProduction) {
+        return res.status(400).json({ message: "QR Code inválido. Em produção, a assinatura é obrigatória." });
       }
     }
 

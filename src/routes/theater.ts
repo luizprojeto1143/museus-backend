@@ -7,6 +7,44 @@ import { checkEntityOwnership } from "../utils/ownership.js";
 
 const router = Router();
 
+function isSeatValidInLayout(seatId: string, layout: any): boolean {
+    if (!layout) return true; // se não houver layout configurado, assume válido como fallback
+    
+    // Se for um array de strings ou objetos
+    if (Array.isArray(layout)) {
+        return layout.some(item => {
+            if (typeof item === 'string') return item === seatId;
+            if (item && typeof item === 'object') return item.id === seatId || item.seatId === seatId;
+            return false;
+        });
+    }
+    
+    // Se for um objeto com a chave seats ou rows
+    if (typeof layout === 'object') {
+        if (Array.isArray(layout.seats)) {
+            return layout.seats.some((item: any) => {
+                if (typeof item === 'string') return item === seatId;
+                if (item && typeof item === 'object') return item.id === seatId || item.seatId === seatId;
+                return false;
+            });
+        }
+        if (Array.isArray(layout.rows)) {
+            return layout.rows.some((row: any) => {
+                if (row && Array.isArray(row.seats)) {
+                    return row.seats.some((item: any) => {
+                        if (typeof item === 'string') return item === seatId;
+                        if (item && typeof item === 'object') return item.id === seatId || item.seatId === seatId;
+                        return false;
+                    });
+                }
+                return false;
+            });
+        }
+    }
+    
+    return true;
+}
+
 router.use(authMiddleware, requireRole([Role.TEATRO, Role.ADMIN, Role.MASTER]));
 
 // List Theater Sessions
@@ -81,7 +119,20 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
             return res.status(404).json({ message: "Sessão não encontrada" });
         }
 
-        const { seatIds } = z.object({ seatIds: z.array(z.string()) }).parse(req.body);
+        const { seatIds } = z.object({ seatIds: z.array(z.string()).min(1, "Selecione pelo menos um assento") }).parse(req.body);
+
+        // Validar assentos contra layout
+        if (session.spaceId) {
+            const space = await prisma.space.findUnique({ where: { id: session.spaceId } });
+            if (space && space.theaterLayout) {
+                const layout = space.theaterLayout;
+                for (const seatId of seatIds) {
+                    if (!isSeatValidInLayout(seatId, layout)) {
+                        return res.status(400).json({ message: `Assento ${seatId} não existe no mapa da sala` });
+                    }
+                }
+            }
+        }
 
         // Transaction to prevent overbooking
         const result = await prisma.$transaction(async (tx) => {
@@ -139,10 +190,23 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
         }
 
         const { seatIds, paymentMethod, visitorId } = z.object({
-            seatIds: z.array(z.string()),
+            seatIds: z.array(z.string()).min(1, "Selecione pelo menos um assento"),
             paymentMethod: z.string(),
             visitorId: z.string().optional()
         }).parse(req.body);
+
+        // Validar assentos contra layout
+        if (session.spaceId) {
+            const space = await prisma.space.findUnique({ where: { id: session.spaceId } });
+            if (space && space.theaterLayout) {
+                const layout = space.theaterLayout;
+                for (const seatId of seatIds) {
+                    if (!isSeatValidInLayout(seatId, layout)) {
+                        return res.status(400).json({ message: `Assento ${seatId} não existe no mapa da sala` });
+                    }
+                }
+            }
+        }
 
         const result = await prisma.$transaction(async (tx) => {
             // Clean up expired reservations first
@@ -328,8 +392,36 @@ router.get("/analytics", authMiddleware, async (req, res) => {
             where: { eventId: { in: sessionIds }, status: "SOLD" }
         });
 
-        // Simplified revenue calculation
-        const revenue = soldSeats * 100; // Placeholder for real price aggregation
+        // Dynamic revenue calculation from FinancialTransaction with source="THEATER"
+        const txs = await prisma.financialTransaction.findMany({
+            where: {
+                tenantId,
+                source: "THEATER",
+                status: { in: ["COMPLETED", "PARTIALLY_REFUNDED", "REFUNDED"] }
+            }
+        });
+        const txIds = txs.map(tx => tx.id);
+
+        const completedRefunds = await prisma.refund.findMany({
+            where: {
+                transactionId: { in: txIds },
+                status: "COMPLETED"
+            }
+        });
+
+        // Map refunds to their transaction IDs
+        const refundMap: Record<string, number> = {};
+        for (const r of completedRefunds) {
+            const txId = r.transactionId;
+            refundMap[txId] = (refundMap[txId] || 0) + Number(r.amount);
+        }
+
+        let revenue = 0;
+        for (const tx of txs) {
+            const amount = Number(tx.amount);
+            const refunded = refundMap[tx.id] || 0;
+            revenue += Math.max(0, amount - refunded);
+        }
 
         return res.json({
             totalTickets: soldSeats,

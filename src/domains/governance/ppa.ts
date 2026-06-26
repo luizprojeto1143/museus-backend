@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
+import { checkEntityOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -41,6 +42,9 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.patch('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const ownership = await checkEntityOwnership('pPAGoal', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
         const { currentValue, status } = req.body;
         const goal = await prisma.pPAGoal.update({
             where: { id },
@@ -59,7 +63,11 @@ router.patch('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (re
 // DELETE /ppa/:id
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        await prisma.pPAGoal.delete({ where: { id: req.params.id } });
+        const { id } = req.params;
+        const ownership = await checkEntityOwnership('pPAGoal', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
+        await prisma.pPAGoal.delete({ where: { id } });
         res.json({ message: 'Meta excluída' });
     } catch (error) {
         console.error(error);

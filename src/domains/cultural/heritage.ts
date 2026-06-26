@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
+import { checkEntityOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -39,9 +40,13 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 // PUT /heritage/:id
 router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
+        const { id } = req.params;
+        const ownership = await checkEntityOwnership('intangibleHeritage', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
         const { title, description, category, status, imageUrl, videoUrl, holders, region } = req.body;
         const item = await prisma.intangibleHeritage.update({
-            where: { id: req.params.id },
+            where: { id },
             data: { title, description, category, status, imageUrl, videoUrl, holders, region }
         });
         res.json(item);
@@ -54,7 +59,11 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
 // DELETE /heritage/:id
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        await prisma.intangibleHeritage.delete({ where: { id: req.params.id } });
+        const { id } = req.params;
+        const ownership = await checkEntityOwnership('intangibleHeritage', id, req.user!);
+        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+
+        await prisma.intangibleHeritage.delete({ where: { id } });
         res.json({ message: 'Excluído' });
     } catch (error) {
         console.error(error);

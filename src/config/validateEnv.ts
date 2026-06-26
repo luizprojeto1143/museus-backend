@@ -38,23 +38,35 @@ export function validateEnv(): void {
         }
     }
 
-    // In production, require critical Stripe variables and frontend URL to avoid runtime payment failures
+    // In production, require critical variables
     if (isProduction) {
-        const paymentsDisabled = process.env.PAYMENTS_DISABLED === "true";
-        const prodRequired = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_SPONSOR_WEBHOOK_SECRET", "FRONTEND_URL"];
+        const prodRequiredAlways = ["FRONTEND_URL", "GAME_SECRET"];
+        for (const varName of prodRequiredAlways) {
+            if (!process.env[varName]) {
+                missing.push(varName);
+            }
+        }
+
+        const billingMode = process.env.BILLING_MODE || (process.env.PAYMENTS_DISABLED === "true" ? "disabled" : "live");
+        const paymentsDisabled = billingMode === "disabled";
         
-        if (!paymentsDisabled) {
-            for (const varName of prodRequired) {
+        if (billingMode === "live") {
+            const stripeRequired = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_SPONSOR_WEBHOOK_SECRET"];
+            for (const varName of stripeRequired) {
                 if (!process.env[varName]) {
                     missing.push(varName);
                 }
             }
         } else {
-            console.log("ℹ️ Payments/Stripe integration is disabled via PAYMENTS_DISABLED=true. Skipping boot checks for Stripe keys.");
+            console.log(`ℹ️ Billing/Stripe is set to "${billingMode}". Skipping boot checks for Stripe keys.`);
         }
         
         for (const varName of PRODUCTION_RECOMMENDED_ENV_VARS) {
-            if (!prodRequired.includes(varName) && !process.env[varName]) {
+            const isStripeVar = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_SPONSOR_WEBHOOK_SECRET"].includes(varName);
+            if (isStripeVar && paymentsDisabled) continue;
+            if (prodRequiredAlways.includes(varName)) continue;
+            
+            if (!process.env[varName]) {
                 console.warn(`⚠️  WARNING: Production environment variable "${varName}" is missing. Some features/integrations will be disabled.`);
             }
         }

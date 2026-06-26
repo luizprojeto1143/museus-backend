@@ -386,174 +386,229 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
     return res.status(400).json({ message: `Montante solicitado excede o saldo restante reembolsável. Saldo restante: R$ ${remainingRefundable.toFixed(2)}` });
   }
 
+  // 2. Registrar reembolso local temporário como PENDING para evitar double-request no banco
+  const pendingRefund = await prisma.refund.create({
+    data: {
+      transactionId: tx.id,
+      tenantId,
+      amount:        requestedAmount,
+      reason:        parse.data.reason || 'requested_by_customer',
+      status:        'PENDING',
+      registrationId: parse.data.registrationId || null,
+      orderId:        parse.data.orderId || null
+    }
+  });
+
   try {
-    // 2. Emitir refund no Stripe
     const refundAmountCents = Math.round(requestedAmount * 100);
     const stripeRefund = await stripe.refunds.create({
       ...(tx.stripeChargeId
         ? { charge: tx.stripeChargeId }
         : { payment_intent: tx.stripePaymentIntentId! }),
       amount: refundAmountCents,
-      reason: (parse.data.reason || 'requested_by_customer') as any
+      reason: (parse.data.reason || 'requested_by_customer') as any,
+      metadata: { localRefundId: pendingRefund.id }
+    }, {
+      idempotencyKey: `refund-${pendingRefund.id}`
     });
 
-    const refundedAmount = stripeRefund.amount / 100;
-
-    // 3. Registrar no banco em transação atômica
-    const refundRecord = await prisma.$transaction(async (txPrisma) => {
-      const createdRefund = await txPrisma.refund.create({
-        data: {
-          transactionId: tx.id,
+    if (stripeRefund.status === 'succeeded') {
+      const refundRecord = await prisma.$transaction(async (txPrisma) => {
+        await applyRefundSuccess(
+          txPrisma,
+          pendingRefund.id,
+          stripeRefund.id,
+          tx.id,
+          requestedAmount,
           tenantId,
-          amount:        refundedAmount,
-          reason:        parse.data.reason || 'requested_by_customer',
-          status:        stripeRefund.status === 'succeeded' ? 'COMPLETED' : 'PENDING',
-          stripeRefundId: stripeRefund.id,
-          registrationId: parse.data.registrationId || null,
-          orderId:        parse.data.orderId || null
-        }
+          parse.data.registrationId || null,
+          parse.data.orderId || null
+        );
+        return txPrisma.refund.findUnique({ where: { id: pendingRefund.id } });
       });
 
-      // Calcular o montante total reembolsado
-      const allCompletedRefunds = await txPrisma.refund.findMany({
-        where: { transactionId: tx.id, status: 'COMPLETED' }
+      return res.json({
+        message: 'Reembolso processado com sucesso',
+        refund: refundRecord,
+        stripeRefundId: stripeRefund.id,
+        stripeStatus: stripeRefund.status
+      });
+    } else {
+      const refundRecord = await prisma.refund.update({
+        where: { id: pendingRefund.id },
+        data: { stripeRefundId: stripeRefund.id }
       });
 
-      const totalRefunded = allCompletedRefunds.reduce((sum, r) => sum + Number(r.amount), 0);
-      const isFullRefund = totalRefunded >= Number(tx.amount) - 0.01;
-      
-      const finalTxStatus = isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
-      const pendingStatus = isFullRefund ? 'REFUND_PENDING' : 'PARTIAL_REFUND_PENDING';
-
-      // Atualizar status da transação financeira
-      await txPrisma.financialTransaction.update({
-        where: { id: tx.id },
-        data: {
-          status: stripeRefund.status === 'succeeded' ? finalTxStatus : pendingStatus
-        }
+      return res.json({
+        message: 'Reembolso pendente (processando no Stripe)',
+        refund: refundRecord,
+        stripeRefundId: stripeRefund.id,
+        stripeStatus: stripeRefund.status
       });
-
-      // 4. Update the related source objects
-      if (stripeRefund.status === 'succeeded') {
-        if (isFullRefund) {
-          // A. Registrations (Tickets)
-          const registrations = await txPrisma.registration.findMany({
-            where: { financialTransactionId: tx.id }
-          });
-          for (const reg of registrations) {
-            await txPrisma.registration.update({
-              where: { id: reg.id },
-              data: { status: "CANCELED" }
-            });
-            // Decrement ticket sold count
-            await txPrisma.ticket.update({
-              where: { id: reg.ticketId },
-              data: { sold: { decrement: 1 } }
-            });
-          }
-
-          // B. Orders
-          await txPrisma.order.updateMany({
-            where: { financialTransactionId: tx.id },
-            data: { status: "REFUNDED" }
-          });
-
-          // C. Donations
-          await txPrisma.donation.updateMany({
-            where: { financialTransactionId: tx.id },
-            data: { status: "REFUNDED" }
-          });
-
-          // D. Transactions (Chat)
-          await txPrisma.transaction.updateMany({
-            where: { financialTransactionId: tx.id },
-            data: { status: "REFUNDED" }
-          });
-
-          // E. Memberships
-          if (tx.stripePaymentIntentId) {
-            await txPrisma.membership.updateMany({
-              where: { paymentId: tx.stripePaymentIntentId },
-              data: { status: "CANCELLED", cancelledAt: new Date() }
-            });
-          }
-        } else {
-          // Reembolso parcial
-          if (parse.data.registrationId) {
-            const reg = await txPrisma.registration.findUnique({
-              where: { id: parse.data.registrationId }
-            });
-            if (reg && reg.status !== "CANCELED") {
-              await txPrisma.registration.update({
-                where: { id: reg.id },
-                data: { status: "CANCELED" }
-              });
-              await txPrisma.ticket.update({
-                where: { id: reg.ticketId },
-                data: { sold: { decrement: 1 } }
-              });
-            }
-          }
-
-          if (parse.data.orderId) {
-            await txPrisma.order.update({
-              where: { id: parse.data.orderId },
-              data: { status: "PARTIALLY_REFUNDED" }
-            });
-          }
-
-          // Reembolso parcial genérico: cancela inscrições de forma proporcional
-          if (!parse.data.registrationId && !parse.data.orderId) {
-            const registrations = await txPrisma.registration.findMany({
-              where: { financialTransactionId: tx.id, status: { not: "CANCELED" } }
-            });
-            let amountToCancel = refundedAmount;
-            for (const reg of registrations) {
-              const regPrice = Number(reg.pricePaid);
-              if (amountToCancel >= regPrice - 0.01) {
-                await txPrisma.registration.update({
-                  where: { id: reg.id },
-                  data: { status: "CANCELED" }
-                });
-                await txPrisma.ticket.update({
-                  where: { id: reg.ticketId },
-                  data: { sold: { decrement: 1 } }
-                });
-                amountToCancel -= regPrice;
-              }
-            }
-
-            await txPrisma.order.updateMany({
-              where: { financialTransactionId: tx.id },
-              data: { status: "PARTIALLY_REFUNDED" }
-            });
-
-            await txPrisma.donation.updateMany({
-              where: { financialTransactionId: tx.id },
-              data: { status: "PARTIALLY_REFUNDED" }
-            });
-          }
-        }
-      }
-
-      return createdRefund;
-    });
-
-    return res.json({
-      message: 'Reembolso processado com sucesso',
-      refund: refundRecord,
-      stripeRefundId: stripeRefund.id,
-      stripeStatus: stripeRefund.status
-    });
+    }
 
   } catch (err: any) {
     console.error('[Financial] Erro ao emitir refund:', err);
+    try {
+      await prisma.refund.update({
+        where: { id: pendingRefund.id },
+        data: { status: 'FAILED' }
+      });
+    } catch (dbErr) {
+      console.error('[Financial] Erro ao marcar refund como FAILED:', dbErr);
+    }
     return res.status(500).json({
       message: 'Erro ao processar reembolso no Stripe',
       detail: err?.message
     });
   }
 });
+
+// Helper de consolidação de Reembolso bem-sucedido
+export async function applyRefundSuccess(
+  txPrisma: any,
+  refundId: string,
+  stripeRefundId: string,
+  transactionId: string,
+  refundedAmount: number,
+  tenantId: string,
+  registrationId: string | null,
+  orderId: string | null
+) {
+  // 1. Atualizar o reembolso local para concluído
+  await txPrisma.refund.update({
+    where: { id: refundId },
+    data: {
+      status: 'COMPLETED',
+      stripeRefundId
+    }
+  });
+
+  // 2. Calcular o montante total reembolsado
+  const allCompletedRefunds = await txPrisma.refund.findMany({
+    where: { transactionId, status: 'COMPLETED' }
+  });
+
+  const totalRefunded = allCompletedRefunds.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
+  
+  const tx = await txPrisma.financialTransaction.findUnique({
+    where: { id: transactionId }
+  });
+  if (!tx) throw new Error(`Transaction ${transactionId} not found`);
+
+  const isFullRefund = totalRefunded >= Number(tx.amount) - 0.01;
+  const finalTxStatus = isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+
+  // Atualizar status da transação financeira
+  await txPrisma.financialTransaction.update({
+    where: { id: transactionId },
+    data: {
+      status: finalTxStatus
+    }
+  });
+
+  // 3. Atualizar os objetos relacionados
+  if (isFullRefund) {
+    // A. Registrations (Tickets)
+    const registrations = await txPrisma.registration.findMany({
+      where: { financialTransactionId: transactionId }
+    });
+    for (const reg of registrations) {
+      if (reg.status !== "CANCELED") {
+        await txPrisma.registration.update({
+          where: { id: reg.id },
+          data: { status: "CANCELED" }
+        });
+        await txPrisma.ticket.update({
+          where: { id: reg.ticketId },
+          data: { sold: { decrement: 1 } }
+        });
+      }
+    }
+
+    // B. Orders
+    await txPrisma.order.updateMany({
+      where: { financialTransactionId: transactionId },
+      data: { status: "REFUNDED" }
+    });
+
+    // C. Donations
+    await txPrisma.donation.updateMany({
+      where: { financialTransactionId: transactionId },
+      data: { status: "REFUNDED" }
+    });
+
+    // D. Transactions (Chat)
+    await txPrisma.transaction.updateMany({
+      where: { financialTransactionId: transactionId },
+      data: { status: "REFUNDED" }
+    });
+
+    // E. Memberships
+    if (tx.stripePaymentIntentId) {
+      await txPrisma.membership.updateMany({
+        where: { paymentId: tx.stripePaymentIntentId },
+        data: { status: "CANCELLED", cancelledAt: new Date() }
+      });
+    }
+  } else {
+    // Reembolso parcial
+    if (registrationId) {
+      const reg = await txPrisma.registration.findUnique({
+        where: { id: registrationId }
+      });
+      if (reg && reg.status !== "CANCELED") {
+        await txPrisma.registration.update({
+          where: { id: reg.id },
+          data: { status: "CANCELED" }
+        });
+        await txPrisma.ticket.update({
+          where: { id: reg.ticketId },
+          data: { sold: { decrement: 1 } }
+        });
+      }
+    }
+
+    if (orderId) {
+      await txPrisma.order.update({
+        where: { id: orderId },
+        data: { status: "PARTIALLY_REFUNDED" }
+      });
+    }
+
+    // Reembolso parcial genérico: cancela inscrições de forma proporcional
+    if (!registrationId && !orderId) {
+      const registrations = await txPrisma.registration.findMany({
+        where: { financialTransactionId: transactionId, status: { not: "CANCELED" } }
+      });
+      let amountToCancel = refundedAmount;
+      for (const reg of registrations) {
+        const regPrice = Number(reg.pricePaid);
+        if (amountToCancel >= regPrice - 0.01) {
+          await txPrisma.registration.update({
+            where: { id: reg.id },
+            data: { status: "CANCELED" }
+          });
+          await txPrisma.ticket.update({
+            where: { id: reg.ticketId },
+            data: { sold: { decrement: 1 } }
+          });
+          amountToCancel -= regPrice;
+        }
+      }
+
+      await txPrisma.order.updateMany({
+        where: { financialTransactionId: transactionId },
+        data: { status: "PARTIALLY_REFUNDED" }
+      });
+
+      await txPrisma.donation.updateMany({
+        where: { financialTransactionId: transactionId },
+        data: { status: "PARTIALLY_REFUNDED" }
+      });
+    }
+  }
+}
 
 // ==========================================
 // GET /financial/refunds

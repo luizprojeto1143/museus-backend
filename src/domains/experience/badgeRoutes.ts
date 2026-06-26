@@ -3,6 +3,7 @@ import { prisma } from "../../prisma.js";
 import { authMiddleware as authenticate, requireRole as authorize } from "../../middleware/auth.js";
 import { emailService } from "../../services/EmailService.js";
 import { BadgeService } from "../../services/badgeService.js";
+import { checkEntityOwnership } from "../../utils/ownership.js";
 
 const router = Router();
 
@@ -130,6 +131,9 @@ router.put("/:id/status", authenticate, authorize(["MASTER"]), async (req, res) 
 // I4: GET /badges/:id/print — Gera o crachá físico (PDF) para impressão profissional
 router.get("/:id/print", authenticate, authorize(["MASTER", "ADMIN"]), async (req, res) => {
   try {
+    const check = await checkEntityOwnership('badgeRequest', req.params.id, req.user!);
+    if (!check.success) return res.status(check.status).json({ error: check.message });
+
     const pdfBuffer = await BadgeService.generatePDF(req.params.id);
     
     res.setHeader('Content-Type', 'application/pdf');

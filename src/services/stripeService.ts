@@ -11,7 +11,8 @@ export const stripe = new Stripe(STRIPE_SECRET_KEY, {
     apiVersion: '2025-01-27' as any, // Updated to latest stable for current SDK
 });
 
-const PAYMENTS_DISABLED = process.env.PAYMENTS_DISABLED === "true";
+const BILLING_MODE = process.env.BILLING_MODE || (process.env.PAYMENTS_DISABLED === "true" ? "disabled" : "live");
+const PAYMENTS_DISABLED = BILLING_MODE === "disabled";
 
 function checkPaymentsEnabled() {
     if (PAYMENTS_DISABLED) {
