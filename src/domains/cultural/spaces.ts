@@ -4,6 +4,7 @@ import { authMiddleware, requireRole } from "../../middleware/auth.js";
 import { Role, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { validate } from "../../middleware/validate.js";
+import { checkEntityOwnership } from "../../utils/ownership.js";
 
 const router = Router();
 
@@ -95,9 +96,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         const user = req.user!;
         const { name, description, capacity, type, resources, isBookable, imageUrl } = req.body;
 
-        // Verify ownership
-        const existing = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId as string } });
-        if (!existing) return res.status(404).json({ message: "Espaço não encontrado" });
+        const check = await checkEntityOwnership('space', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ message: check.message });
 
         const space = await prisma.space.update({
             where: { id },
@@ -125,11 +125,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
     try {
         const { id } = req.params;
-        const user = req.user!;
-
-        // Verify ownership
-        const existing = await prisma.space.findFirst({ where: { id, tenantId: user.tenantId as string } });
-        if (!existing) return res.status(404).json({ message: "Espaço não encontrado" });
+        const check = await checkEntityOwnership('space', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ message: check.message });
 
         await prisma.space.delete({ where: { id } });
         return res.status(204).send();

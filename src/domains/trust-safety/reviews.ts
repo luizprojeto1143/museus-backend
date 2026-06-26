@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
 import { z } from 'zod';
+import { checkEntityOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -105,6 +106,8 @@ router.post('/', authMiddleware, async (req, res) => {
 router.patch('/:id/approve', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const check = await checkEntityOwnership('review', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ message: check.message });
 
         const review = await prisma.review.update({
             where: { id },
@@ -125,6 +128,16 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         const user = req.user!;
         const { tenantId } = req.query;
 
+        // If privileged (ADMIN/MASTER), use central checkEntityOwnership to validate tenant isolation
+        if (['ADMIN', 'MASTER'].includes(user.role || '')) {
+            const check = await checkEntityOwnership('review', id, user);
+            if (!check.success) return res.status(check.status).json({ message: check.message });
+
+            await prisma.review.delete({ where: { id } });
+            return res.json({ message: 'Avaliação removida' });
+        }
+
+        // For visitors, check ownership by matching visitor ID
         const review = await prisma.review.findUnique({
             where: { id },
             include: { work: { select: { tenantId: true } } }
@@ -134,13 +147,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'Avaliação não encontrada' });
         }
 
-        // Admin/Master can always delete
-        if (['ADMIN', 'MASTER'].includes(user.role || '')) {
-            await prisma.review.delete({ where: { id } });
-            return res.json({ message: 'Avaliação removida' });
-        }
-
-        // Find visitor to check ownership
         const reviewTenantId = tenantId as string || review.work?.tenantId;
         const visitor = await prisma.visitor.findFirst({
             where: { email: user.email.toLowerCase(), tenantId: reviewTenantId }

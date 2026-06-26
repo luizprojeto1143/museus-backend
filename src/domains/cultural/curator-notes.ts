@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
 import { z } from 'zod';
+import { checkEntityOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -105,6 +106,9 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const check = await checkEntityOwnership('curatorNote', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ message: check.message });
+
         const { content, author, pinned } = req.body;
 
         const note = await prisma.curatorNote.update({
@@ -127,6 +131,9 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
+        const check = await checkEntityOwnership('curatorNote', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ message: check.message });
+
         await prisma.curatorNote.delete({ where: { id } });
         res.json({ message: 'Nota excluída' });
     } catch (error) {

@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, softAuthMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { stripe } from "../services/stripeService.js";
+import { syncLedgerEntry } from "../services/ledgerService.js";
 
 const router = Router();
 
@@ -316,7 +317,7 @@ router.post("/webhook", async (req: Request, res: Response) => {
               const netAmount = amountReceived - platformFee;
 
               // Log FinancialTransaction for auditing
-              await tx.financialTransaction.create({
+              const finTx = await tx.financialTransaction.create({
                 data: {
                   tenantId: work.tenantId,
                   type: "PAYMENT",
@@ -329,6 +330,8 @@ router.post("/webhook", async (req: Request, res: Response) => {
                   stripePaymentIntentId: session.payment_intent as string
                 }
               });
+
+              await syncLedgerEntry(tx, finTx.id);
 
               // Repasse
               let connectAccountId: string | null = null;

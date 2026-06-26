@@ -50,6 +50,11 @@ export function validateEnv(): void {
         const billingMode = process.env.BILLING_MODE || (process.env.PAYMENTS_DISABLED === "true" ? "disabled" : "live");
         const paymentsDisabled = billingMode === "disabled";
         
+        if (process.env.APP_ENV === "production" && paymentsDisabled) {
+            console.error("❌ CRITICAL: Payments cannot be disabled in real production (APP_ENV=production).");
+            process.exit(1);
+        }
+        
         if (billingMode === "live") {
             const stripeRequired = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_SPONSOR_WEBHOOK_SECRET"];
             for (const varName of stripeRequired) {

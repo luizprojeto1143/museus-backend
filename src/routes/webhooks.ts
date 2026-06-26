@@ -3,6 +3,7 @@ import { prisma } from "../prisma.js";
 import { mailService } from "../services/email.js";
 import { stripeService, stripe } from "../services/stripeService.js";
 import { applyRefundSuccess } from "../domains/infrastructure/financial.js";
+import { syncLedgerEntry } from "../services/ledgerService.js";
 
 const router = Router();
 
@@ -133,6 +134,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
                   }
                 });
                 finTxId = finTx.id;
+                await syncLedgerEntry(tx, finTx.id);
               }
 
               await tx.registration.updateMany({
@@ -188,7 +190,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 feeVal = totalAmount * (feePercentage / 100);
               }
 
-              await tx.financialTransaction.create({
+              const finTx = await tx.financialTransaction.create({
                 data: {
                   tenantId,
                   type: "PAYMENT",
@@ -202,6 +204,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
                   stripeChargeId: stripeChargeId
                 }
               });
+              await syncLedgerEntry(tx, finTx.id);
             });
 
             console.log(`[Webhook] Theater seats ${seatIds.join(", ")} SOLD!`);
@@ -231,6 +234,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 stripeChargeId: stripeChargeId
               }
             });
+
+            await syncLedgerEntry(tx, finTx.id);
 
             await tx.order.update({
               where: { id: order.id },
@@ -275,6 +280,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 }
               });
               finTxId = finTx.id;
+              await syncLedgerEntry(tx, finTx.id);
             }
 
             await tx.transaction.update({
@@ -316,6 +322,7 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 }
               });
               finTxId = finTx.id;
+              await syncLedgerEntry(tx, finTx.id);
             }
 
             await tx.accessibilityExecution.update({
@@ -347,6 +354,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 stripeChargeId: stripeChargeId
               }
             });
+
+            await syncLedgerEntry(tx, finTx.id);
 
             await tx.donation.update({
               where: { id: donation.id },
@@ -386,6 +395,8 @@ router.post("/stripe", async (req: Request, res: Response) => {
                 stripeChargeId: stripeChargeId
               }
             });
+
+            await syncLedgerEntry(tx, finTx.id);
 
             await tx.membership.update({
               where: { id: membership.id },

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
+import { checkEntityOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -58,13 +59,10 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.put('/:id/toggle', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.user!.tenantId;
+        const check = await checkEntityOwnership('coupon', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ error: check.message });
 
-        const coupon = await prisma.coupon.findUnique({ where: { id } });
-        if (!coupon || coupon.tenantId !== tenantId) {
-            return res.status(404).json({ error: 'Cupom não encontrado' });
-        }
-
+        const coupon = check.record;
         const updated = await prisma.coupon.update({
             where: { id },
             data: { isActive: !coupon.isActive }
@@ -81,12 +79,8 @@ router.put('/:id/toggle', authMiddleware, requireRole(['ADMIN', 'MASTER']), asyn
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const tenantId = req.user!.tenantId;
-
-        const coupon = await prisma.coupon.findUnique({ where: { id } });
-        if (!coupon || coupon.tenantId !== tenantId) {
-            return res.status(404).json({ error: 'Cupom não encontrado' });
-        }
+        const check = await checkEntityOwnership('coupon', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ error: check.message });
 
         await prisma.coupon.delete({ where: { id } });
         res.status(204).send();

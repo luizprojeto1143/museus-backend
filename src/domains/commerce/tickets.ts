@@ -3,6 +3,7 @@ import { prisma } from '../../prisma.js'; // Use singleton
 import { Role } from '@prisma/client';
 import { z } from 'zod';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
+import { checkEntityOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -119,21 +120,10 @@ router.post('/events/:eventId/tickets', authMiddleware, requireRole(['ADMIN', 'M
 router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     const { id } = req.params;
     try {
+        const check = await checkEntityOwnership('ticket', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ error: check.message });
+
         const data = ticketSchema.partial().parse(req.body);
-
-        // Validate that the ticket belongs to the user's tenant
-        const existing = await prisma.ticket.findUnique({
-            where: { id },
-            include: { event: true }
-        });
-
-        if (!existing) return res.status(404).json({ error: 'Ticket not found' });
-
-        // Verificação strict de tenant
-        const user = req.user!;
-        if (user.role !== 'MASTER' && existing.event.tenantId !== user.tenantId) {
-            return res.status(403).json({ error: 'Sem permissão para editar ticket de outro tenant' });
-        }
 
         const ticket = await prisma.ticket.update({
             where: { id },
@@ -153,6 +143,9 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     const { id } = req.params;
     try {
+        const check = await checkEntityOwnership('ticket', id, req.user!);
+        if (!check.success) return res.status(check.status).json({ error: check.message });
+
         await prisma.ticket.delete({ where: { id } });
         res.status(204).send();
     } catch (error) {

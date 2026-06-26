@@ -1,24 +1,43 @@
 import { prisma } from "../prisma.js";
 import { Role } from "@prisma/client";
 
+export type CheckableEntity =
+  | 'accessibilityExecution'
+  | 'event'
+  | 'work'
+  | 'space'
+  | 'theaterMember'
+  | 'theaterCue'
+  | 'qRCode'
+  | 'workTranslation'
+  | 'teacherProfile'
+  | 'volunteer'
+  | 'volunteerShift'
+  | 'schoolVisit'
+  | 'postVisitActivity'
+  | 'intangibleHeritage'
+  | 'pPAGoal'
+  | 'badgeRequest'
+  | 'category'
+  | 'ticket'
+  | 'coupon'
+  | 'curatorNote'
+  | 'trail'
+  | 'achievement'
+  | 'clue'
+  | 'passportStamp'
+  | 'certificateRule'
+  | 'certificateTemplate'
+  | 'review'
+  | 'booking'
+  | 'culturalProject'
+  | 'file'
+  | 'accountsReceivable'
+  | 'accountsPayable'
+  | 'chargeback';
+
 export async function checkEntityOwnership(
-  entityName:
-    | 'accessibilityExecution'
-    | 'event'
-    | 'work'
-    | 'space'
-    | 'theaterMember'
-    | 'theaterCue'
-    | 'qRCode'
-    | 'workTranslation'
-    | 'teacherProfile'
-    | 'volunteer'
-    | 'volunteerShift'
-    | 'schoolVisit'
-    | 'postVisitActivity'
-    | 'intangibleHeritage'
-    | 'pPAGoal'
-    | 'badgeRequest',
+  entityName: CheckableEntity,
   id: string,
   user: { id: string; role: Role; tenantId?: string | null }
 ): Promise<{ success: boolean; record?: any; status: number; message: string }> {
@@ -50,6 +69,28 @@ export async function checkEntityOwnership(
         const volunteer = await prisma.volunteer.findUnique({ where: { id: record.volunteerId } });
         if (!volunteer || volunteer.tenantId !== user.tenantId) {
           return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+        }
+      } else if (entityName === 'ticket') {
+        const event = await prisma.event.findUnique({ where: { id: record.eventId } });
+        if (!event || event.tenantId !== user.tenantId) {
+          return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+        }
+      } else if (entityName === 'passportStamp') {
+        const work = await prisma.work.findUnique({ where: { id: record.workId } });
+        if (!work || work.tenantId !== user.tenantId) {
+          return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+        }
+      } else if (entityName === 'review') {
+        if (record.eventId) {
+          const event = await prisma.event.findUnique({ where: { id: record.eventId } });
+          if (!event || event.tenantId !== user.tenantId) {
+            return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+          }
+        } else if (record.workId) {
+          const work = await prisma.work.findUnique({ where: { id: record.workId } });
+          if (!work || work.tenantId !== user.tenantId) {
+            return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };
+          }
         }
       } else if (record.tenantId !== user.tenantId) {
         return { success: false, status: 403, message: "Sem permissão (Isolamento de Tenant)" };

@@ -1701,6 +1701,7 @@ model Tenant {
   costCenters                  CostCenter[]
   accountingCategories         AccountingCategory[]
   payoutLedgers                PayoutLedger[]
+  financialLedgerEntries       FinancialLedgerEntry[]
 
   @@index([parentId])
 }
@@ -2493,6 +2494,7 @@ model FinancialTransaction {
   registrations          Registration[]
   transactions           Transaction[]
   accessibilityExecutions AccessibilityExecution[]
+  refunds                Refund[]
   @@index([tenantId, createdAt])
 }
 
@@ -2551,10 +2553,15 @@ model Refund {
   stripeRefundId        String?  @unique
   registrationId        String?
   orderId               String?
+  approvedBy            String?
+  receiptUrl            String?
+  failureReason         String?
+  retries               Int      @default(0)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  financialTransaction  FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   @@index([tenantId])
 }
 
@@ -2616,19 +2623,56 @@ model AccountingCategory {
 }
 
 model PayoutLedger {
-  id              String    @id @default(uuid())
-  tenantId        String
-  amount          Decimal   @db.Decimal(10, 2)
-  fee             Decimal   @db.Decimal(10, 2) @default(0.00)
-  netAmount       Decimal   @db.Decimal(10, 2)
-  stripePayoutId  String    @unique
-  status          String    // paid | pending | failed | canceled
-  currency        String    @default("BRL")
-  arrivalDate     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                  String    @id @default(uuid())
+  tenantId            String
+  recipientType       String    @default("MUSEUM") // MUSEUM | PROVIDER
+  recipientId         String    // tenantId or providerId
+  sourceTransactionId String?   // Opcional, vinculando à FinancialTransaction
+  grossAmount         Decimal   @db.Decimal(10, 2)
+  platformFee         Decimal   @db.Decimal(10, 2) @default(0.00)
+  gatewayFee          Decimal   @db.Decimal(10, 2) @default(0.00)
+  netAmount           Decimal   @db.Decimal(10, 2)
+  stripeTransferId    String?   @unique
+  stripePayoutId      String?   @unique // Pode ser preenchido após payout
+  status              String    // PENDING | AVAILABLE | PROCESSING | PAID | FAILED | CANCELED
+  currency            String    @default("BRL")
+  bankAccountLast4    String?
+  availableAt         DateTime?
+  paidAt              DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   @@index([tenantId])
+}
+
+model FinancialLedgerEntry {
+  id                      String   @id @default(uuid())
+  tenantId                String
+  sourceType              String   // ORDER | REGISTRATION | DONATION | SPONSORSHIP | ACCESSIBILITY | THEATER | OTHER
+  sourceId                String   // ID do registro origem (ex: Order ID, Donation ID)
+  direction               String   // CREDIT | DEBIT
+  grossAmount             Decimal  @db.Decimal(10, 2)
+  gatewayFee              Decimal  @db.Decimal(10, 2) @default(0.00)
+  platformFee             Decimal  @db.Decimal(10, 2) @default(0.00)
+  netAmount               Decimal  @db.Decimal(10, 2)
+  currency                String   @default("BRL")
+  status                  String   // PENDING | COMPLETED | FAILED | REFUNDED
+  paymentProvider         String   @default("STRIPE")
+  paymentMethod           String   // PIX | CREDIT_CARD | BOLETO | FREE | etc
+  stripeCheckoutSessionId String?
+  stripePaymentIntentId   String?
+  stripeChargeId          String?
+  stripeRefundId          String?
+  payoutId                String?
+  idempotencyKey          String?  @unique
+  competenceDate          DateTime @default(now())
+  settlementDate          DateTime?
+  createdBy               String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+  @@index([sourceType, sourceId])
 }

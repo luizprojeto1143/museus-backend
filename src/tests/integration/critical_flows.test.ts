@@ -160,4 +160,80 @@ describe('Critical Flows Integration Tests', () => {
             await prisma.event.delete({ where: { id: event.id } });
         });
     });
+
+    describe('Curator Note IDOR Prevention', () => {
+        it('should block non-owners from editing curator notes', async () => {
+            // Create a work for tenant 2
+            const work = await prisma.work.create({
+                data: {
+                    tenantId: tenant2Id,
+                    title: 'Work Tenant 2',
+                    artist: 'Artist 2',
+                    year: '2026'
+                }
+            });
+
+            // Create a curator note for work in tenant 2
+            const note = await prisma.curatorNote.create({
+                data: {
+                    tenantId: tenant2Id,
+                    workId: work.id,
+                    content: 'Nice work!'
+                }
+            });
+
+            // User 1 tries to edit the note in tenant 2
+            const res = await request(app)
+                .put(`/curator-notes/${note.id}`)
+                .set('Authorization', `Bearer ${user1Token}`)
+                .send({
+                    content: 'Updated by attacker'
+                });
+
+            expect(res.status).toBe(403);
+
+            // Clean up
+            await prisma.curatorNote.delete({ where: { id: note.id } });
+            await prisma.work.delete({ where: { id: work.id } });
+        });
+    });
+
+    describe('Financial Ledger Synchronization', () => {
+        it('should synchronize FinancialTransaction with FinancialLedgerEntry', async () => {
+            // Create a completed financial transaction manually
+            const tx = await prisma.financialTransaction.create({
+                data: {
+                    tenantId: tenant1Id,
+                    type: 'PAYMENT',
+                    source: 'DONATION',
+                    amount: 100.00,
+                    fee: 5.00,
+                    netAmount: 95.00,
+                    status: 'COMPLETED',
+                    paymentMethod: 'CREDIT_CARD',
+                    stripePaymentIntentId: 'pi_test_ledger_sync'
+                }
+            });
+
+            // Call syncLedgerEntry manually as we would in the code
+            const { syncLedgerEntry } = await import('../../services/ledgerService.js');
+            await syncLedgerEntry(prisma, tx.id);
+
+            // Verify a ledger entry exists for this transaction
+            const ledgerEntry = await prisma.financialLedgerEntry.findFirst({
+                where: { stripePaymentIntentId: 'pi_test_ledger_sync' }
+            });
+
+            expect(ledgerEntry).toBeDefined();
+            expect(ledgerEntry?.direction).toBe('CREDIT');
+            expect(Number(ledgerEntry?.grossAmount)).toBe(100.00);
+            expect(Number(ledgerEntry?.netAmount)).toBe(95.00);
+
+            // Clean up
+            await prisma.financialLedgerEntry.deleteMany({
+                where: { stripePaymentIntentId: 'pi_test_ledger_sync' }
+            });
+            await prisma.financialTransaction.delete({ where: { id: tx.id } });
+        });
+    });
 });

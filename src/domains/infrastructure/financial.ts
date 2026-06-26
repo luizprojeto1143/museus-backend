@@ -38,6 +38,7 @@ import { authMiddleware, requireRole } from '../../middleware/auth.js';
 import { Role } from '@prisma/client';
 import { stripe } from '../../services/stripeService.js';
 import { z } from 'zod';
+import { syncLedgerEntry, rebuildLedger } from '../../services/ledgerService.js';
 
 const router = Router();
 
@@ -312,7 +313,8 @@ const refundSchema = z.object({
   amount: z.number().positive().optional(), // Se omitido, reembolso total
   reason: z.enum(['duplicate', 'fraudulent', 'requested_by_customer']).optional(),
   registrationId: z.string().uuid().optional(),
-  orderId: z.string().uuid().optional()
+  orderId: z.string().uuid().optional(),
+  receiptUrl: z.string().url().optional()
 });
 
 router.post('/refund/:transactionId', async (req: Request, res: Response): Promise<any> => {
@@ -395,7 +397,9 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
       reason:        parse.data.reason || 'requested_by_customer',
       status:        'PENDING',
       registrationId: parse.data.registrationId || null,
-      orderId:        parse.data.orderId || null
+      orderId:        parse.data.orderId || null,
+      approvedBy:     req.user?.email || req.user?.id || 'SYSTEM',
+      receiptUrl:     parse.data.receiptUrl || null
     }
   });
 
@@ -452,13 +456,121 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
     try {
       await prisma.refund.update({
         where: { id: pendingRefund.id },
-        data: { status: 'FAILED' }
+        data: { 
+          status: 'FAILED',
+          failureReason: err?.message || 'Erro desconhecido no Stripe'
+        }
       });
     } catch (dbErr) {
       console.error('[Financial] Erro ao marcar refund como FAILED:', dbErr);
     }
     return res.status(500).json({
       message: 'Erro ao processar reembolso no Stripe',
+      detail: err?.message
+    });
+  }
+});
+
+// ==========================================
+// POST /financial/refund/:refundId/retry
+// Reprocessa um reembolso que falhou ou ficou pendente
+// ==========================================
+router.post('/refund/:refundId/retry', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const { refundId } = req.params;
+
+  // 1. Encontrar o reembolso
+  const refund = await prisma.refund.findFirst({
+    where: { id: refundId, tenantId }
+  });
+
+  if (!refund) return res.status(404).json({ message: 'Reembolso não encontrado' });
+  if (refund.status === 'COMPLETED') return res.status(400).json({ message: 'Este reembolso já foi concluído' });
+
+  // 2. Encontrar a transação original
+  const tx = await prisma.financialTransaction.findFirst({
+    where: { id: refund.transactionId, tenantId }
+  });
+  if (!tx) return res.status(404).json({ message: 'Transação original não encontrada' });
+
+  try {
+    const refundAmountCents = Math.round(Number(refund.amount) * 100);
+    const newRetryCount = refund.retries + 1;
+
+    const stripeRefund = await stripe.refunds.create({
+      ...(tx.stripeChargeId
+        ? { charge: tx.stripeChargeId }
+        : { payment_intent: tx.stripePaymentIntentId! }),
+      amount: refundAmountCents,
+      reason: (refund.reason || 'requested_by_customer') as any,
+      metadata: { localRefundId: refund.id }
+    }, {
+      idempotencyKey: `refund-retry-${refund.id}-${newRetryCount}`
+    });
+
+    if (stripeRefund.status === 'succeeded') {
+      const refundRecord = await prisma.$transaction(async (txPrisma) => {
+        await applyRefundSuccess(
+          txPrisma,
+          refund.id,
+          stripeRefund.id,
+          tx.id,
+          Number(refund.amount),
+          tenantId,
+          refund.registrationId,
+          refund.orderId
+        );
+        return txPrisma.refund.update({
+          where: { id: refund.id },
+          data: {
+            retries: newRetryCount,
+            failureReason: null
+          }
+        });
+      });
+
+      return res.json({
+        message: 'Reembolso reprocessado e concluído com sucesso',
+        refund: refundRecord,
+        stripeRefundId: stripeRefund.id,
+        stripeStatus: stripeRefund.status
+      });
+    } else {
+      const refundRecord = await prisma.refund.update({
+        where: { id: refund.id },
+        data: {
+          stripeRefundId: stripeRefund.id,
+          retries: newRetryCount,
+          failureReason: null
+        }
+      });
+
+      return res.json({
+        message: 'Reembolso pendente no Stripe',
+        refund: refundRecord,
+        stripeRefundId: stripeRefund.id,
+        stripeStatus: stripeRefund.status
+      });
+    }
+
+  } catch (err: any) {
+    console.error('[Financial] Erro ao reprocessar refund:', err);
+    try {
+      await prisma.refund.update({
+        where: { id: refund.id },
+        data: {
+          status: 'FAILED',
+          retries: refund.retries + 1,
+          failureReason: err?.message || 'Erro desconhecido no Stripe'
+        }
+      });
+    } catch (dbErr) {
+      console.error('[Financial] Erro ao atualizar falha de reembolso:', dbErr);
+    }
+    return res.status(500).json({
+      message: 'Erro ao reprocessar reembolso no Stripe',
       detail: err?.message
     });
   }
@@ -608,6 +720,9 @@ export async function applyRefundSuccess(
       });
     }
   }
+
+  // 4. Sincronizar o Ledger
+  await syncLedgerEntry(txPrisma, transactionId);
 }
 
 // ==========================================
@@ -626,6 +741,110 @@ router.get('/refunds', async (req: Request, res: Response): Promise<any> => {
 });
 
 // ==========================================
+// POST /financial/ledger/rebuild
+// ==========================================
+router.post('/ledger/rebuild', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  try {
+    const result = await rebuildLedger(tenantId);
+    return res.json({ message: 'Razão financeiro reconstruído com sucesso', ...result });
+  } catch (err: any) {
+    console.error('[Financial] Erro ao reconstruir ledger:', err);
+    return res.status(500).json({ message: 'Erro ao reconstruir ledger', error: err?.message });
+  }
+});
+
+// ==========================================
+// GET /financial/dre
+// Demonstração do Resultado do Exercício (DRE) dinâmico
+// ==========================================
+router.get('/dre', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  const { startDate, endDate, source, categoryId, costCenterId } = req.query;
+
+  try {
+    // Filtro base para lançamentos do ledger
+    const ledgerWhere: any = { tenantId, status: 'COMPLETED' };
+    if (source) ledgerWhere.sourceType = source;
+    if (startDate || endDate) {
+      ledgerWhere.competenceDate = {};
+      if (startDate) ledgerWhere.competenceDate.gte = new Date(startDate as string);
+      if (endDate)   ledgerWhere.competenceDate.lte = new Date(endDate as string);
+    }
+
+    // Filtro para despesas (AccountsPayable)
+    const expenseWhere: any = { tenantId, status: 'PAID' };
+    if (categoryId) expenseWhere.categoryId = categoryId;
+    if (costCenterId) expenseWhere.costCenterId = costCenterId;
+    if (startDate || endDate) {
+      expenseWhere.paidAt = {};
+      if (startDate) expenseWhere.paidAt.gte = new Date(startDate as string);
+      if (endDate)   expenseWhere.paidAt.lte = new Date(endDate as string);
+    }
+
+    // 1. Buscar lançamentos do ledger
+    const ledgerEntries = await prisma.financialLedgerEntry.findMany({
+      where: ledgerWhere
+    });
+
+    // 2. Buscar despesas pagas
+    const expenses = await prisma.accountsPayable.findMany({
+      where: expenseWhere
+    });
+
+    // 3. Agregar valores do ledger
+    let grossRevenue = 0;
+    let gatewayFees = 0;
+    let platformFees = 0;
+    let totalRefunds = 0;
+
+    for (const entry of ledgerEntries) {
+      const amount = Number(entry.grossAmount || 0);
+      const gateFee = Number(entry.gatewayFee || 0);
+      const platFee = Number(entry.platformFee || 0);
+
+      if (entry.direction === 'CREDIT') {
+        grossRevenue += amount;
+        gatewayFees += gateFee;
+        platformFees += platFee;
+      } else if (entry.direction === 'DEBIT') {
+        totalRefunds += amount;
+      }
+    }
+
+    // 4. Agregar despesas
+    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+    // 5. Calcular receitas líquidas e resultado final
+    const netRevenue = grossRevenue - gatewayFees - platformFees - totalRefunds;
+    const netResult = netRevenue - totalExpenses;
+
+    return res.json({
+      filters: { startDate, endDate, source, categoryId, costCenterId },
+      dre: {
+        grossRevenue,
+        deductions: {
+          gatewayFees,
+          platformFees,
+          refunds: totalRefunds
+        },
+        netRevenue,
+        operatingExpenses: totalExpenses,
+        netResult
+      }
+    });
+
+  } catch (err: any) {
+    console.error('[Financial] Erro ao gerar DRE:', err);
+    return res.status(500).json({ message: 'Erro ao gerar DRE', error: err?.message });
+  }
+});
+
+// ==========================================
 // GET /financial/reconciliation
 // Conciliação: cruza FinancialTransaction com Stripe
 // Detecta: (1) transações no banco sem Stripe ID, (2) discrepâncias de valor
@@ -636,63 +855,188 @@ router.get('/reconciliation', async (req: Request, res: Response): Promise<any> 
 
   const { startDate, endDate } = req.query;
 
-  const where: any = { tenantId, status: 'COMPLETED' };
-  if (startDate || endDate) {
-    where.createdAt = {};
-    if (startDate) where.createdAt.gte = new Date(startDate as string);
-    if (endDate)   where.createdAt.lte = new Date(endDate as string);
-  }
-
-  // 1. Transações locais
-  const localTxs = await prisma.financialTransaction.findMany({ where });
-
-  const reconciled: any[]   = [];
-  const unmatched: any[]    = [];
-  const discrepancies: any[] = [];
-
-  // 2. Para cada transação local com stripePaymentIntentId, verificar no Stripe
-  for (const tx of localTxs) {
-    if (!tx.stripePaymentIntentId) {
-      unmatched.push({ ...tx, reason: 'Sem stripePaymentIntentId' });
-      continue;
+  try {
+    const where: any = { tenantId };
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate as string);
+      if (endDate)   where.createdAt.lte = new Date(endDate as string);
     }
 
-    try {
-      const pi = await stripe.paymentIntents.retrieve(tx.stripePaymentIntentId);
-      const stripeAmountCents = pi.amount_received;
-      const localAmountCents  = Math.round(Number(tx.amount) * 100);
+    // 1. Buscar transações locais
+    const localTxs = await prisma.financialTransaction.findMany({
+      where,
+      include: { refunds: true }
+    });
 
-      if (Math.abs(stripeAmountCents - localAmountCents) > 1) { // tolerância de 1 centavo
-        discrepancies.push({
-          transactionId: tx.id,
+    // 2. Buscar chargebacks locais
+    const localChargebacks = await prisma.chargeback.findMany({
+      where: { tenantId }
+    });
+
+    // 3. Obter últimos PaymentIntents do Stripe (para achar MISSING_IN_SYSTEM)
+    const stripeParams: any = { limit: 100 };
+    if (startDate) {
+      stripeParams.created = { gte: Math.floor(new Date(startDate as string).getTime() / 1000) };
+    }
+    const stripePIs = await stripe.paymentIntents.list(stripeParams);
+
+    const reconciled: any[] = [];
+    const stripePIsMap = new Map<string, any>();
+    stripePIs.data.forEach(pi => {
+      stripePIsMap.set(pi.id, pi);
+    });
+
+    // Mapeia os ids de PI locais para rápida busca inversa
+    const localPIsSet = new Set(localTxs.map(tx => tx.stripePaymentIntentId).filter(Boolean));
+
+    // A. Conciliação a partir do banco de dados local
+    for (const tx of localTxs) {
+      const localAmount = Number(tx.amount);
+      const localFee = Number(tx.fee);
+      const localNet = Number(tx.netAmount);
+
+      // Verificar status de chargeback no banco local
+      const hasChargeback = localChargebacks.some(cb => cb.stripePaymentIntentId === tx.stripePaymentIntentId || cb.stripeChargeId === tx.stripeChargeId);
+
+      if (tx.status === 'REFUNDED' || tx.status === 'PARTIALLY_REFUNDED') {
+        reconciled.push({
+          id: tx.id,
           stripePaymentIntentId: tx.stripePaymentIntentId,
-          localAmount: Number(tx.amount),
-          stripeAmount: stripeAmountCents / 100,
-          diff: (stripeAmountCents - localAmountCents) / 100
+          type: tx.type,
+          source: tx.source,
+          expectedAmount: localAmount,
+          receivedAmount: 0,
+          gatewayFee: localFee,
+          platformFee: 0,
+          netAmount: localNet,
+          status: 'REFUNDED',
+          divergência: 0,
+          details: 'Transação reembolsada localmente'
         });
-      } else {
-        reconciled.push({ transactionId: tx.id, stripePaymentIntentId: tx.stripePaymentIntentId });
+        continue;
       }
-    } catch (e: any) {
-      unmatched.push({
-        transactionId: tx.id,
-        stripePaymentIntentId: tx.stripePaymentIntentId,
-        reason: `Erro Stripe: ${e?.message}`
-      });
-    }
-  }
 
-  return res.json({
-    summary: {
-      total:        localTxs.length,
-      reconciled:   reconciled.length,
-      unmatched:    unmatched.length,
-      discrepancies: discrepancies.length
-    },
-    reconciled,
-    unmatched,
-    discrepancies
-  });
+      if (hasChargeback) {
+        reconciled.push({
+          id: tx.id,
+          stripePaymentIntentId: tx.stripePaymentIntentId,
+          type: tx.type,
+          source: tx.source,
+          expectedAmount: localAmount,
+          receivedAmount: localAmount,
+          gatewayFee: localFee,
+          platformFee: 0,
+          netAmount: localNet,
+          status: 'CHARGEBACK',
+          divergência: 0,
+          details: 'Transação sob disputa/chargeback ativo'
+        });
+        continue;
+      }
+
+      if (!tx.stripePaymentIntentId) {
+        reconciled.push({
+          id: tx.id,
+          stripePaymentIntentId: null,
+          type: tx.type,
+          source: tx.source,
+          expectedAmount: localAmount,
+          receivedAmount: 0,
+          gatewayFee: localFee,
+          platformFee: 0,
+          netAmount: localNet,
+          status: 'MISSING_IN_STRIPE',
+          divergência: localAmount,
+          details: 'ID do Stripe ausente no banco local'
+        });
+        continue;
+      }
+
+      try {
+        // Encontra o PaymentIntent na lista buscada ou faz retrieve individual
+        let pi = stripePIsMap.get(tx.stripePaymentIntentId);
+        if (!pi) {
+          pi = await stripe.paymentIntents.retrieve(tx.stripePaymentIntentId);
+        }
+
+        const stripeAmount = pi.amount_received / 100;
+        const diff = stripeAmount - localAmount;
+        const status = Math.abs(diff) < 0.01 ? 'MATCHED' : 'DIVERGENT';
+
+        reconciled.push({
+          id: tx.id,
+          stripePaymentIntentId: tx.stripePaymentIntentId,
+          type: tx.type,
+          source: tx.source,
+          expectedAmount: localAmount,
+          receivedAmount: stripeAmount,
+          gatewayFee: localFee,
+          platformFee: 0,
+          netAmount: localNet,
+          status,
+          divergência: diff,
+          details: status === 'MATCHED' ? 'Valores conferem perfeitamente' : `Divergência de R$ ${diff.toFixed(2)}`
+        });
+      } catch (err: any) {
+        reconciled.push({
+          id: tx.id,
+          stripePaymentIntentId: tx.stripePaymentIntentId,
+          type: tx.type,
+          source: tx.source,
+          expectedAmount: localAmount,
+          receivedAmount: 0,
+          gatewayFee: localFee,
+          platformFee: 0,
+          netAmount: localNet,
+          status: 'MISSING_IN_STRIPE',
+          divergência: localAmount,
+          details: `Não encontrado no Stripe (Erro: ${err?.message})`
+        });
+      }
+    }
+
+    // B. Conciliação reversa (Stripe para Banco de Dados Local)
+    for (const pi of stripePIs.data) {
+      if (pi.status === 'succeeded' && !localPIsSet.has(pi.id)) {
+        const stripeAmount = pi.amount_received / 100;
+        reconciled.push({
+          id: null,
+          stripePaymentIntentId: pi.id,
+          type: 'PAYMENT',
+          source: 'STRIPE_ONLY',
+          expectedAmount: 0,
+          receivedAmount: stripeAmount,
+          gatewayFee: 0,
+          platformFee: 0,
+          netAmount: stripeAmount,
+          status: 'MISSING_IN_SYSTEM',
+          divergência: -stripeAmount,
+          details: 'Transação bem-sucedida no Stripe, mas inexistente no banco de dados local'
+        });
+      }
+    }
+
+    // Calcular resumo geral
+    const summary = {
+      total: reconciled.length,
+      matched: reconciled.filter(r => r.status === 'MATCHED').length,
+      divergent: reconciled.filter(r => r.status === 'DIVERGENT').length,
+      missingInStripe: reconciled.filter(r => r.status === 'MISSING_IN_STRIPE').length,
+      missingInSystem: reconciled.filter(r => r.status === 'MISSING_IN_SYSTEM').length,
+      refunded: reconciled.filter(r => r.status === 'REFUNDED').length,
+      chargeback: reconciled.filter(r => r.status === 'CHARGEBACK').length
+    };
+
+    return res.json({
+      summary,
+      entries: reconciled
+    });
+
+  } catch (err: any) {
+    console.error('[Financial] Erro na conciliação:', err);
+    return res.status(500).json({ message: 'Erro na conciliação', error: err?.message });
+  }
 });
 
 // ==========================================
@@ -734,16 +1078,21 @@ router.get('/payouts', async (req: Request, res: Response): Promise<any> => {
             create: {
               tenantId,
               stripePayoutId: p.id,
-              amount: val,
-              fee: 0,
+              recipientId: tenantId,
+              recipientType: 'MUSEUM',
+              grossAmount: val,
+              platformFee: 0,
+              gatewayFee: 0,
               netAmount: val,
               status: p.status.toUpperCase(),
               currency: p.currency.toUpperCase(),
-              arrivalDate: new Date(p.arrival_date * 1000)
+              availableAt: new Date(p.arrival_date * 1000),
+              paidAt: p.status.toUpperCase() === 'PAID' ? new Date(p.arrival_date * 1000) : null
             },
             update: {
               status: p.status.toUpperCase(),
-              arrivalDate: new Date(p.arrival_date * 1000)
+              availableAt: new Date(p.arrival_date * 1000),
+              paidAt: p.status.toUpperCase() === 'PAID' ? new Date(p.arrival_date * 1000) : null
             }
           });
         })
@@ -753,7 +1102,7 @@ router.get('/payouts', async (req: Request, res: Response): Promise<any> => {
     // Busca os dados consolidados do ledger local do banco de dados
     const localPayouts = await prisma.payoutLedger.findMany({
       where: { tenantId },
-      orderBy: { arrivalDate: 'desc' },
+      orderBy: { createdAt: 'desc' },
       take: limit
     });
 
@@ -762,11 +1111,14 @@ router.get('/payouts', async (req: Request, res: Response): Promise<any> => {
       stripeConnectId: tenant.stripeConnectId,
       payouts: localPayouts.map(p => ({
         id:           p.stripePayoutId,
-        amount:       Number(p.amount),
-        fee:          Number(p.fee),
+        recipientId:  p.recipientId,
+        recipientType: p.recipientType,
+        grossAmount:  Number(p.grossAmount),
+        fee:          Number(p.platformFee) + Number(p.gatewayFee),
         netAmount:    Number(p.netAmount),
         status:       p.status.toLowerCase(),
-        arrivalDate:  p.arrivalDate ? p.arrivalDate.toISOString() : null,
+        availableAt:  p.availableAt ? p.availableAt.toISOString() : null,
+        paidAt:       p.paidAt ? p.paidAt.toISOString() : null,
         currency:     p.currency
       })),
       hasMore: payouts.has_more

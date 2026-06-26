@@ -4,6 +4,7 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
 import { checkEntityOwnership } from "../utils/ownership.js";
+import { syncLedgerEntry } from "../services/ledgerService.js";
 
 const router = Router();
 
@@ -327,6 +328,8 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                         paymentMethod: paymentMethod || "CASH"
                     }
                 });
+
+                await syncLedgerEntry(tx, finTx.id);
 
                 return { isDigital: false, success: true, amount: totalAmount, transactionId: finTx.id };
             }
