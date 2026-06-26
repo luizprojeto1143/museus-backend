@@ -236,4 +236,97 @@ describe('Critical Flows Integration Tests', () => {
             await prisma.financialTransaction.delete({ where: { id: tx.id } });
         });
     });
+
+    describe('Stripe Webhook Stale Lock and Reprocessing', () => {
+        it('should allow reprocessing if a lock is PROCESSING but stale (updatedAt > 10 min)', async () => {
+            const eventId = 'evt_stale_lock_test_' + Date.now();
+            
+            // Create a stale lock manually in the database
+            const elevenMinutesAgo = new Date(Date.now() - 11 * 60 * 1000);
+            await prisma.stripeWebhookEvent.create({
+                data: {
+                    id: eventId,
+                    type: 'payment_intent.created',
+                    status: 'PROCESSING',
+                    createdAt: elevenMinutesAgo,
+                    updatedAt: elevenMinutesAgo
+                }
+            });
+
+            // Mock constructEvent
+            const { stripe } = await import('../../services/stripeService.js');
+            const constructSpy = jest.spyOn(stripe.webhooks, 'constructEvent');
+            constructSpy.mockReturnValue({
+                id: eventId,
+                type: 'payment_intent.created',
+                data: { object: { id: 'sess_stale_lock_test', metadata: {} } }
+            });
+
+            // Call the route using supertest
+            const res = await request(app)
+                .post('/webhooks/stripe')
+                .set('stripe-signature', 'valid_sig')
+                .send({ some: 'payload' });
+
+            // Since checkout.session.completed does nothing if there is no registration, it will succeed and return 200
+            expect(res.status).toBe(200);
+
+            // Verify status in DB transitioned to IGNORED
+            const dbEvent = await prisma.stripeWebhookEvent.findUnique({
+                where: { id: eventId }
+            });
+            expect(dbEvent).toBeDefined();
+            expect(dbEvent?.status).toBe('IGNORED');
+
+            // Clean up and restore mock
+            constructSpy.mockRestore();
+            await prisma.stripeWebhookEvent.delete({ where: { id: eventId } });
+        });
+    });
+
+    describe('Concurrent Refund Lock', () => {
+        it('should prevent double refund exceeding refundable balance', async () => {
+            // Create a test financial transaction
+            const tx = await prisma.financialTransaction.create({
+                data: {
+                    tenantId: tenant1Id,
+                    type: 'PAYMENT',
+                    source: 'DONATION',
+                    amount: 100.00,
+                    fee: 5.00,
+                    netAmount: 95.00,
+                    status: 'COMPLETED',
+                    paymentMethod: 'CREDIT_CARD',
+                    stripePaymentIntentId: 'pi_refund_lock_test'
+                }
+            });
+
+            // Simulate another refund record in PENDING status
+            await prisma.refund.create({
+                data: {
+                    transactionId: tx.id,
+                    tenantId: tenant1Id,
+                    amount: 60.00,
+                    status: 'PENDING',
+                    reason: 'requested_by_customer'
+                }
+            });
+
+            // Try to request another refund of 50.00 (which exceeds the remaining 40.00 balance)
+            const res = await request(app)
+                .post(`/financial/refund/${tx.id}`)
+                .set('Authorization', `Bearer ${user1Token}`)
+                .send({
+                    amount: 50.00
+                });
+
+            // It should be blocked and return 400 because 60 (pending) + 50 (new request) > 100
+            expect(res.status).toBe(400);
+            expect(res.body.message).toContain('excede o saldo restante reembolsável');
+
+            // Clean up
+            await prisma.refund.deleteMany({ where: { transactionId: tx.id } });
+            await prisma.financialTransaction.delete({ where: { id: tx.id } });
+        });
+    });
 });

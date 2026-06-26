@@ -337,73 +337,123 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
     return res.status(400).json({ message: 'Transação sem ID Stripe — reembolso manual necessário' });
   }
 
-  // 1.5. Validar o saldo restante reembolsável localmente
-  const completedRefunds = await prisma.refund.findMany({
-    where: { transactionId: tx.id, status: 'COMPLETED' }
-  });
-  const totalRefundedAlready = completedRefunds.reduce((sum, r) => sum + Number(r.amount), 0);
-  const remainingRefundable = Number(tx.amount) - totalRefundedAlready;
+  let localRequestedAmount = parse.data.amount;
 
-  let requestedAmount = parse.data.amount || remainingRefundable;
+  // 1.5. Validar o saldo restante reembolsável localmente com lock de concorrência no banco de dados
+  const pendingRefund = await prisma.$transaction(async (txPrisma) => {
+    // Executar lock pessimista na transação financeira correspondente
+    await txPrisma.$queryRaw`SELECT id FROM "FinancialTransaction" WHERE id = ${tx.id} FOR UPDATE`;
 
-  // Se um registrationId for enviado, validar e efetuar o reembolso daquele ingresso
-  if (parse.data.registrationId) {
-    const registration = await prisma.registration.findUnique({
-      where: { id: parse.data.registrationId }
+    const activeRefunds = await txPrisma.refund.findMany({
+      where: {
+        transactionId: tx.id,
+        status: { in: ['PENDING', 'PROCESSING', 'COMPLETED'] }
+      }
     });
-    if (!registration) {
+
+    const totalRefundedAlready = activeRefunds.reduce((sum, r) => sum + Number(r.amount), 0);
+    const remainingRefundable = Number(tx.amount) - totalRefundedAlready;
+
+    // Se um registrationId for enviado, validar e efetuar o reembolso daquele ingresso
+    if (parse.data.registrationId) {
+      const registration = await txPrisma.registration.findUnique({
+        where: { id: parse.data.registrationId }
+      });
+      if (!registration) {
+        throw new Error('registration_not_found');
+      }
+      if (registration.financialTransactionId !== tx.id) {
+        throw new Error('registration_not_belong');
+      }
+      if (registration.status === 'CANCELED') {
+        throw new Error('registration_already_canceled');
+      }
+      if (!localRequestedAmount) {
+        localRequestedAmount = Number(registration.pricePaid);
+      }
+    }
+
+    // Se um orderId for enviado, validar e efetuar o reembolso daquela compra
+    if (parse.data.orderId) {
+      const order = await txPrisma.order.findUnique({
+        where: { id: parse.data.orderId }
+      });
+      if (!order) {
+        throw new Error('order_not_found');
+      }
+      if (order.financialTransactionId !== tx.id) {
+        throw new Error('order_not_belong');
+      }
+      if (order.status === 'REFUNDED') {
+        throw new Error('order_already_refunded');
+      }
+      if (!localRequestedAmount) {
+        localRequestedAmount = Number(order.total);
+      }
+    }
+
+    if (!localRequestedAmount) {
+      localRequestedAmount = remainingRefundable;
+    }
+
+    if (localRequestedAmount > remainingRefundable + 0.01) {
+      throw new Error(`exceeded|${remainingRefundable}`);
+    }
+
+    // Registrar reembolso local temporário como PENDING
+    return txPrisma.refund.create({
+      data: {
+        transactionId: tx.id,
+        tenantId,
+        amount:        localRequestedAmount,
+        reason:        parse.data.reason || 'requested_by_customer',
+        status:        'PENDING',
+        registrationId: parse.data.registrationId || null,
+        orderId:        parse.data.orderId || null,
+        approvedBy:     req.user?.email || req.user?.id || 'SYSTEM',
+        receiptUrl:     parse.data.receiptUrl || null
+      }
+    });
+  }).catch((err) => {
+    return { errorFlag: true, message: err.message };
+  });
+
+  if ('errorFlag' in pendingRefund) {
+    const errMsg = pendingRefund.message;
+    if (errMsg === 'registration_not_found') {
       return res.status(404).json({ message: 'Ingresso correspondente não encontrado' });
     }
-    if (registration.financialTransactionId !== tx.id) {
+    if (errMsg === 'registration_not_belong') {
       return res.status(400).json({ message: 'Ingresso não pertence a esta transação' });
     }
-    if (registration.status === 'CANCELED') {
+    if (errMsg === 'registration_already_canceled') {
       return res.status(400).json({ message: 'Ingresso já foi cancelado' });
     }
-    if (!parse.data.amount) {
-      requestedAmount = Number(registration.pricePaid);
-    }
-  }
-
-  // Se um orderId for enviado, validar e efetuar o reembolso daquela compra
-  if (parse.data.orderId) {
-    const order = await prisma.order.findUnique({
-      where: { id: parse.data.orderId }
-    });
-    if (!order) {
+    if (errMsg === 'order_not_found') {
       return res.status(404).json({ message: 'Pedido correspondente não encontrado' });
     }
-    if (order.financialTransactionId !== tx.id) {
+    if (errMsg === 'order_not_belong') {
       return res.status(400).json({ message: 'Pedido não pertence a esta transação' });
     }
-    if (order.status === 'REFUNDED') {
+    if (errMsg === 'order_already_refunded') {
       return res.status(400).json({ message: 'Pedido já foi reembolsado' });
     }
-    if (!parse.data.amount) {
-      requestedAmount = Number(order.total);
+    if (errMsg.startsWith('exceeded|')) {
+      const remaining = Number(errMsg.split('|')[1]);
+      return res.status(400).json({ message: `Montante solicitado excede o saldo restante reembolsável. Saldo restante: R$ ${remaining.toFixed(2)}` });
     }
+    return res.status(500).json({ message: 'Erro ao registrar reembolso', error: errMsg });
   }
 
-  if (requestedAmount > remainingRefundable + 0.01) {
-    return res.status(400).json({ message: `Montante solicitado excede o saldo restante reembolsável. Saldo restante: R$ ${remainingRefundable.toFixed(2)}` });
-  }
-
-  // 2. Registrar reembolso local temporário como PENDING para evitar double-request no banco
-  const pendingRefund = await prisma.refund.create({
-    data: {
-      transactionId: tx.id,
-      tenantId,
-      amount:        requestedAmount,
-      reason:        parse.data.reason || 'requested_by_customer',
-      status:        'PENDING',
-      registrationId: parse.data.registrationId || null,
-      orderId:        parse.data.orderId || null,
-      approvedBy:     req.user?.email || req.user?.id || 'SYSTEM',
-      receiptUrl:     parse.data.receiptUrl || null
-    }
-  });
+  const requestedAmount = Number(pendingRefund.amount);
 
   try {
+    // Transicionar status localmente para PROCESSING
+    await prisma.refund.update({
+      where: { id: pendingRefund.id },
+      data: { status: 'PROCESSING' }
+    });
+
     const refundAmountCents = Math.round(requestedAmount * 100);
     const stripeRefund = await stripe.refunds.create({
       ...(tx.stripeChargeId
@@ -440,7 +490,7 @@ router.post('/refund/:transactionId', async (req: Request, res: Response): Promi
     } else {
       const refundRecord = await prisma.refund.update({
         where: { id: pendingRefund.id },
-        data: { stripeRefundId: stripeRefund.id }
+        data: { status: 'PROCESSING', stripeRefundId: stripeRefund.id }
       });
 
       return res.json({
@@ -495,11 +545,89 @@ router.post('/refund/:refundId/retry', async (req: Request, res: Response): Prom
   });
   if (!tx) return res.status(404).json({ message: 'Transação original não encontrada' });
 
+  // Lock row-level pessimista para evitar concorrência no reprocessamento
+  await prisma.$transaction(async (txPrisma) => {
+    await txPrisma.$queryRaw`SELECT id FROM "FinancialTransaction" WHERE id = ${tx.id} FOR UPDATE`;
+  });
+
   try {
-    const refundAmountCents = Math.round(Number(refund.amount) * 100);
+    // 2.5. Consultar Stripe para verificar se o reembolso já existe
+    let stripeRefund: any = null;
+    try {
+      const refundsList = await stripe.refunds.list({
+        limit: 100,
+        payment_intent: tx.stripePaymentIntentId || undefined,
+        charge: tx.stripeChargeId || undefined
+      });
+      stripeRefund = refundsList.data.find(
+        (r: any) => r.metadata && r.metadata.localRefundId === refund.id
+      );
+    } catch (listErr) {
+      console.warn('[Financial] Warning: Não foi possível listar reembolsos do Stripe para verificação:', listErr);
+    }
+
     const newRetryCount = refund.retries + 1;
 
-    const stripeRefund = await stripe.refunds.create({
+    if (stripeRefund) {
+      console.log(`[Financial] Refund retry: Reembolso Stripe já existente ${stripeRefund.id} com status ${stripeRefund.status}`);
+      if (stripeRefund.status === 'succeeded') {
+        const refundRecord = await prisma.$transaction(async (txPrisma) => {
+          await applyRefundSuccess(
+            txPrisma,
+            refund.id,
+            stripeRefund.id,
+            tx.id,
+            Number(refund.amount),
+            tenantId,
+            refund.registrationId,
+            refund.orderId
+          );
+          return txPrisma.refund.update({
+            where: { id: refund.id },
+            data: {
+              retries: newRetryCount,
+              failureReason: null
+            }
+          });
+        });
+
+        return res.json({
+          message: 'Reembolso já havia sido concluído no Stripe. Sincronizado localmente.',
+          refund: refundRecord,
+          stripeRefundId: stripeRefund.id,
+          stripeStatus: stripeRefund.status
+        });
+      } else if (stripeRefund.status === 'failed') {
+        // Se falhou no Stripe, podemos retentar no bloco abaixo
+      } else {
+        // Stripe pendente ou em processamento
+        const refundRecord = await prisma.refund.update({
+          where: { id: refund.id },
+          data: {
+            status: 'PROCESSING',
+            stripeRefundId: stripeRefund.id,
+            retries: newRetryCount,
+            failureReason: null
+          }
+        });
+        return res.json({
+          message: 'Reembolso está em andamento no Stripe.',
+          refund: refundRecord,
+          stripeRefundId: stripeRefund.id,
+          stripeStatus: stripeRefund.status
+        });
+      }
+    }
+
+    // Se o reembolso não existe ou falhou na tentativa anterior do Stripe, vamos criar/retentar
+    await prisma.refund.update({
+      where: { id: refund.id },
+      data: { status: 'PROCESSING' }
+    });
+
+    const refundAmountCents = Math.round(Number(refund.amount) * 100);
+
+    stripeRefund = await stripe.refunds.create({
       ...(tx.stripeChargeId
         ? { charge: tx.stripeChargeId }
         : { payment_intent: tx.stripePaymentIntentId! }),
@@ -507,7 +635,7 @@ router.post('/refund/:refundId/retry', async (req: Request, res: Response): Prom
       reason: (refund.reason || 'requested_by_customer') as any,
       metadata: { localRefundId: refund.id }
     }, {
-      idempotencyKey: `refund-retry-${refund.id}-${newRetryCount}`
+      idempotencyKey: `refund-${refund.id}` // Idempotency key estável por refund local
     });
 
     if (stripeRefund.status === 'succeeded') {

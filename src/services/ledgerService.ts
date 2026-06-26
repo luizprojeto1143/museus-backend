@@ -49,8 +49,9 @@ export async function syncLedgerEntry(
 
   // 3. Upsert do lançamento principal (CREDIT)
   const mainEntryKey = `tx-${tx.id}-credit`;
-  const mainStatus = tx.status === 'REFUNDED' ? 'REFUNDED' : 
-                     tx.status === 'PARTIALLY_REFUNDED' ? 'REFUNDED' : tx.status;
+  const mainStatus = (tx.status === 'COMPLETED' || tx.status === 'REFUNDED' || tx.status === 'PARTIALLY_REFUNDED')
+                     ? 'COMPLETED'
+                     : tx.status;
 
   await txPrisma.financialLedgerEntry.upsert({
     where: { idempotencyKey: mainEntryKey },

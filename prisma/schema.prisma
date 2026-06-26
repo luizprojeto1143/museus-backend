@@ -2467,10 +2467,12 @@ model TokenBlacklist {
 }
 
 model StripeWebhookEvent {
-  id String @id
-  type String
-  status String @default("PROCESSED")
-  processedAt DateTime @default(now())
+  id           String   @id
+  type         String
+  status       String   @default("RECEIVED")
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model FinancialTransaction {
