@@ -367,6 +367,18 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                 }
             });
 
+            // Vínculo do Stripe Checkout Session ID com as reservas de assento
+            await prisma.theaterSeatReservation.updateMany({
+                where: {
+                    eventId: id,
+                    seatId: { in: seatIds },
+                    status: "RESERVED"
+                },
+                data: {
+                    stripeCheckoutSessionId: sessionCheckout.id
+                }
+            });
+
             return res.json({ success: true, checkoutUrl: sessionCheckout.url });
         }
 

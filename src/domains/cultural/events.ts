@@ -790,12 +790,12 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       if (ticket.eventId !== id) throw new Error("Ingresso inválido para este evento");
 
       // Clear expired registrations to free up stock
-      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const thirtyOneMinutesAgo = new Date(Date.now() - 31 * 60 * 1000);
       await tx.registration.updateMany({
         where: {
           ticketId,
           status: "PENDING",
-          createdAt: { lt: thirtyMinutesAgo }
+          createdAt: { lt: thirtyOneMinutesAgo }
         },
         data: { status: "CANCELED" }
       });
@@ -805,7 +805,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         where: {
           ticketId,
           status: "PENDING",
-          createdAt: { gte: thirtyMinutesAgo }
+          createdAt: { gte: thirtyOneMinutesAgo }
         }
       });
 

@@ -236,6 +236,7 @@ app.use("/categories", categoriesRoutes);
 app.use("/bookings", bookingsRoutes);
 app.use("/guestbook", guestbookRoutes);
 app.use("/leaderboard", leaderboardRoutes);
+// @deprecated: /finance is legacy. Use the canonical ERP module under /financial instead.
 app.use("/finance", financeRouter);
 app.use("/coupons", couponsRouter);
 import gamificationRoutes from "./domains/experience/gamification.js";

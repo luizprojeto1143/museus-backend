@@ -41,14 +41,15 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
         where: { stripeCheckoutSessionId: session.id },
         include: { event: true }
       });
-      const pendingRegistrations = registrations.filter(r => r.status === "PENDING");
-      if (pendingRegistrations.length > 0) {
-        const firstReg = pendingRegistrations[0];
+      // Aceita PENDING ou CANCELED (caso a reserva local tenha expirado por atraso, mas a Stripe session foi paga)
+      const targetRegistrations = registrations.filter(r => r.status === "PENDING" || r.status === "CANCELED");
+      if (targetRegistrations.length > 0) {
+        const firstReg = targetRegistrations[0];
         const ticketId = firstReg.ticketId;
 
-        const quantity = pendingRegistrations.length;
-        const totalAmount = pendingRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
-        const totalFee = pendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
+        const quantity = targetRegistrations.length;
+        const totalAmount = targetRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
+        const totalFee = targetRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
 
         await prisma.$transaction(async (tx) => {
           let finTxId: string | undefined;
@@ -72,7 +73,7 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
           }
 
           await tx.registration.updateMany({
-            where: { id: { in: pendingRegistrations.map(r => r.id) } },
+            where: { id: { in: targetRegistrations.map(r => r.id) } },
             data: { status: "CONFIRMED", financialTransactionId: finTxId }
           });
           await tx.ticket.update({
@@ -84,10 +85,11 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
         console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
         
         const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
-        for (const reg of pendingRegistrations) {
+        for (const reg of targetRegistrations) {
           mailService.sendTicketEmail(
             reg.guestEmail,
             eventData?.title || "Evento",
+
             reg.guestName,
             reg.code
           );
@@ -125,12 +127,19 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
                 where: { eventId_seatId: { eventId, seatId } }
               });
 
-              if (currentReservation && currentReservation.status === "SOLD") {
-                if (currentReservation.visitorId === visitorId && currentReservation.ticketId === ticketId) {
-                  // Já vendido para este mesmo visitante/ingresso (idempotente)
-                  continue;
-                } else {
-                  throw new Error(`Conflito de Assento: O assento ${seatId} já foi vendido para outro visitante.`);
+              if (currentReservation) {
+                if (currentReservation.status === "SOLD") {
+                  if (currentReservation.visitorId === visitorId && currentReservation.ticketId === ticketId) {
+                    // Já vendido para este mesmo visitante/ingresso (idempotente)
+                    continue;
+                  } else {
+                    throw new Error(`Conflito de Assento: O assento ${seatId} já foi vendido para outro visitante.`);
+                  }
+                }
+
+                // Validar se a reserva atual está associada a outra sessão de checkout ativa
+                if (currentReservation.stripeCheckoutSessionId && currentReservation.stripeCheckoutSessionId !== session.id) {
+                  throw new Error(`Conflito de Assento: O assento ${seatId} está reservado sob outra sessão de checkout.`);
                 }
               }
 

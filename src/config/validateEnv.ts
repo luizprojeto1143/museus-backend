@@ -31,7 +31,18 @@ const PRODUCTION_RECOMMENDED_ENV_VARS = [
 export function validateEnv(): void {
     const missing: string[] = [];
     const isProduction = process.env.NODE_ENV === "production";
+    
+    if (isProduction) {
+        const validAppEnvs = ["demo", "staging", "homologation", "production"];
+        const appEnv = process.env.APP_ENV;
+        if (!appEnv || !validAppEnvs.includes(appEnv)) {
+            console.error(`❌ CRITICAL: APP_ENV must be set to one of ${validAppEnvs.join(" | ")} in production environments.`);
+            process.exit(1);
+        }
+    }
+
     const isRealProduction = process.env.APP_ENV === "production";
+    const isHomologation = process.env.APP_ENV === "homologation";
 
     for (const varName of REQUIRED_ENV_VARS) {
         if (!process.env[varName]) {
@@ -70,8 +81,8 @@ export function validateEnv(): void {
         const billingMode = process.env.BILLING_MODE || (process.env.PAYMENTS_DISABLED === "true" ? "disabled" : "live");
         const paymentsDisabled = billingMode === "disabled";
         
-        if (isRealProduction && paymentsDisabled) {
-            console.error("❌ CRITICAL: Payments cannot be disabled in real production (APP_ENV=production).");
+        if ((isRealProduction || isHomologation) && paymentsDisabled) {
+            console.error(`❌ CRITICAL: Payments cannot be disabled in production or homologation environments (APP_ENV=${process.env.APP_ENV}).`);
             process.exit(1);
         }
         

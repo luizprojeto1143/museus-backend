@@ -20,6 +20,15 @@ jest.mock('../../services/stripeService.js', () => {
                             created: Math.floor(Date.now() / 1000)
                         }
                     ]
+                }),
+                retrieve: jest.fn().mockImplementation((id) => {
+                    return Promise.resolve({
+                        id,
+                        payment_intent: 'pi_test_reconciliation_1',
+                        amount: 15000, // 150.00 BRL
+                        status: 'succeeded',
+                        created: Math.floor(Date.now() / 1000)
+                    });
                 })
             }
         },

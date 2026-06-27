@@ -297,7 +297,7 @@ router.post("/webhook", async (req: Request, res: Response) => {
 
 // Helper for executing sponsor webhook processing
 export async function handleSponsorWebhookEvent(event: any) {
-  return await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     // 1. Check idempotency
     const existingEvent = await tx.stripeWebhookEvent.findUnique({
       where: { id: event.id }
@@ -308,10 +308,10 @@ export async function handleSponsorWebhookEvent(event: any) {
         if (isStale) {
           console.log(`[Stripe Sponsor Webhook] Event ${event.id} is PROCESSING but stale (updatedAt: ${existingEvent.updatedAt.toISOString()}). Reprocessing...`);
         } else {
-          return { duplicate: true };
+          return { duplicate: true, pendingTransfer: null };
         }
       } else {
-        return { duplicate: true };
+        return { duplicate: true, pendingTransfer: null };
       }
     }
 
@@ -321,6 +321,13 @@ export async function handleSponsorWebhookEvent(event: any) {
       update: { status: "PROCESSING" },
       create: { id: event.id, type: event.type, status: "PROCESSING" }
     });
+
+    let pendingTransferObj: {
+      amount: number;
+      destination: string;
+      description: string;
+      idempotencyKey: string;
+    } | null = null;
 
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object as any;
@@ -381,14 +388,12 @@ export async function handleSponsorWebhookEvent(event: any) {
             }
 
             if (connectAccountId) {
-              await stripe.transfers.create({
+              pendingTransferObj = {
                 amount: Math.round(netAmount),
-                currency: 'brl',
                 destination: connectAccountId,
-                description: `Repasse Patrocínio: ${work.title}`
-              }, {
+                description: `Repasse Patrocínio: ${work.title}`,
                 idempotencyKey: `transfer-sponsor-${sponsorship.id}-${event.id}`
-              });
+              };
             }
           }
         }
@@ -407,8 +412,28 @@ export async function handleSponsorWebhookEvent(event: any) {
       data: { status: "PROCESSED" }
     });
 
-    return { duplicate: false };
+    return { duplicate: false, pendingTransfer: pendingTransferObj };
   });
+
+  // Executar a transferência para a conta Connect fora da transação de banco de dados
+  if (result.pendingTransfer) {
+    try {
+      console.log(`[Stripe Sponsor Webhook] Executing split transfer to Connect Account ${result.pendingTransfer.destination}...`);
+      await stripe.transfers.create({
+        amount: result.pendingTransfer.amount,
+        currency: 'brl',
+        destination: result.pendingTransfer.destination,
+        description: result.pendingTransfer.description
+      }, {
+        idempotencyKey: result.pendingTransfer.idempotencyKey
+      });
+      console.log(`[Stripe Sponsor Webhook] Split transfer successful!`);
+    } catch (err: any) {
+      console.error(`[Stripe Sponsor Webhook Error] Failed to execute transfer:`, err.message);
+    }
+  }
+
+  return result;
 }
 
 /**

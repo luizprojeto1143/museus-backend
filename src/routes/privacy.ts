@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { Role, Prisma } from '@prisma/client';
 import { createAuditLog } from '../domains/governance/audit.js';
+import bcrypt from 'bcrypt';
 
 const router = Router();
 
@@ -154,20 +155,30 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         if (status === 'COMPLETED' && (requestType === 'DELETE_DATA' || requestType === 'ANONIMIZE_DATA')) {
             const targetEmail = record.email;
 
-            // 1. Anonimiza usuários com este e-mail no banco
-            const dbUsers = await prisma.user.findMany({ where: { email: targetEmail } });
-            for (const u of dbUsers) {
-                const uTenantId = u.tenantId || targetTenantId;
-                await prisma.user.update({
-                    where: { id: u.id },
-                    data: {
-                        name: 'Usuário Anonimizado (LGPD)',
-                        email: `anon-${u.id}@lgpd.culturaviva.gov.br`,
-                        password: 'ANONIMIZADO_POR_DPO_' + Math.random().toString(36).substring(2),
-                        role: Role.COLLABORATOR, // remove privilégios
-                        permissions: Prisma.JsonNull
-                    }
-                });
+             // 1. Anonimiza usuários com este e-mail no banco e revoga sessões
+             const dbUsers = await prisma.user.findMany({ where: { email: targetEmail } });
+             const userIds = dbUsers.map(u => u.id);
+             if (userIds.length > 0) {
+                 await prisma.refreshToken.deleteMany({ where: { userId: { in: userIds } } });
+                 await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+             }
+
+
+             for (const u of dbUsers) {
+                 const uTenantId = u.tenantId || targetTenantId;
+                 const randomPassword = Math.random().toString(36).substring(2) + Date.now().toString();
+                 const randomBcryptHash = await bcrypt.hash(randomPassword, 10);
+
+                 await prisma.user.update({
+                     where: { id: u.id },
+                     data: {
+                         name: 'Usuário Anonimizado (LGPD)',
+                         email: `anon-${u.id}@lgpd.culturaviva.gov.br`,
+                         password: randomBcryptHash,
+                         role: Role.COLLABORATOR, // remove privilégios
+                         permissions: Prisma.JsonNull
+                     }
+                 });
                 
                 await createAuditLog(
                     'LGPD_USER_DATA_ANONIMIZED',

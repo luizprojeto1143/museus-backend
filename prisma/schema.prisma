@@ -1754,21 +1754,23 @@ model TheaterMember {
 }
 
 model TheaterSeatReservation {
-  id        String    @id @default(uuid())
-  eventId   String
-  seatId    String
-  status    String    @default("RESERVED")
-  visitorId String?
-  ticketId  String?
-  expiresAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime @updatedAt
-  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  ticket    Ticket?   @relation(fields: [ticketId], references: [id])
-  visitor   Visitor?  @relation(fields: [visitorId], references: [id])
+  id                      String    @id @default(uuid())
+  eventId                 String
+  seatId                  String
+  status                  String    @default("RESERVED")
+  visitorId               String?
+  ticketId                String?
+  expiresAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime @updatedAt
+  stripeCheckoutSessionId String?
+  event                   Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticket                  Ticket?   @relation(fields: [ticketId], references: [id])
+  visitor                 Visitor?  @relation(fields: [visitorId], references: [id])
 
   @@unique([eventId, seatId])
   @@index([eventId])
+  @@index([stripeCheckoutSessionId])
 }
 
 model Ticket {

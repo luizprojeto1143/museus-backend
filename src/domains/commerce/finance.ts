@@ -1,3 +1,7 @@
+/**
+ * @deprecated
+ * Este módulo (/finance) é legado e está depreciado em favor de /financial (o módulo canônico de ERP/Razão).
+ */
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
@@ -267,9 +271,6 @@ router.get('/reconciliation', authMiddleware, requireRole([Role.ADMIN, Role.MAST
             return res.status(400).json({ message: 'TenantID obrigatório' });
         }
 
-        const { stripe } = await import('../../services/stripeService.js');
-        const stripeCharges = await stripe.charges.list({ limit: 50 });
-
         const localEntries = await prisma.financialLedgerEntry.findMany({
             where: {
                 tenantId,
@@ -280,8 +281,35 @@ router.get('/reconciliation', authMiddleware, requireRole([Role.ADMIN, Role.MAST
             take: 100
         });
 
+        const { stripe } = await import('../../services/stripeService.js');
         const isMaster = user.role === 'MASTER';
-        const filteredCharges = stripeCharges.data.filter(charge => {
+        let stripeChargesData: any[] = [];
+
+        if (isMaster) {
+            const listRes = await stripe.charges.list({ limit: 50 });
+            stripeChargesData = listRes.data;
+        } else {
+            // Local First: resolve apenas as cobranças conhecidas do tenant
+            const localStripeIds = Array.from(new Set(
+                localEntries
+                    .map(e => e.stripeChargeId)
+                    .filter(Boolean) as string[]
+            )).slice(0, 50);
+
+            const resolvedCharges = await Promise.all(
+                localStripeIds.map(async (id) => {
+                    try {
+                        return await stripe.charges.retrieve(id);
+                    } catch (err) {
+                        console.warn(`[Local-First Reconciliation] Could not retrieve charge ${id}:`, err);
+                        return null;
+                    }
+                })
+            );
+            stripeChargesData = resolvedCharges.filter(Boolean);
+        }
+
+        const filteredCharges = stripeChargesData.filter(charge => {
             if (isMaster) return true;
             const chargeTenantId = charge.metadata?.tenantId;
             const hasLocalMatch = localEntries.some(e => e.stripeChargeId === charge.id || e.stripePaymentIntentId === (charge.payment_intent as string));
@@ -350,7 +378,7 @@ router.get('/reconciliation', authMiddleware, requireRole([Role.ADMIN, Role.MAST
 
         res.json({
             summary: {
-                totalStripeChecked: stripeCharges.data.length,
+                totalStripeChecked: stripeChargesData.length,
                 totalLocalChecked: localEntries.length,
                 matchedCount: matched.length,
                 divergentCount: divergent.length,

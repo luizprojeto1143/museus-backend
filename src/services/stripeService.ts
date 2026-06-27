@@ -120,7 +120,7 @@ export const stripeService = {
             const session = await stripe.checkout.sessions.create({
                 customer: data.customerId,
                 payment_method_types: ['card', 'pix'],
-                expires_at: Math.floor(Date.now() / 1000) + 30 * 60 + 10,
+                expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
                 line_items: [
                     {
                         price_data: {
