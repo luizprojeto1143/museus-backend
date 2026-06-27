@@ -4,7 +4,7 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, QRType } from "@prisma/client";
 import crypto from "crypto";
 import { z } from "zod";
-import { checkEntityOwnership } from "../utils/ownership.js";
+import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.js";
 
 const router = Router();
 
@@ -91,12 +91,12 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
 router.delete("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
     const { id } = req.params;
-    const check = await checkEntityOwnership('qRCode', id, req.user!);
-    if (!check.success) return res.status(check.status).json({ message: check.message });
+    await assertTenantOwnership({ model: 'qRCode', id, user: req.user! });
 
     await prisma.qRCode.delete({ where: { id } });
     return res.status(204).send();
-  } catch (err) {
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error("Erro excluir QR Code", err);
     return res.status(500).json({ message: "Erro ao excluir QR Code" });
   }

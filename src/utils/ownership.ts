@@ -102,3 +102,27 @@ export async function checkEntityOwnership(
     return { success: false, status: 500, message: `Erro ao buscar propriedade: ${error.message}` };
   }
 }
+
+export class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = "HttpError";
+  }
+}
+
+export async function assertTenantOwnership(options: {
+  model: CheckableEntity;
+  id: string;
+  user: { id: string; role: Role; tenantId?: string | null };
+  tenantField?: string;
+  allowMaster?: boolean;
+}): Promise<any> {
+  const check = await checkEntityOwnership(options.model, options.id, options.user);
+  if (!check.success) {
+    throw new HttpError(check.status, check.message);
+  }
+  return check.record;
+}
+

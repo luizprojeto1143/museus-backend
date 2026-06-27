@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
+import { Role } from '@prisma/client';
+import { assertTenantOwnership } from '../../utils/ownership.js';
+import { PayoutService } from '../../services/payoutService.js';
 
 const router = Router();
 
@@ -107,6 +110,588 @@ router.get('/dashboard', authMiddleware, requireRole(['ADMIN', 'MASTER']), async
     } catch (error) {
         console.error("Finance Dashboard Error:", error);
         res.status(500).json({ message: 'Erro ao carregar dados financeiros' });
+    }
+});
+
+// GET /finance/dre - Get Dynamic DRE for Municipal Audit & Reporting
+router.get('/dre', authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.SECRETARIA]), async (req, res) => {
+    try {
+        const user = req.user!;
+        let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
+
+        if (!tenantId) {
+            return res.status(400).json({ message: 'TenantID obrigatório' });
+        }
+
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+        if (!tenant) return res.status(404).json({ message: 'Tenant não encontrado' });
+
+        const isSecretaria = tenant.type === 'CITY' || tenant.type === 'SECRETARIA';
+        let tenantIds = [tenantId];
+        if (isSecretaria) {
+            const children = await prisma.tenant.findMany({
+                where: { parentId: tenantId },
+                select: { id: true }
+            });
+            tenantIds = [tenantId, ...children.map(c => c.id)];
+        }
+
+        const { startDate, endDate, eventId, equipamentoId, costCenterId } = req.query;
+
+        const where: any = {
+            tenantId: { in: tenantIds },
+            status: 'COMPLETED'
+        };
+
+        if (startDate || endDate) {
+            where.competenceDate = {};
+            if (startDate) where.competenceDate.gte = new Date(startDate as string);
+            if (endDate) where.competenceDate.lte = new Date(endDate as string);
+        }
+
+        if (eventId) {
+            const regs = await prisma.registration.findMany({
+                where: { eventId: eventId as string },
+                select: { id: true }
+            });
+            const regIds = regs.map(r => r.id);
+            const refs = await prisma.refund.findMany({
+                where: { registrationId: { in: regIds } },
+                select: { id: true }
+            });
+            const refIds = refs.map(r => r.id);
+            where.OR = [
+                { sourceType: 'REGISTRATION', sourceId: { in: regIds } },
+                { sourceType: 'REFUND', sourceId: { in: refIds } }
+            ];
+        } else if (equipamentoId) {
+            const events = await prisma.event.findMany({
+                where: { equipamentoId: equipamentoId as string },
+                select: { id: true }
+            });
+            const eventIds = events.map(e => e.id);
+            const regs = await prisma.registration.findMany({
+                where: { eventId: { in: eventIds } },
+                select: { id: true }
+            });
+            const regIds = regs.map(r => r.id);
+            const refs = await prisma.refund.findMany({
+                where: { registrationId: { in: regIds } },
+                select: { id: true }
+            });
+            const refIds = refs.map(r => r.id);
+            where.OR = [
+                { sourceType: 'REGISTRATION', sourceId: { in: regIds } },
+                { sourceType: 'REFUND', sourceId: { in: refIds } }
+            ];
+        }
+
+        const entries = await prisma.financialLedgerEntry.findMany({ where });
+
+        let grossRevenue = 0;
+        let refunds = 0;
+        let gatewayFees = 0;
+        let platformFees = 0;
+
+        entries.forEach(entry => {
+            const amount = Number(entry.grossAmount || 0);
+            const fee = Number(entry.gatewayFee || 0);
+            const platFee = Number(entry.platformFee || 0);
+
+            if (entry.direction === 'CREDIT') {
+                grossRevenue += amount;
+                gatewayFees += fee;
+                platformFees += platFee;
+            } else if (entry.direction === 'DEBIT') {
+                refunds += amount;
+            }
+        });
+
+        const arWhere: any = { tenantId: { in: tenantIds } };
+        const apWhere: any = { tenantId: { in: tenantIds } };
+        
+        if (startDate || endDate) {
+            arWhere.dueDate = {};
+            apWhere.dueDate = {};
+            if (startDate) {
+                arWhere.dueDate.gte = new Date(startDate as string);
+                apWhere.dueDate.gte = new Date(startDate as string);
+            }
+            if (endDate) {
+                arWhere.dueDate.lte = new Date(endDate as string);
+                apWhere.dueDate.lte = new Date(endDate as string);
+            }
+        }
+        if (costCenterId) {
+            arWhere.costCenterId = costCenterId as string;
+            apWhere.costCenterId = costCenterId as string;
+        }
+
+        const [accountsReceivable, accountsPayable] = await Promise.all([
+            prisma.accountsReceivable.findMany({ where: arWhere }),
+            prisma.accountsPayable.findMany({ where: apWhere })
+        ]);
+
+        const arSum = accountsReceivable.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+        const apSum = accountsPayable.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        const netRevenue = grossRevenue - refunds - gatewayFees - platformFees;
+
+        res.json({
+            dre: {
+                grossRevenue,
+                refunds,
+                gatewayFees,
+                platformFees,
+                netRevenue
+            },
+            summary: {
+                accountsReceivableTotal: arSum,
+                accountsPayableTotal: apSum,
+                accountsReceivableCount: accountsReceivable.length,
+                accountsPayableCount: accountsPayable.length
+            }
+        });
+    } catch (err) {
+        console.error("DRE Fetch Error:", err);
+        res.status(500).json({ message: 'Erro ao carregar DRE contábil' });
+    }
+});
+
+// GET /finance/reconciliation - Bank Reconciliation comparing with Stripe
+router.get('/reconciliation', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+
+        if (!tenantId) {
+            return res.status(400).json({ message: 'TenantID obrigatório' });
+        }
+
+        const { stripe } = await import('../../services/stripeService.js');
+        const stripeCharges = await stripe.charges.list({ limit: 50 });
+
+        const localEntries = await prisma.financialLedgerEntry.findMany({
+            where: {
+                tenantId,
+                paymentProvider: 'STRIPE',
+                stripeChargeId: { not: null }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 100
+        });
+
+        const matched: any[] = [];
+        const divergent: any[] = [];
+        const missingLocally: any[] = [];
+        const missingInStripe: any[] = [];
+
+        for (const charge of stripeCharges.data) {
+            const local = localEntries.find(e => e.stripeChargeId === charge.id || e.stripePaymentIntentId === (charge.payment_intent as string));
+            const stripeAmount = charge.amount / 100;
+
+            if (local) {
+                const localAmount = Number(local.grossAmount);
+                if (localAmount === stripeAmount) {
+                    matched.push({
+                        chargeId: charge.id,
+                        paymentIntentId: charge.payment_intent,
+                        amount: stripeAmount,
+                        status: charge.status,
+                        createdAt: new Date(charge.created * 1000),
+                        localEntryId: local.id
+                    });
+                } else {
+                    divergent.push({
+                        chargeId: charge.id,
+                        paymentIntentId: charge.payment_intent,
+                        stripeAmount,
+                        localAmount,
+                        stripeStatus: charge.status,
+                        localStatus: local.status,
+                        createdAt: new Date(charge.created * 1000),
+                        localEntryId: local.id
+                    });
+                }
+            } else {
+                missingLocally.push({
+                    chargeId: charge.id,
+                    paymentIntentId: charge.payment_intent,
+                    amount: stripeAmount,
+                    status: charge.status,
+                    createdAt: new Date(charge.created * 1000)
+                });
+            }
+        }
+
+        for (const local of localEntries) {
+            const hasCharge = stripeCharges.data.some(c => c.id === local.stripeChargeId || (c.payment_intent as string) === local.stripePaymentIntentId);
+            if (!hasCharge) {
+                missingInStripe.push({
+                    entryId: local.id,
+                    stripeChargeId: local.stripeChargeId,
+                    stripePaymentIntentId: local.stripePaymentIntentId,
+                    amount: Number(local.grossAmount),
+                    status: local.status,
+                    createdAt: local.createdAt
+                });
+            }
+        }
+
+        res.json({
+            summary: {
+                totalStripeChecked: stripeCharges.data.length,
+                totalLocalChecked: localEntries.length,
+                matchedCount: matched.length,
+                divergentCount: divergent.length,
+                missingLocallyCount: missingLocally.length,
+                missingInStripeCount: missingInStripe.length
+            },
+            matched,
+            divergent,
+            missingLocally,
+            missingInStripe
+        });
+    } catch (err) {
+        console.error("Reconciliation Error:", err);
+        res.status(500).json({ message: 'Erro ao carregar conciliação bancária' });
+    }
+});
+
+// GET /finance/payouts - List marketplace payouts
+router.get('/payouts', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const payouts = await prisma.payoutLedger.findMany({
+            where: { tenantId },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        res.json(payouts);
+    } catch (err) {
+        console.error("Payouts Fetch Error:", err);
+        res.status(500).json({ message: 'Erro ao carregar repasses' });
+    }
+});
+
+// POST /finance/payouts/release - Release pending payouts to available status
+router.post('/payouts/release', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const count = await PayoutService.releasePendingPayouts();
+        res.json({ success: true, releasedCount: count });
+    } catch (err) {
+        console.error("Payout Release Error:", err);
+        res.status(500).json({ message: 'Erro ao liberar repasses' });
+    }
+});
+
+// POST /finance/payouts/:id/complete - Complete a payout manual entry (MASTER only)
+router.post('/payouts/:id/complete', authMiddleware, requireRole([Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { stripeTransferId, stripePayoutId } = req.body;
+
+        if (!stripeTransferId) {
+            return res.status(400).json({ message: 'stripeTransferId é obrigatório' });
+        }
+
+        const payout = await PayoutService.completePayout(id, stripeTransferId, stripePayoutId);
+        res.json(payout);
+    } catch (err) {
+        console.error("Payout Complete Error:", err);
+        res.status(500).json({ message: 'Erro ao concluir repasse' });
+    }
+});
+
+// ========== ACCOUNTS RECEIVABLE ==========
+
+// GET /finance/accounts-receivable - List accounts receivable
+router.get('/accounts-receivable', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const list = await prisma.accountsReceivable.findMany({
+            where: { tenantId },
+            orderBy: { dueDate: 'asc' }
+        });
+        res.json(list);
+    } catch (err) {
+        console.error("Accounts Receivable Fetch Error:", err);
+        res.status(500).json({ message: 'Erro ao buscar contas a receber' });
+    }
+});
+
+// POST /finance/accounts-receivable - Create accounts receivable
+router.post('/accounts-receivable', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const { description, amount, dueDate, status, notes, costCenterId, categoryId } = req.body;
+        if (!description || !amount || !dueDate) {
+            return res.status(400).json({ message: 'Campos obrigatórios ausentes' });
+        }
+
+        const record = await prisma.accountsReceivable.create({
+            data: {
+                tenantId,
+                description,
+                amount,
+                dueDate: new Date(dueDate),
+                status: status || 'PENDING',
+                notes,
+                costCenterId,
+                categoryId
+            }
+        });
+        res.status(201).json(record);
+    } catch (err) {
+        console.error("Accounts Receivable Create Error:", err);
+        res.status(500).json({ message: 'Erro ao criar conta a receber' });
+    }
+});
+
+// PUT /finance/accounts-receivable/:id - Update accounts receivable
+router.put('/accounts-receivable/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        await assertTenantOwnership({ model: 'accountsReceivable', id, user });
+
+        const { description, amount, dueDate, status, paidAt, paidAmount, receiptUrl, notes, costCenterId, categoryId } = req.body;
+
+        const record = await prisma.accountsReceivable.update({
+            where: { id },
+            data: {
+                description,
+                amount,
+                dueDate: dueDate ? new Date(dueDate) : undefined,
+                status,
+                paidAt: paidAt ? new Date(paidAt) : undefined,
+                paidAmount,
+                receiptUrl,
+                notes,
+                costCenterId,
+                categoryId
+            }
+        });
+        res.json(record);
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
+        console.error("Accounts Receivable Update Error:", err);
+        res.status(500).json({ message: 'Erro ao atualizar conta a receber' });
+    }
+});
+
+// DELETE /finance/accounts-receivable/:id - Delete accounts receivable
+router.delete('/accounts-receivable/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        await assertTenantOwnership({ model: 'accountsReceivable', id, user });
+
+        await prisma.accountsReceivable.delete({ where: { id } });
+        res.status(204).send();
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
+        console.error("Accounts Receivable Delete Error:", err);
+        res.status(500).json({ message: 'Erro ao excluir conta a receber' });
+    }
+});
+
+// ========== ACCOUNTS PAYABLE ==========
+
+// GET /finance/accounts-payable - List accounts payable
+router.get('/accounts-payable', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const list = await prisma.accountsPayable.findMany({
+            where: { tenantId },
+            orderBy: { dueDate: 'asc' }
+        });
+        res.json(list);
+    } catch (err) {
+        console.error("Accounts Payable Fetch Error:", err);
+        res.status(500).json({ message: 'Erro ao buscar contas a pagar' });
+    }
+});
+
+// POST /finance/accounts-payable - Create accounts payable
+router.post('/accounts-payable', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const { description, amount, dueDate, status, providerId, notes, costCenterId, categoryId } = req.body;
+        if (!description || !amount || !dueDate) {
+            return res.status(400).json({ message: 'Campos obrigatórios ausentes' });
+        }
+
+        const record = await prisma.accountsPayable.create({
+            data: {
+                tenantId,
+                providerId,
+                description,
+                amount,
+                dueDate: new Date(dueDate),
+                status: status || 'PENDING',
+                notes,
+                costCenterId,
+                categoryId
+            }
+        });
+        res.status(201).json(record);
+    } catch (err) {
+        console.error("Accounts Payable Create Error:", err);
+        res.status(500).json({ message: 'Erro ao criar conta a pagar' });
+    }
+});
+
+// PUT /finance/accounts-payable/:id - Update accounts payable
+router.put('/accounts-payable/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        await assertTenantOwnership({ model: 'accountsPayable', id, user });
+
+        const { description, amount, dueDate, status, paidAt, paidAmount, receiptUrl, providerId, notes, costCenterId, categoryId } = req.body;
+
+        const record = await prisma.accountsPayable.update({
+            where: { id },
+            data: {
+                description,
+                amount,
+                dueDate: dueDate ? new Date(dueDate) : undefined,
+                status,
+                paidAt: paidAt ? new Date(paidAt) : undefined,
+                paidAmount,
+                receiptUrl,
+                providerId,
+                notes,
+                costCenterId,
+                categoryId
+            }
+        });
+        res.json(record);
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
+        console.error("Accounts Payable Update Error:", err);
+        res.status(500).json({ message: 'Erro ao atualizar conta a pagar' });
+    }
+});
+
+// DELETE /finance/accounts-payable/:id - Delete accounts payable
+router.delete('/accounts-payable/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        await assertTenantOwnership({ model: 'accountsPayable', id, user });
+
+        await prisma.accountsPayable.delete({ where: { id } });
+        res.status(204).send();
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
+        console.error("Accounts Payable Delete Error:", err);
+        res.status(500).json({ message: 'Erro ao excluir conta a pagar' });
+    }
+});
+
+// ========== COST CENTERS & ACCOUNTING CATEGORIES ==========
+
+// GET /finance/cost-centers - List cost centers
+router.get('/cost-centers', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const list = await prisma.costCenter.findMany({
+            where: { tenantId, active: true },
+            orderBy: { name: 'asc' }
+        });
+        res.json(list);
+    } catch (err) {
+        console.error("Cost Centers Fetch Error:", err);
+        res.status(500).json({ message: 'Erro ao buscar centros de custo' });
+    }
+});
+
+// POST /finance/cost-centers - Create cost center
+router.post('/cost-centers', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const { name, code, description } = req.body;
+        if (!name) return res.status(400).json({ message: 'Nome é obrigatório' });
+
+        const CC = await prisma.costCenter.create({
+            data: {
+                tenantId,
+                name,
+                code,
+                description
+            }
+        });
+        res.status(201).json(CC);
+    } catch (err) {
+        console.error("Cost Center Create Error:", err);
+        res.status(500).json({ message: 'Erro ao criar centro de custo' });
+    }
+});
+
+// GET /finance/accounting-categories - List accounting categories
+router.get('/accounting-categories', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const list = await prisma.accountingCategory.findMany({
+            where: { tenantId, active: true },
+            orderBy: { name: 'asc' }
+        });
+        res.json(list);
+    } catch (err) {
+        console.error("Accounting Categories Fetch Error:", err);
+        res.status(500).json({ message: 'Erro ao buscar categorias contábeis' });
+    }
+});
+
+// POST /finance/accounting-categories - Create accounting category
+router.post('/accounting-categories', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const user = req.user!;
+        const tenantId = user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: 'TenantID obrigatório' });
+
+        const { name, type, code, description } = req.body;
+        if (!name || !type) return res.status(400).json({ message: 'Nome e tipo são obrigatórios' });
+
+        const category = await prisma.accountingCategory.create({
+            data: {
+                tenantId,
+                name,
+                type,
+                code,
+                description
+            }
+        });
+        res.status(201).json(category);
+    } catch (err) {
+        console.error("Accounting Category Create Error:", err);
+        res.status(500).json({ message: 'Erro ao criar categoria contábil' });
     }
 });
 

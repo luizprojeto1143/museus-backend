@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
-import { checkEntityOwnership } from '../../utils/ownership.js';
+import { checkEntityOwnership, assertTenantOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -59,17 +59,15 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.put('/:id/toggle', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const check = await checkEntityOwnership('coupon', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ error: check.message });
-
-        const coupon = check.record;
+        const coupon = await assertTenantOwnership({ model: 'coupon', id, user: req.user! });
         const updated = await prisma.coupon.update({
             where: { id },
             data: { isActive: !coupon.isActive }
         });
 
         res.json(updated);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
         console.error(err);
         res.status(500).json({ error: 'Erro ao atualizar cupom' });
     }
@@ -79,12 +77,12 @@ router.put('/:id/toggle', authMiddleware, requireRole(['ADMIN', 'MASTER']), asyn
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const check = await checkEntityOwnership('coupon', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ error: check.message });
+        await assertTenantOwnership({ model: 'coupon', id, user: req.user! });
 
         await prisma.coupon.delete({ where: { id } });
         res.status(204).send();
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ error: err.message });
         console.error(err);
         res.status(500).json({ error: 'Erro ao deletar cupom' });
     }

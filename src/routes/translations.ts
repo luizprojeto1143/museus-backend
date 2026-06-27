@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
-import { checkEntityOwnership } from '../utils/ownership.js';
+import { checkEntityOwnership, assertTenantOwnership } from '../utils/ownership.js';
 
 const router = Router();
 
@@ -79,12 +79,12 @@ router.get('/all', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
 // DELETE /translations/:id
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const check = await checkEntityOwnership('workTranslation', req.params.id, req.user!);
-        if (!check.success) return res.status(check.status).json({ message: check.message });
+        await assertTenantOwnership({ model: 'workTranslation', id: req.params.id, user: req.user! });
 
         await prisma.workTranslation.delete({ where: { id: req.params.id } });
         res.json({ message: 'Tradução excluída' });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao excluir' });
     }

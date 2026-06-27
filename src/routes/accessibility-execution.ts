@@ -3,7 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
 import { z } from "zod";
-import { checkEntityOwnership } from "../utils/ownership.js";
+import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.js";
 
 const router = Router();
 
@@ -103,15 +103,15 @@ router.post("/request", authMiddleware, async (req, res) => {
 router.put("/:id/approve", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { approvedBudget } = req.body;
-        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'accessibilityExecution', id: req.params.id, user: req.user! });
 
         const execution = await prisma.accessibilityExecution.update({
             where: { id: req.params.id },
             data: { status: "APPROVED", approvedAt: new Date(), approvedBy: req.user!.id, approvedBudget }
         });
         return res.json(execution);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         return res.status(500).json({ message: "Erro ao aprovar" });
     }
 });
@@ -120,10 +120,7 @@ router.put("/:id/approve", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]
 router.put("/:id/deliver", authMiddleware, async (req, res) => {
     try {
         const { deliverables, executionNotes } = req.body;
-        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
-
-        const execution = ownership.record;
+        const execution = await assertTenantOwnership({ model: 'accessibilityExecution', id: req.params.id, user: req.user! });
 
         // Verificação adicional de permissão: ou é o prestador designado ou é admin do tenant
         const isProvider = execution.providerId && await prisma.accessibilityProvider.findFirst({
@@ -140,7 +137,8 @@ router.put("/:id/deliver", authMiddleware, async (req, res) => {
             data: { deliverables, executionNotes, executedAt: new Date(), status: "DELIVERED" }
         });
         return res.json(updated);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         return res.status(500).json({ message: "Erro ao registrar entrega" });
     }
 });
@@ -149,10 +147,7 @@ router.put("/:id/deliver", authMiddleware, async (req, res) => {
 router.put("/:id/validate", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { validationStatus, validationNotes } = req.body;
-        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
-
-        const execution = ownership.record;
+        const execution = await assertTenantOwnership({ model: 'accessibilityExecution', id: req.params.id, user: req.user! });
         
         // Incluir o accessibilityProvider para uso posterior
         const provider = execution.providerId ? await prisma.accessibilityProvider.findUnique({
@@ -175,7 +170,8 @@ router.put("/:id/validate", authMiddleware, requireRole([Role.ADMIN, Role.MASTER
             }
         });
         return res.json(updated);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         return res.status(500).json({ message: "Erro ao validar" });
     }
 });
@@ -246,15 +242,15 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 router.put("/:id/nota-fiscal", authMiddleware, async (req, res) => {
     try {
         const { notaFiscalUrl, notaFiscalNumber, notaFiscalDate } = req.body;
-        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'accessibilityExecution', id: req.params.id, user: req.user! });
 
         const updated = await prisma.accessibilityExecution.update({
             where: { id: req.params.id },
             data: { notaFiscalUrl, notaFiscalNumber, notaFiscalDate: notaFiscalDate ? new Date(notaFiscalDate) : null }
         });
         return res.json(updated);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         return res.status(500).json({ message: "Erro ao atualizar Nota Fiscal" });
     }
 });
@@ -263,15 +259,15 @@ router.put("/:id/nota-fiscal", authMiddleware, async (req, res) => {
 router.put("/:id/payment-receipt", authMiddleware, async (req, res) => {
     try {
         const { paymentReceiptUrl } = req.body;
-        const ownership = await checkEntityOwnership('accessibilityExecution', req.params.id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'accessibilityExecution', id: req.params.id, user: req.user! });
 
         const updated = await prisma.accessibilityExecution.update({
             where: { id: req.params.id },
             data: { paymentReceiptUrl }
         });
         return res.json(updated);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         return res.status(500).json({ message: "Erro ao atualizar Comprovante" });
     }
 });

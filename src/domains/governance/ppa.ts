@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
-import { checkEntityOwnership } from '../../utils/ownership.js';
+import { checkEntityOwnership, assertTenantOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -42,8 +42,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.patch('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('pPAGoal', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'pPAGoal', id, user: req.user! });
 
         const { currentValue, status } = req.body;
         const goal = await prisma.pPAGoal.update({
@@ -54,7 +53,8 @@ router.patch('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (re
             }
         });
         res.json(goal);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao atualizar meta' });
     }
@@ -64,12 +64,12 @@ router.patch('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (re
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('pPAGoal', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'pPAGoal', id, user: req.user! });
 
         await prisma.pPAGoal.delete({ where: { id } });
         res.json({ message: 'Meta excluída' });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao excluir meta' });
     }

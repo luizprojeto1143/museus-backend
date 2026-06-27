@@ -115,13 +115,81 @@ export function requirePermission(permission: string) {
       return res.status(401).json({ message: "Não autenticado" });
     }
     
-    // Master and Admin have bypass
-    if (req.user.role === Role.MASTER || req.user.role === Role.ADMIN) {
+    // Master has bypass
+    if (req.user.role === Role.MASTER) {
       return next();
     }
 
-    // Operational roles check flags (Collaborator, Producer, etc)
-    if (([Role.COLLABORATOR, Role.PRODUCER] as Role[]).includes(req.user.role) && req.user.permissions?.[permission]) {
+    const userPermissions = req.user.permissions;
+
+    // Check if permission is directly in the user's permissions object/array
+    if (userPermissions) {
+      if (Array.isArray(userPermissions) && userPermissions.includes(permission)) {
+        return next();
+      }
+      if (typeof userPermissions === 'object' && userPermissions[permission] === true) {
+        return next();
+      }
+    }
+
+    // Role-based defaults (the Matrix!)
+    const roleDefaultPermissions: Record<Role, string[]> = {
+      [Role.MASTER]: ['*'],
+      [Role.SECRETARIA]: [
+        'tenants.view_all',
+        'equipamentos.view_all',
+        'events.create',
+        'events.update',
+        'events.delete',
+        'manage_events',
+        'finance.view_global',
+        'finance.view_tenant',
+        'finance.refund',
+        'tickets.checkin',
+        'manage_scanner'
+      ],
+      [Role.ADMIN]: [
+        'events.create',
+        'events.update',
+        'events.delete',
+        'manage_events',
+        'manage_works',
+        'finance.view_tenant',
+        'finance.refund',
+        'tickets.checkin',
+        'manage_scanner',
+        'qrcodes.manage',
+        'surveys.manage'
+      ],
+      [Role.PRODUCER]: [
+        'events.create',
+        'events.update',
+        'manage_events',
+        'tickets.checkin',
+        'manage_scanner'
+      ],
+      [Role.COLLABORATOR]: [
+        'tickets.checkin',
+        'manage_scanner'
+      ],
+      [Role.OPERADOR]: [
+        'tickets.checkin',
+        'manage_scanner'
+      ],
+      [Role.TEATRO]: [
+        'events.create',
+        'events.update',
+        'manage_events',
+        'tickets.checkin',
+        'manage_scanner'
+      ],
+      [Role.PRESTADOR]: [],
+      [Role.PATROCINADOR]: [],
+      [Role.VISITOR]: []
+    };
+
+    const defaults = roleDefaultPermissions[req.user.role as Role] || [];
+    if (defaults.includes('*') || defaults.includes(permission)) {
       return next();
     }
 

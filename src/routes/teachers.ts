@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
-import { checkEntityOwnership } from '../utils/ownership.js';
+import { checkEntityOwnership, assertTenantOwnership } from '../utils/ownership.js';
 
 const router = Router();
 
@@ -69,17 +69,14 @@ router.post('/visits', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (
         const { teacherId, schoolName, grade, studentCount, ageGroup, visitDate, selectedWorkIds, notes } = req.body;
 
         // Verify teacher belongs to the same tenant
-        const teacher = await prisma.teacherProfile.findUnique({ where: { id: teacherId } });
-        if (!teacher) return res.status(404).json({ message: 'Professor não encontrado' });
-        if (req.user!.role !== 'MASTER' && teacher.tenantId !== tenantId) {
-            return res.status(403).json({ message: 'Sem permissão para este professor' });
-        }
+        await assertTenantOwnership({ model: 'teacherProfile', id: teacherId, user: req.user! });
 
         const visit = await prisma.schoolVisit.create({
             data: { teacherId, schoolName, grade, studentCount, ageGroup, visitDate: new Date(visitDate), selectedWorkIds: selectedWorkIds || [], notes, tenantId }
         });
         res.status(201).json(visit);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao agendar visita' });
     }
@@ -89,8 +86,7 @@ router.post('/visits', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (
 router.patch('/visits/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const check = await checkEntityOwnership('schoolVisit', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ message: check.message });
+        await assertTenantOwnership({ model: 'schoolVisit', id, user: req.user! });
 
         const { status, certificateIssued } = req.body;
         const visit = await prisma.schoolVisit.update({
@@ -98,7 +94,8 @@ router.patch('/visits/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), as
             data: { ...(status && { status }), ...(certificateIssued !== undefined && { certificateIssued }) }
         });
         res.json(visit);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao atualizar visita' });
     }
@@ -113,18 +110,15 @@ router.post('/activities', authMiddleware, requireRole(['ADMIN', 'MASTER']), asy
 
         // Verify school visit belongs to the tenant
         if (schoolVisitId) {
-            const visit = await prisma.schoolVisit.findUnique({ where: { id: schoolVisitId } });
-            if (!visit) return res.status(404).json({ message: 'Visita escolar não encontrada' });
-            if (req.user!.role !== 'MASTER' && visit.tenantId !== tenantId) {
-                return res.status(403).json({ message: 'Sem permissão para esta visita escolar' });
-            }
+            await assertTenantOwnership({ model: 'schoolVisit', id: schoolVisitId, user: req.user! });
         }
 
         const activity = await prisma.postVisitActivity.create({
             data: { title, description, questions, ageGroup, workIds: workIds || [], schoolVisitId, autoSend: autoSend ?? true, tenantId }
         });
         res.status(201).json(activity);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao criar atividade' });
     }

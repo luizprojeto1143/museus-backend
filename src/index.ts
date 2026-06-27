@@ -277,6 +277,8 @@ import opsRoutes from "./domains/governance/ops.js";
 app.use("/ops", opsRoutes);
 app.use("/notifications", notificationsRoutes);
 app.use("/contact", contactRoutes);
+import privacyRoutes from "./routes/privacy.js";
+app.use("/privacy", privacyRoutes);
 
 // Municipal/Public Management Routes
 app.use("/notices", noticesRoutes);
@@ -366,6 +368,13 @@ function redactSensitiveData(data: any): any {
 
 // Global Error Handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err.name === 'HttpError' || err.status) {
+    return res.status(err.status).json({
+      message: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+
   const sanitizedBody = redactSensitiveData(_req.body);
   const sanitizedHeaders = redactSensitiveData(_req.headers);
 

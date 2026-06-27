@@ -3,7 +3,7 @@ import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
-import { checkEntityOwnership } from "../utils/ownership.js";
+import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.js";
 import { syncLedgerEntry } from "../services/ledgerService.js";
 
 const router = Router();
@@ -78,9 +78,7 @@ router.get("/sessions", authMiddleware, async (req, res) => {
 router.get("/sessions/:id/seats", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('event', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
-        const session = ownership.record;
+        const session = await assertTenantOwnership({ model: 'event', id, user: req.user! });
 
         if (!session.isTheaterSession) {
             return res.status(404).json({ message: "Sessão não encontrada" });
@@ -102,7 +100,8 @@ router.get("/sessions/:id/seats", authMiddleware, async (req, res) => {
                 visitorId: r.visitorId
             }))
         });
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error("Error fetching session seats", err);
         return res.status(500).json({ message: "Erro ao buscar assentos" });
     }
@@ -112,9 +111,7 @@ router.get("/sessions/:id/seats", authMiddleware, async (req, res) => {
 router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('event', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
-        const session = ownership.record;
+        const session = await assertTenantOwnership({ model: 'event', id, user: req.user! });
 
         if (!session.isTheaterSession) {
             return res.status(404).json({ message: "Sessão não encontrada" });
@@ -182,9 +179,7 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
 router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('event', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
-        const session = ownership.record;
+        const session = await assertTenantOwnership({ model: 'event', id, user: req.user! });
 
         if (!session.isTheaterSession) {
             return res.status(404).json({ message: "Sessão não encontrada" });
@@ -471,8 +466,7 @@ router.post("/members", authMiddleware, async (req, res) => {
         }).parse(req.body);
 
         if (data.id) {
-            const ownership = await checkEntityOwnership('theaterMember', data.id, req.user!);
-            if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+            await assertTenantOwnership({ model: 'theaterMember', id: data.id, user: req.user! });
 
             const updated = await prisma.theaterMember.update({
                 where: { id: data.id },
@@ -485,7 +479,8 @@ router.post("/members", authMiddleware, async (req, res) => {
             data: { ...data, tenantId: tenantId as string } as any
         });
         return res.status(201).json(member);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error(err);
         return res.status(400).json({ message: "Dados inválidos" });
     }
@@ -497,15 +492,15 @@ router.post("/members", authMiddleware, async (req, res) => {
 router.get("/sessions/:id/cues", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('event', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'event', id, user: req.user! });
 
         const cues = await prisma.theaterCue.findMany({
             where: { eventId: id },
             orderBy: { order: "asc" }
         });
         return res.json(cues);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error(err);
         return res.status(500).json({ message: "Erro ao buscar cues" });
     }
@@ -515,8 +510,7 @@ router.get("/sessions/:id/cues", authMiddleware, async (req, res) => {
 router.post("/sessions/:id/cues", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('event', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'event', id, user: req.user! });
 
         const data = z.object({
             id: z.string().optional(),
@@ -529,8 +523,7 @@ router.post("/sessions/:id/cues", authMiddleware, async (req, res) => {
 
         if (data.id) {
             // Garantir que a cue a ser editada também pertence a este evento
-            const cueOwnership = await checkEntityOwnership('theaterCue', data.id, req.user!);
-            if (!cueOwnership.success) return res.status(cueOwnership.status).json({ message: cueOwnership.message });
+            await assertTenantOwnership({ model: 'theaterCue', id: data.id, user: req.user! });
 
             const updated = await prisma.theaterCue.update({
                 where: { id: data.id },
@@ -543,7 +536,8 @@ router.post("/sessions/:id/cues", authMiddleware, async (req, res) => {
             data: { ...data, eventId: id } as any
         });
         return res.status(201).json(cue);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error(err);
         return res.status(400).json({ message: "Dados inválidos" });
     }

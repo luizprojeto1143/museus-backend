@@ -4,7 +4,7 @@ import { authMiddleware, requireRole } from "../../middleware/auth.js";
 import { Role, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { validate } from "../../middleware/validate.js";
-import { checkEntityOwnership } from "../../utils/ownership.js";
+import { checkEntityOwnership, assertTenantOwnership } from "../../utils/ownership.js";
 
 const router = Router();
 
@@ -21,6 +21,13 @@ const spaceSchema = z.object({
         equipamentoId: z.string().optional().nullable(),
         theaterLayout: z.any().optional()
     })
+});
+
+const updateSpaceSchema = z.object({
+    params: z.object({
+        id: z.string()
+    }),
+    body: spaceSchema.shape.body.partial()
 });
 
 // List Spaces
@@ -48,15 +55,10 @@ router.get("/:id", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
-
-        const space = await prisma.space.findFirst({
-            where: { id, tenantId: user.tenantId as string }
-        });
-
-        if (!space) return res.status(404).json({ message: "Espaço não encontrado" });
-
+        const space = await assertTenantOwnership({ model: 'space', id, user });
         return res.json(space);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error("Error getting space", err);
         return res.status(500).json({ message: "Erro ao buscar espaço" });
     }
@@ -90,14 +92,13 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
 });
 
 // Update Space
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(spaceSchema), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), validate(updateSpaceSchema), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
         const { name, description, capacity, type, resources, isBookable, imageUrl } = req.body;
 
-        const check = await checkEntityOwnership('space', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ message: check.message });
+        const spaceData = await assertTenantOwnership({ model: 'space', id, user });
 
         const space = await prisma.space.update({
             where: { id },
@@ -115,7 +116,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         });
 
         return res.json(space);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error("Error updating space", err);
         return res.status(500).json({ message: "Erro ao atualizar espaço" });
     }
@@ -125,12 +127,12 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
     try {
         const { id } = req.params;
-        const check = await checkEntityOwnership('space', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ message: check.message });
+        await assertTenantOwnership({ model: 'space', id, user: req.user! });
 
         await prisma.space.delete({ where: { id } });
         return res.status(204).send();
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error("Error deleting space", err);
         return res.status(500).json({ message: "Erro ao excluir espaço" });
     }

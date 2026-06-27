@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
-import { checkEntityOwnership } from '../utils/ownership.js';
+import { checkEntityOwnership, assertTenantOwnership } from '../utils/ownership.js';
 
 const router = Router();
 
@@ -43,8 +43,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.post('/:id/shifts', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const check = await checkEntityOwnership('volunteer', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ message: check.message });
+        await assertTenantOwnership({ model: 'volunteer', id, user: req.user! });
 
         const { date, startTime, endTime, hours, activity } = req.body;
         const shift = await prisma.volunteerShift.create({
@@ -60,7 +59,8 @@ router.post('/:id/shifts', authMiddleware, requireRole(['ADMIN', 'MASTER']), asy
             data: { totalHours: totalHours._sum.hours || 0 }
         });
         res.status(201).json(shift);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao registrar turno' });
     }
@@ -70,9 +70,7 @@ router.post('/:id/shifts', authMiddleware, requireRole(['ADMIN', 'MASTER']), asy
 router.patch('/:id/shifts/:shiftId', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { shiftId, id } = req.params;
-        const checkVol = await checkEntityOwnership('volunteer', id, req.user!);
-        if (!checkVol.success) return res.status(checkVol.status).json({ message: checkVol.message });
-
+        await assertTenantOwnership({ model: 'volunteer', id, user: req.user! });
         const checkShift = await checkEntityOwnership('volunteerShift', shiftId, req.user!);
         if (!checkShift.success) return res.status(checkShift.status).json({ message: checkShift.message });
 
@@ -91,7 +89,8 @@ router.patch('/:id/shifts/:shiftId', authMiddleware, requireRole(['ADMIN', 'MAST
         });
         await prisma.volunteer.update({ where: { id }, data: { totalHours: totalHours._sum.hours || 0 } });
         res.json(shift);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao confirmar turno' });
     }
@@ -101,15 +100,15 @@ router.patch('/:id/shifts/:shiftId', authMiddleware, requireRole(['ADMIN', 'MAST
 router.get('/:id/shifts', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const check = await checkEntityOwnership('volunteer', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ message: check.message });
+        await assertTenantOwnership({ model: 'volunteer', id, user: req.user! });
 
         const shifts = await prisma.volunteerShift.findMany({
             where: { volunteerId: id },
             orderBy: { date: 'desc' }
         });
         res.json(shifts);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao buscar turnos' });
     }

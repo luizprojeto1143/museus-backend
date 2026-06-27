@@ -3,7 +3,7 @@ import { prisma } from '../../prisma.js'; // Use singleton
 import { Role } from '@prisma/client';
 import { z } from 'zod';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
-import { checkEntityOwnership } from '../../utils/ownership.js';
+import { checkEntityOwnership, assertTenantOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -101,6 +101,7 @@ router.get('/events/:eventId/tickets', async (req, res) => {
 router.post('/events/:eventId/tickets', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     const { eventId } = req.params;
     try {
+        await assertTenantOwnership({ model: 'event', id: eventId, user: req.user! });
         const data = ticketSchema.parse(req.body);
         const ticket = await prisma.ticket.create({
             data: {
@@ -111,7 +112,8 @@ router.post('/events/:eventId/tickets', authMiddleware, requireRole(['ADMIN', 'M
             } as any
         });
         res.status(201).json(ticket);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
         res.status(400).json({ error: 'Invalid data', details: error });
     }
 });
@@ -120,8 +122,7 @@ router.post('/events/:eventId/tickets', authMiddleware, requireRole(['ADMIN', 'M
 router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     const { id } = req.params;
     try {
-        const check = await checkEntityOwnership('ticket', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ error: check.message });
+        await assertTenantOwnership({ model: 'ticket', id, user: req.user! });
 
         const data = ticketSchema.partial().parse(req.body);
 
@@ -134,7 +135,8 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
             }
         });
         res.json(ticket);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
         res.status(400).json({ error: 'Invalid data', details: error });
     }
 });
@@ -143,12 +145,12 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     const { id } = req.params;
     try {
-        const check = await checkEntityOwnership('ticket', id, req.user!);
-        if (!check.success) return res.status(check.status).json({ error: check.message });
+        await assertTenantOwnership({ model: 'ticket', id, user: req.user! });
 
         await prisma.ticket.delete({ where: { id } });
         res.status(204).send();
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
         res.status(500).json({ error: 'Failed to delete ticket' });
     }
 });

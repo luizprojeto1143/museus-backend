@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
-import { checkEntityOwnership } from '../../utils/ownership.js';
+import { checkEntityOwnership, assertTenantOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
@@ -41,8 +41,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('intangibleHeritage', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'intangibleHeritage', id, user: req.user! });
 
         const { title, description, category, status, imageUrl, videoUrl, holders, region } = req.body;
         const item = await prisma.intangibleHeritage.update({
@@ -50,7 +49,8 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
             data: { title, description, category, status, imageUrl, videoUrl, holders, region }
         });
         res.json(item);
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao atualizar' });
     }
@@ -60,12 +60,12 @@ router.put('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req,
 router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { id } = req.params;
-        const ownership = await checkEntityOwnership('intangibleHeritage', id, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'intangibleHeritage', id, user: req.user! });
 
         await prisma.intangibleHeritage.delete({ where: { id } });
         res.json({ message: 'Excluído' });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         console.error(error);
         res.status(500).json({ message: 'Erro ao excluir' });
     }

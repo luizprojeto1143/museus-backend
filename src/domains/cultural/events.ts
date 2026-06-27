@@ -10,6 +10,7 @@ import { validate } from "../../middleware/validate.js";
 import { createEventSchema, updateEventSchema } from "../../schemas/event.schema.js";
 import { stripe, stripeService } from "../../services/stripeService.js";
 import { dispatchEvent, backgroundQueue } from "../../infrastructure/queue/bullmq.setup.js";
+import { assertTenantOwnership } from "../../utils/ownership.js";
 
 const router = Router();
 
@@ -295,13 +296,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     const user = req.user!;
 
     // IDOR Protection: Verify resource belongs to user's tenant
-    const ownerCheck = user.role === Role.MASTER
-      ? { id }
-      : { id, tenantId: user.tenantId as string };
-    const existingEvent = await prisma.event.findFirst({ where: ownerCheck });
-    if (!existingEvent) {
-      return res.status(404).json({ message: "Evento não encontrado" });
-    }
+    const existingEvent = await assertTenantOwnership({ model: 'event', id, user });
     const {
       title, description, location, startDate, endDate, categoryId,
       certificateBackgroundUrl, certificateText, minMinutesForCertificate,
@@ -385,7 +380,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     });
 
     return res.json(event);
-  } catch (err) {
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error("Erro atualizar evento", err);
     return res.status(500).json({ message: "Erro ao atualizar evento" });
   }
@@ -398,13 +394,7 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
     const user = req.user!;
 
     // IDOR Protection: Verify resource belongs to user's tenant
-    const whereClause = user.role === Role.MASTER
-      ? { id }
-      : { id, tenantId: user.tenantId as string };
-    const existing = await prisma.event.findFirst({ where: whereClause });
-    if (!existing) {
-      return res.status(404).json({ message: "Evento não encontrado" });
-    }
+    const existing = await assertTenantOwnership({ model: 'event', id, user });
 
     const isMaster = user.role === Role.MASTER;
     const shouldHardDelete = isMaster && hard === "true";
@@ -452,7 +442,8 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
     );
 
     return res.status(204).send();
-  } catch (err) {
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error("Erro excluir evento", err);
     return res.status(500).json({ message: "Erro ao excluir evento" });
   }

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { validate } from "../../middleware/validate.js";
 import { createWorkSchema, updateWorkSchema } from "../../schemas/work.schema.js";
 import { WorkService } from "../../services/work.js";
+import { assertTenantOwnership } from "../../utils/ownership.js";
 import { createAuditLog } from "../governance/audit.js";
 
 const router = Router();
@@ -268,18 +269,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     const data = req.body;
 
     // IDOR Protection: Verify resource belongs to user's tenant
-    const whereClause = user.role === Role.MASTER
-      ? { id }
-      : { id, tenantId: user.tenantId as string };
-    const existing = await prisma.work.findFirst({
-      where: whereClause,
-      include: {
-        tenant: true
-      }
-    });
-    if (!existing) {
-      return res.status(404).json({ message: "Obra não encontrada" });
-    }
+    const existing = await assertTenantOwnership({ model: 'work', id, user });
 
     // Handle code update/creation
     if (data.code !== undefined) {
@@ -393,6 +383,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
 
     return res.json({ ...work, qrCode });
   } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error(`Erro ao atualizar obra ID: ${req.params.id}`, err);
     if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
       return res.status(400).json({ message: "Este código já está em uso." });
@@ -408,12 +399,7 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
     const user = req.user!;
 
     // IDOR Protection: Verify resource belongs to user's tenant
-    const whereClause = user.role === Role.MASTER
-      ? { id }
-      : { id, tenantId: user.tenantId as string };
-    const work = await prisma.work.findFirst({ where: whereClause });
-
-    if (!work) return res.status(404).json({ message: "Obra não encontrada" });
+    const work = await assertTenantOwnership({ model: 'work', id, user });
 
     const isMaster = user.role === Role.MASTER;
     const shouldHardDelete = isMaster && hard === "true";
@@ -464,7 +450,8 @@ router.delete("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role
     );
 
     return res.status(204).send();
-  } catch (err) {
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error("Erro ao excluir obra:", err);
     return res.status(500).json({ message: "Erro ao excluir obra" });
   }

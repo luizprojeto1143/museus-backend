@@ -3,7 +3,7 @@ import { SurveyQuestionType, Role } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { authMiddleware as authenticate, requireRole, softAuthMiddleware } from "../middleware/auth.js";
-import { checkEntityOwnership } from "../utils/ownership.js";
+import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.js";
 import { limiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
@@ -55,9 +55,7 @@ router.get("/events/:eventId/survey", async (req: Request, res: Response) => {
 router.post("/events/:eventId/survey", authenticate, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
-        const ownership = await checkEntityOwnership('event', eventId, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
-        const event = ownership.record;
+        const event = await assertTenantOwnership({ model: 'event', id: eventId, user: req.user! });
 
         const parsed = saveQuestionsSchema.safeParse(req.body);
 
@@ -113,7 +111,8 @@ router.post("/events/:eventId/survey", authenticate, requireRole([Role.ADMIN, Ro
         );
 
         res.json({ success: true, questions });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
         console.error("Error saving survey:", error);
         res.status(500).json({ error: "Erro ao salvar pesquisa" });
     }
@@ -123,8 +122,7 @@ router.post("/events/:eventId/survey", authenticate, requireRole([Role.ADMIN, Ro
 router.get("/events/:eventId/survey/results", authenticate, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req: Request, res: Response) => {
     try {
         const { eventId } = req.params;
-        const ownership = await checkEntityOwnership('event', eventId, req.user!);
-        if (!ownership.success) return res.status(ownership.status).json({ message: ownership.message });
+        await assertTenantOwnership({ model: 'event', id: eventId, user: req.user! });
 
         const questions = await prisma.surveyQuestion.findMany({
             where: { eventId },
@@ -213,7 +211,8 @@ router.get("/events/:eventId/survey/results", authenticate, requireRole([Role.AD
             questions: results,
             totalRespondents: uniqueRespondents.length
         });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
         console.error("Error fetching survey results:", error);
         res.status(500).json({ error: "Erro ao buscar resultados" });
     }
