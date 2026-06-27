@@ -1009,9 +1009,16 @@ router.get('/reconciliation', async (req: Request, res: Response): Promise<any> 
     }
     const stripePIs = await stripe.paymentIntents.list(stripeParams);
 
+    const user = (req as any).user;
+    const isMaster = user?.role === Role.MASTER;
+    const filteredPIs = stripePIs.data.filter(pi => {
+      if (isMaster) return true;
+      return pi.metadata?.tenantId === tenantId;
+    });
+
     const reconciled: any[] = [];
     const stripePIsMap = new Map<string, any>();
-    stripePIs.data.forEach(pi => {
+    filteredPIs.forEach(pi => {
       stripePIsMap.set(pi.id, pi);
     });
 
@@ -1125,7 +1132,7 @@ router.get('/reconciliation', async (req: Request, res: Response): Promise<any> 
     }
 
     // B. Conciliação reversa (Stripe para Banco de Dados Local)
-    for (const pi of stripePIs.data) {
+    for (const pi of filteredPIs) {
       if (pi.status === 'succeeded' && !localPIsSet.has(pi.id)) {
         const stripeAmount = pi.amount_received / 100;
         reconciled.push({

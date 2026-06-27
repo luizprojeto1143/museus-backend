@@ -269,110 +269,7 @@ router.post("/webhook", async (req: Request, res: Response) => {
   }
 
   try {
-    // Process inside transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Check idempotency
-      const existingEvent = await tx.stripeWebhookEvent.findUnique({
-        where: { id: event.id }
-      });
-      if (existingEvent && (existingEvent.status === "PROCESSED" || existingEvent.status === "PROCESSING")) {
-        return { duplicate: true };
-      }
-
-      // 2. Mark as PROCESSING (upsert to handle retries of failed ones)
-      await tx.stripeWebhookEvent.upsert({
-        where: { id: event.id },
-        update: { status: "PROCESSING" },
-        create: { id: event.id, type: event.type, status: "PROCESSING" }
-      });
-
-      if (event.type === 'checkout.session.completed') {
-        const session = event.data.object as any;
-        const metadata = session.metadata;
-
-        if (metadata && metadata.sponsorshipId) {
-          const sponsorship = await tx.workSponsorship.findUnique({
-            where: { id: metadata.sponsorshipId }
-          });
-
-          if (sponsorship && sponsorship.status === 'PENDING') {
-            await tx.workSponsorship.update({
-              where: { id: sponsorship.id },
-              data: { 
-                status: 'ACTIVE',
-                stripeSubscriptionId: session.subscription,
-                stripeCustomerId: session.customer as string
-              }
-            });
-
-            // Lógica de Split de Receita
-            const work = await tx.work.findUnique({ 
-              where: { id: sponsorship.workId },
-              include: { tenant: true }
-            });
-
-            if (work && work.tenant) {
-              const amountReceived = (session.amount_total || 0); // em centavos
-              const platformFee = amountReceived * (sponsorship.platformFeePercent / 100);
-              const netAmount = amountReceived - platformFee;
-
-              // Log FinancialTransaction for auditing
-              const finTx = await tx.financialTransaction.create({
-                data: {
-                  tenantId: work.tenantId,
-                  type: "PAYMENT",
-                  source: "SPONSORSHIP",
-                  amount: amountReceived / 100,
-                  fee: platformFee / 100,
-                  netAmount: netAmount / 100,
-                  status: "COMPLETED",
-                  paymentMethod: "CREDIT_CARD",
-                  stripePaymentIntentId: session.payment_intent as string
-                }
-              });
-
-              await syncLedgerEntry(tx, finTx.id);
-
-              // Repasse
-              let connectAccountId: string | null = null;
-              if (work.tenant.isPublicInstitution && work.tenant.parentId) {
-                const secretaria = await tx.tenant.findUnique({ where: { id: work.tenant.parentId } });
-                if (secretaria?.stripeConnectId) {
-                  connectAccountId = secretaria.stripeConnectId;
-                }
-              } else if (!work.tenant.isPublicInstitution && work.tenant.stripeConnectId) {
-                connectAccountId = work.tenant.stripeConnectId;
-              }
-
-              if (connectAccountId) {
-                await stripe.transfers.create({
-                  amount: Math.round(netAmount),
-                  currency: 'brl',
-                  destination: connectAccountId,
-                  description: `Repasse Patrocínio: ${work.title}`
-                }, {
-                  idempotencyKey: `transfer-sponsor-${sponsorship.id}-${event.id}`
-                });
-              }
-            }
-          }
-        }
-      } else if (event.type === 'customer.subscription.deleted') {
-        const subscription = event.data.object as any;
-        await tx.workSponsorship.updateMany({
-          where: { stripeSubscriptionId: subscription.id },
-          data: { status: 'EXPIRED', active: false, endDate: new Date() }
-        });
-      }
-
-      // 3. Mark as PROCESSED
-      await tx.stripeWebhookEvent.update({
-        where: { id: event.id },
-        data: { status: "PROCESSED" }
-      });
-
-      return { duplicate: false };
-    });
+    const result = await handleSponsorWebhookEvent(event);
 
     if (result.duplicate) {
       console.log(`[Stripe Sponsor Webhook] Event ${event.id} already processed. Skipping.`);
@@ -382,7 +279,6 @@ router.post("/webhook", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Erro processando webhook sponsor-portal:", error);
     
-    // Tentativa de marcar o evento como FAILED se possível, fora da transação que falhou
     try {
       await prisma.stripeWebhookEvent.upsert({
         where: { id: event.id },
@@ -397,6 +293,162 @@ router.post("/webhook", async (req: Request, res: Response) => {
   }
 
   return res.status(200).send({ received: true });
+});
+
+// Helper for executing sponsor webhook processing
+export async function handleSponsorWebhookEvent(event: any) {
+  return await prisma.$transaction(async (tx) => {
+    // 1. Check idempotency
+    const existingEvent = await tx.stripeWebhookEvent.findUnique({
+      where: { id: event.id }
+    });
+    if (existingEvent && (existingEvent.status === "PROCESSED" || existingEvent.status === "PROCESSING")) {
+      if (existingEvent.status === "PROCESSING") {
+        const isStale = Date.now() - new Date(existingEvent.updatedAt).getTime() > 15 * 60 * 1000;
+        if (isStale) {
+          console.log(`[Stripe Sponsor Webhook] Event ${event.id} is PROCESSING but stale (updatedAt: ${existingEvent.updatedAt.toISOString()}). Reprocessing...`);
+        } else {
+          return { duplicate: true };
+        }
+      } else {
+        return { duplicate: true };
+      }
+    }
+
+    // 2. Mark as PROCESSING
+    await tx.stripeWebhookEvent.upsert({
+      where: { id: event.id },
+      update: { status: "PROCESSING" },
+      create: { id: event.id, type: event.type, status: "PROCESSING" }
+    });
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as any;
+      const metadata = session.metadata;
+
+      if (metadata && metadata.sponsorshipId) {
+        const sponsorship = await tx.workSponsorship.findUnique({
+          where: { id: metadata.sponsorshipId }
+        });
+
+        if (sponsorship && sponsorship.status === 'PENDING') {
+          await tx.workSponsorship.update({
+            where: { id: sponsorship.id },
+            data: { 
+              status: 'ACTIVE',
+              stripeSubscriptionId: session.subscription,
+              stripeCustomerId: session.customer as string
+            }
+          });
+
+          // Lógica de Split de Receita
+          const work = await tx.work.findUnique({ 
+            where: { id: sponsorship.workId },
+            include: { tenant: true }
+          });
+
+          if (work && work.tenant) {
+            const amountReceived = (session.amount_total || 0); // em centavos
+            const platformFee = amountReceived * (sponsorship.platformFeePercent / 100);
+            const netAmount = amountReceived - platformFee;
+
+            // Log FinancialTransaction for auditing
+            const finTx = await tx.financialTransaction.create({
+              data: {
+                tenantId: work.tenantId,
+                type: "PAYMENT",
+                source: "SPONSORSHIP",
+                amount: amountReceived / 100,
+                fee: platformFee / 100,
+                netAmount: netAmount / 100,
+                status: "COMPLETED",
+                paymentMethod: "CREDIT_CARD",
+                stripePaymentIntentId: session.payment_intent as string
+              }
+            });
+
+            await syncLedgerEntry(tx, finTx.id);
+
+            // Repasse
+            let connectAccountId: string | null = null;
+            if (work.tenant.isPublicInstitution && work.tenant.parentId) {
+              const secretaria = await tx.tenant.findUnique({ where: { id: work.tenant.parentId } });
+              if (secretaria?.stripeConnectId) {
+                connectAccountId = secretaria.stripeConnectId;
+              }
+            } else if (!work.tenant.isPublicInstitution && work.tenant.stripeConnectId) {
+              connectAccountId = work.tenant.stripeConnectId;
+            }
+
+            if (connectAccountId) {
+              await stripe.transfers.create({
+                amount: Math.round(netAmount),
+                currency: 'brl',
+                destination: connectAccountId,
+                description: `Repasse Patrocínio: ${work.title}`
+              }, {
+                idempotencyKey: `transfer-sponsor-${sponsorship.id}-${event.id}`
+              });
+            }
+          }
+        }
+      }
+    } else if (event.type === 'customer.subscription.deleted') {
+      const subscription = event.data.object as any;
+      await tx.workSponsorship.updateMany({
+        where: { stripeSubscriptionId: subscription.id },
+        data: { status: 'EXPIRED', active: false, endDate: new Date() }
+      });
+    }
+
+    // 3. Mark as PROCESSED
+    await tx.stripeWebhookEvent.update({
+      where: { id: event.id },
+      data: { status: "PROCESSED" }
+    });
+
+    return { duplicate: false };
+  });
+}
+
+/**
+ * Reprocess a sponsorship webhook event (MASTER only)
+ */
+router.post("/reprocess/:eventId", authMiddleware, requireRole([Role.MASTER]), async (req: Request, res: Response): Promise<any> => {
+  const { eventId } = req.params;
+
+  const dbEvent = await prisma.stripeWebhookEvent.findUnique({
+    where: { id: eventId }
+  });
+
+  if (!dbEvent) {
+    return res.status(404).json({ message: "Evento de webhook não encontrado no banco de dados." });
+  }
+
+  try {
+    console.log(`[Stripe Sponsor Webhook Reprocess] Fetching event ${eventId} from Stripe API...`);
+    const event = await stripe.events.retrieve(eventId);
+
+    // Reset status to PROCESSING
+    await prisma.stripeWebhookEvent.update({
+      where: { id: eventId },
+      data: { status: "PROCESSING", errorMessage: null }
+    });
+
+    const result = await handleSponsorWebhookEvent(event);
+
+    return res.json({ 
+      message: "Webhook de patrocínio reprocessado com sucesso", 
+      status: result.duplicate ? "DUPLICATE" : "PROCESSED" 
+    });
+  } catch (err: any) {
+    console.error(`[Stripe Sponsor Webhook Reprocess Error]:`, err);
+    await prisma.stripeWebhookEvent.update({
+      where: { id: eventId },
+      data: { status: "FAILED", errorMessage: err?.message || String(err) }
+    });
+    return res.status(500).json({ message: "Erro ao reprocessar webhook de patrocínio", error: err?.message });
+  }
 });
 
 export default router;

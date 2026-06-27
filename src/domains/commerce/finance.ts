@@ -280,12 +280,20 @@ router.get('/reconciliation', authMiddleware, requireRole([Role.ADMIN, Role.MAST
             take: 100
         });
 
+        const isMaster = user.role === 'MASTER';
+        const filteredCharges = stripeCharges.data.filter(charge => {
+            if (isMaster) return true;
+            const chargeTenantId = charge.metadata?.tenantId;
+            const hasLocalMatch = localEntries.some(e => e.stripeChargeId === charge.id || e.stripePaymentIntentId === (charge.payment_intent as string));
+            return chargeTenantId === tenantId || hasLocalMatch;
+        });
+
         const matched: any[] = [];
         const divergent: any[] = [];
         const missingLocally: any[] = [];
         const missingInStripe: any[] = [];
 
-        for (const charge of stripeCharges.data) {
+        for (const charge of filteredCharges) {
             const local = localEntries.find(e => e.stripeChargeId === charge.id || e.stripePaymentIntentId === (charge.payment_intent as string));
             const stripeAmount = charge.amount / 100;
 
@@ -313,18 +321,21 @@ router.get('/reconciliation', authMiddleware, requireRole([Role.ADMIN, Role.MAST
                     });
                 }
             } else {
-                missingLocally.push({
-                    chargeId: charge.id,
-                    paymentIntentId: charge.payment_intent,
-                    amount: stripeAmount,
-                    status: charge.status,
-                    createdAt: new Date(charge.created * 1000)
-                });
+                const chargeTenantId = charge.metadata?.tenantId;
+                if (isMaster || chargeTenantId === tenantId) {
+                    missingLocally.push({
+                        chargeId: charge.id,
+                        paymentIntentId: charge.payment_intent,
+                        amount: stripeAmount,
+                        status: charge.status,
+                        createdAt: new Date(charge.created * 1000)
+                    });
+                }
             }
         }
 
         for (const local of localEntries) {
-            const hasCharge = stripeCharges.data.some(c => c.id === local.stripeChargeId || (c.payment_intent as string) === local.stripePaymentIntentId);
+            const hasCharge = filteredCharges.some(c => c.id === local.stripeChargeId || (c.payment_intent as string) === local.stripePaymentIntentId);
             if (!hasCharge) {
                 missingInStripe.push({
                     entryId: local.id,
@@ -380,7 +391,9 @@ router.get('/payouts', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), a
 // POST /finance/payouts/release - Release pending payouts to available status
 router.post('/payouts/release', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
-        const count = await PayoutService.releasePendingPayouts();
+        const user = req.user!;
+        const tenantId = user.role === Role.MASTER ? undefined : user.tenantId;
+        const count = await PayoutService.releasePendingPayouts(tenantId || undefined);
         res.json({ success: true, releasedCount: count });
     } catch (err) {
         console.error("Payout Release Error:", err);

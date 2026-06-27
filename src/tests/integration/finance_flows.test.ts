@@ -47,6 +47,14 @@ describe('Financial Módulo & ERP Integration Tests', () => {
         });
         tenantId = tenant.id;
 
+        // Clean slate to prevent collision with aborted/previous test runs
+        await prisma.accountsReceivable.deleteMany({ where: { tenantId } });
+        await prisma.accountsPayable.deleteMany({ where: { tenantId } });
+        await prisma.costCenter.deleteMany({ where: { tenantId } });
+        await prisma.accountingCategory.deleteMany({ where: { tenantId } });
+        await prisma.payoutLedger.deleteMany({ where: { tenantId } });
+        await prisma.financialLedgerEntry.deleteMany({ where: { tenantId } });
+
         const password = 'password123';
         const hashedPassword = await bcrypt.hash(password, 10);
 

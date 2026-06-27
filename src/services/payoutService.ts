@@ -41,13 +41,17 @@ export class PayoutService {
   /**
    * Libera repasses vencidos (passados de availableAt) alterando o status de PENDING para AVAILABLE.
    */
-  static async releasePendingPayouts(): Promise<number> {
+  static async releasePendingPayouts(tenantId?: string): Promise<number> {
     const now = new Date();
+    const where: any = {
+      status: 'PENDING',
+      availableAt: { lte: now }
+    };
+    if (tenantId) {
+      where.tenantId = tenantId;
+    }
     const result = await prisma.payoutLedger.updateMany({
-      where: {
-        status: 'PENDING',
-        availableAt: { lte: now }
-      },
+      where,
       data: {
         status: 'AVAILABLE'
       }

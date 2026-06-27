@@ -46,6 +46,10 @@ router.post('/', authMiddleware, async (req, res) => {
                     throw new Error('NOT_FOUND');
                 }
 
+                if (ticketLock.eventId !== eventId) {
+                    throw new Error('TICKET_EVENT_MISMATCH');
+                }
+
                 // Verify count of active pending registrations
                 const activePendingCount = await tx.registration.count({
                     where: {

@@ -46,67 +46,51 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
         const firstReg = pendingRegistrations[0];
         const ticketId = firstReg.ticketId;
 
-        const now = new Date();
-        const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-        
-        const expiredRegs = pendingRegistrations.filter(r => r.createdAt < thirtyMinutesAgo);
-        const validPendingRegistrations = pendingRegistrations.filter(r => r.createdAt >= thirtyMinutesAgo);
+        const quantity = pendingRegistrations.length;
+        const totalAmount = pendingRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
+        const totalFee = pendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
 
-        if (expiredRegs.length > 0) {
-          await prisma.registration.updateMany({
-            where: { id: { in: expiredRegs.map(r => r.id) } },
-            data: { status: "CANCELED" }
-          });
-          console.log(`[Webhook] Marked ${expiredRegs.length} expired registrations as CANCELED.`);
-        }
-
-        if (validPendingRegistrations.length > 0) {
-          const quantity = validPendingRegistrations.length;
-          const totalAmount = validPendingRegistrations.reduce((acc, r) => acc + Number(r.pricePaid), 0);
-          const totalFee = validPendingRegistrations.reduce((acc, r) => acc + Number(r.platformFee || 0), 0);
-
-          await prisma.$transaction(async (tx) => {
-            let finTxId: string | undefined;
-            if (firstReg.event?.tenantId) {
-              const finTx = await tx.financialTransaction.create({
-                data: {
-                  tenantId: firstReg.event.tenantId,
-                  type: "PAYMENT",
-                  source: "REGISTRATION",
-                  amount: totalAmount,
-                  fee: totalFee,
-                  netAmount: totalAmount - totalFee,
-                  status: "COMPLETED",
-                  paymentMethod: "CREDIT_CARD",
-                  stripePaymentIntentId: paymentIntentId,
-                  stripeChargeId: stripeChargeId
-                }
-              });
-              finTxId = finTx.id;
-              await syncLedgerEntry(tx, finTx.id);
-            }
-
-            await tx.registration.updateMany({
-              where: { id: { in: validPendingRegistrations.map(r => r.id) } },
-              data: { status: "CONFIRMED", financialTransactionId: finTxId }
+        await prisma.$transaction(async (tx) => {
+          let finTxId: string | undefined;
+          if (firstReg.event?.tenantId) {
+            const finTx = await tx.financialTransaction.create({
+              data: {
+                tenantId: firstReg.event.tenantId,
+                type: "PAYMENT",
+                source: "REGISTRATION",
+                amount: totalAmount,
+                fee: totalFee,
+                netAmount: totalAmount - totalFee,
+                status: "COMPLETED",
+                paymentMethod: "CREDIT_CARD",
+                stripePaymentIntentId: paymentIntentId,
+                stripeChargeId: stripeChargeId
+              }
             });
-            await tx.ticket.update({
-              where: { id: ticketId },
-              data: { sold: { increment: quantity } }
-            });
-          });
-
-          console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
-          
-          const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
-          for (const reg of validPendingRegistrations) {
-            mailService.sendTicketEmail(
-              reg.guestEmail,
-              eventData?.title || "Evento",
-              reg.guestName,
-              reg.code
-            );
+            finTxId = finTx.id;
+            await syncLedgerEntry(tx, finTx.id);
           }
+
+          await tx.registration.updateMany({
+            where: { id: { in: pendingRegistrations.map(r => r.id) } },
+            data: { status: "CONFIRMED", financialTransactionId: finTxId }
+          });
+          await tx.ticket.update({
+            where: { id: ticketId },
+            data: { sold: { increment: quantity } }
+          });
+        });
+
+        console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
+        
+        const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
+        for (const reg of pendingRegistrations) {
+          mailService.sendTicketEmail(
+            reg.guestEmail,
+            eventData?.title || "Evento",
+            reg.guestName,
+            reg.code
+          );
         }
       }
 
@@ -120,7 +104,36 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
 
         if (seatIds.length > 0) {
           await prisma.$transaction(async (tx) => {
+            // Idempotência: verificar se transação com este PaymentIntent/Charge já existe
+            const existingTx = await tx.financialTransaction.findFirst({
+              where: {
+                OR: [
+                  paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : null,
+                  stripeChargeId ? { stripeChargeId: stripeChargeId } : null
+                ].filter(Boolean) as any
+              }
+            });
+
+            if (existingTx) {
+              console.log(`[Webhook] Transação de teatro já existente para PI ${paymentIntentId}. Skipping.`);
+              return;
+            }
+
+            // Validar assentos e atualizar status
             for (const seatId of seatIds) {
+              const currentReservation = await tx.theaterSeatReservation.findUnique({
+                where: { eventId_seatId: { eventId, seatId } }
+              });
+
+              if (currentReservation && currentReservation.status === "SOLD") {
+                if (currentReservation.visitorId === visitorId && currentReservation.ticketId === ticketId) {
+                  // Já vendido para este mesmo visitante/ingresso (idempotente)
+                  continue;
+                } else {
+                  throw new Error(`Conflito de Assento: O assento ${seatId} já foi vendido para outro visitante.`);
+                }
+              }
+
               await tx.theaterSeatReservation.upsert({
                 where: { eventId_seatId: { eventId, seatId } },
                 update: { status: "SOLD", visitorId, ticketId, expiresAt: null },
@@ -458,7 +471,7 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
             localRefund = await prisma.refund.findUnique({ where: { stripeRefundId } });
           }
 
-          if (localRefund && localRefund.status === "PENDING") {
+          if (localRefund && (localRefund.status === "PENDING" || localRefund.status === "PROCESSING")) {
             await prisma.$transaction(async (txPrisma) => {
               await applyRefundSuccess(
                 txPrisma,
@@ -472,6 +485,46 @@ async function handleWebhookEvent(event: any): Promise<boolean> {
               );
             });
             console.log(`[Webhook] Consolidado reembolso local ${localRefund.id} (Stripe ID=${stripeRefundId})`);
+          } else if (!localRefund) {
+            // Reembolso Externo: processado via painel do Stripe
+            const txRecord = await prisma.financialTransaction.findFirst({
+              where: {
+                OR: [
+                  { stripeChargeId: charge.id },
+                  { stripePaymentIntentId: charge.payment_intent as string }
+                ].filter(Boolean) as any
+              }
+            });
+
+            if (txRecord) {
+              const amountRefunded = stripeRefund.amount / 100;
+              await prisma.$transaction(async (txPrisma) => {
+                // 1. Criar o reembolso local com status PENDING
+                const newRefund = await txPrisma.refund.create({
+                  data: {
+                    transactionId: txRecord.id,
+                    stripeRefundId: stripeRefund.id,
+                    amount: amountRefunded,
+                    status: "PENDING",
+                    reason: "Reembolso externo criado via painel Stripe",
+                    tenantId: txRecord.tenantId
+                  }
+                });
+
+                // 2. Chamar applyRefundSuccess para processar toda a contabilidade contábil, e-mails, cancelamentos e ledger!
+                await applyRefundSuccess(
+                  txPrisma,
+                  newRefund.id,
+                  stripeRefund.id,
+                  txRecord.id,
+                  amountRefunded,
+                  txRecord.tenantId,
+                  null, // registrationId
+                  null  // orderId
+                );
+              });
+              console.log(`[Webhook] Reembolso externo processado com sucesso para transação ${txRecord.id}`);
+            }
           }
         }
       }

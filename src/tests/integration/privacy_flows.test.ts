@@ -24,6 +24,10 @@ describe('LGPD Privacy & Consent Integration Tests', () => {
         });
         tenantId = tenant.id;
 
+        // Clean up residue from previous runs
+        await prisma.visitor.deleteMany({ where: { email: targetEmail } });
+        await prisma.contactRequest.deleteMany({ where: { subject: 'LGPD_REQUEST' } });
+
         const password = 'password123';
         const hashedPassword = await bcrypt.hash(password, 10);
 
