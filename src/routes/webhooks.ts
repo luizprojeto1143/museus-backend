@@ -13,7 +13,7 @@ const router = Router();
  * Helper to process Stripe Webhook Event case blocks.
  * Returns true if handled, false if ignored.
  */
-async function handleWebhookEvent(event: any): Promise<boolean> {
+export async function handleWebhookEvent(event: any): Promise<boolean> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as any;
