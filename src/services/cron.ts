@@ -67,7 +67,55 @@ export const initCronJobs = () => {
     }
   });
 
-  console.log('[Cron] Push notification reminder job scheduled.');
+  // Run every 30 minutes to retry failed/stale sponsor payouts (Outbox retry)
+  cron.schedule('*/30 * * * *', async () => {
+    console.log('[Cron] Checking for failed or stale sponsor payouts to retry...');
+    try {
+      const { stripe } = await import('../services/stripeService.js');
+      // Payouts that are PROCESSING or FAILED and are of type SPONSOR
+      const pendingSponsorPayouts = await prisma.payoutLedger.findMany({
+        where: {
+          recipientType: 'SPONSOR',
+          status: { in: ['PROCESSING', 'FAILED'] },
+          createdAt: { lt: new Date(Date.now() - 5 * 60 * 1000) } // At least 5 mins old to avoid racing with active webhooks
+        }
+      });
+
+      for (const payout of pendingSponsorPayouts) {
+        console.log(`[Cron] Retrying sponsor outbox transfer for PayoutLedger ${payout.id}...`);
+        try {
+          const transfer = await stripe.transfers.create({
+            amount: Math.round(Number(payout.netAmount) * 100),
+            currency: 'brl',
+            destination: payout.recipientId,
+            description: `Repasse Patrocínio (Retry): PayoutLedger ${payout.id}`
+          }, {
+            idempotencyKey: `transfer-sponsor-payout-${payout.id}`
+          });
+
+          await prisma.payoutLedger.update({
+            where: { id: payout.id },
+            data: {
+              status: 'PAID',
+              stripeTransferId: transfer.id,
+              paidAt: new Date()
+            }
+          });
+          console.log(`[Cron] Sponsor outbox transfer successful for PayoutLedger ${payout.id}!`);
+        } catch (err: any) {
+          console.error(`[Cron] Failed to process retry for PayoutLedger ${payout.id}:`, err.message);
+          await prisma.payoutLedger.update({
+            where: { id: payout.id },
+            data: { status: 'FAILED' }
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error('[Cron] Error in sponsor payout retry job', err);
+    }
+  });
+
+  console.log('[Cron] Push notification reminder and sponsor outbox retry jobs scheduled.');
 };
 
 

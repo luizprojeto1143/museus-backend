@@ -72,39 +72,63 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
             await syncLedgerEntry(tx, finTx.id);
           }
 
-          await tx.registration.updateMany({
-            where: { id: { in: targetRegistrations.map(r => r.id) } },
-            data: { status: "CONFIRMED", financialTransactionId: finTxId }
-          });
-          await tx.ticket.update({
-            where: { id: ticketId },
-            data: { sold: { increment: quantity } }
-          });
+          // Pessimistic lock on the ticket
+          const tickets = await tx.$queryRaw<any[]>`SELECT * FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
+          const ticket = tickets[0];
+          if (!ticket) throw new Error("Ingresso não encontrado durante o processamento do webhook");
+
+          const canceledCount = targetRegistrations.filter(r => r.status === "CANCELED").length;
+
+          if (canceledCount > 0 && ticket.sold + canceledCount > ticket.quantity) {
+            console.error(`[Webhook] Overbooking detected for ticket ${ticketId}. Cannot revive ${canceledCount} canceled registrations.`);
+            
+            // Create a pending refund automatically if the transaction exists
+            if (finTxId && firstReg.event?.tenantId) {
+              await tx.refund.create({
+                data: {
+                  tenantId: firstReg.event.tenantId,
+                  transactionId: finTxId,
+                  amount: totalAmount,
+                  status: "PENDING",
+                  reason: "Reembolso automático: Overbooking de ingressos após expiração de reserva local",
+                  retries: 0
+                }
+              });
+            }
+          } else {
+            await tx.registration.updateMany({
+              where: { id: { in: targetRegistrations.map(r => r.id) } },
+              data: { status: "CONFIRMED", financialTransactionId: finTxId }
+            });
+            await tx.ticket.update({
+              where: { id: ticketId },
+              data: { sold: { increment: quantity } }
+            });
+
+            console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
+
+            const eventData = await tx.event.findUnique({ where: { id: firstReg.eventId } });
+            for (const reg of targetRegistrations) {
+              mailService.sendTicketEmail(
+                reg.guestEmail,
+                eventData?.title || "Evento",
+                reg.guestName,
+                reg.code
+              ).catch(mailErr => console.error("Failed to send ticket email:", mailErr));
+            }
+          }
         });
-
-        console.log(`[Webhook] ${quantity} Registrations CONFIRMED + sold incremented!`);
-        
-        const eventData = await prisma.event.findUnique({ where: { id: firstReg.eventId } });
-        for (const reg of targetRegistrations) {
-          mailService.sendTicketEmail(
-            reg.guestEmail,
-            eventData?.title || "Evento",
-
-            reg.guestName,
-            reg.code
-          );
-        }
       }
 
       // 1.5. Handle Theater Sessions (Seats)
       if (metadata && metadata.type === "THEATER") {
         const eventId = metadata.eventId;
-        const seatIds = JSON.parse(metadata.seatIds || "[]") as string[];
+        const reservationGroupId = metadata.reservationGroupId;
         const visitorId = metadata.visitorId || null;
         const tenantId = metadata.tenantId;
         const ticketId = metadata.ticketId || null;
 
-        if (seatIds.length > 0) {
+        if (reservationGroupId) {
           await prisma.$transaction(async (tx) => {
             // Idempotência: verificar se transação com este PaymentIntent/Charge já existe
             const existingTx = await tx.financialTransaction.findFirst({
@@ -121,34 +145,42 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
               return;
             }
 
-            // Validar assentos e atualizar status
-            for (const seatId of seatIds) {
-              const currentReservation = await tx.theaterSeatReservation.findUnique({
-                where: { eventId_seatId: { eventId, seatId } }
-              });
+            const reservationGroup = await tx.theaterSeatReservationGroup.findUnique({
+              where: { id: reservationGroupId },
+              include: { seats: true }
+            });
 
-              if (currentReservation) {
-                if (currentReservation.status === "SOLD") {
-                  if (currentReservation.visitorId === visitorId && currentReservation.ticketId === ticketId) {
-                    // Já vendido para este mesmo visitante/ingresso (idempotente)
-                    continue;
-                  } else {
-                    throw new Error(`Conflito de Assento: O assento ${seatId} já foi vendido para outro visitante.`);
-                  }
-                }
-
-                // Validar se a reserva atual está associada a outra sessão de checkout ativa
-                if (currentReservation.stripeCheckoutSessionId && currentReservation.stripeCheckoutSessionId !== session.id) {
-                  throw new Error(`Conflito de Assento: O assento ${seatId} está reservado sob outra sessão de checkout.`);
-                }
-              }
-
-              await tx.theaterSeatReservation.upsert({
-                where: { eventId_seatId: { eventId, seatId } },
-                update: { status: "SOLD", visitorId, ticketId, expiresAt: null },
-                create: { eventId, seatId, status: "SOLD", visitorId, ticketId }
-              });
+            if (!reservationGroup) {
+              throw new Error("Conflito de Assento: Grupo de reserva não encontrado.");
             }
+
+            if (reservationGroup.stripeCheckoutSessionId && reservationGroup.stripeCheckoutSessionId !== session.id) {
+              throw new Error("Conflito de Assento: Grupo de reserva associado a outro checkout.");
+            }
+
+            if (reservationGroup.status === "SOLD") {
+              console.log(`[Webhook] Grupo de reserva de teatro ${reservationGroupId} já processado (SOLD). Skipping.`);
+              return;
+            }
+
+            const groupSeats = reservationGroup.seats;
+            for (const s of groupSeats) {
+              if (s.status === "SOLD" && (s.visitorId !== visitorId || s.ticketId !== ticketId)) {
+                throw new Error(`Conflito de Assento: O assento ${s.seatId} do grupo já foi vendido para outro visitante.`);
+              }
+            }
+
+            // Atualizar os assentos do grupo para SOLD
+            await tx.theaterSeatReservation.updateMany({
+              where: { reservationGroupId: reservationGroup.id },
+              data: { status: "SOLD", visitorId, ticketId, expiresAt: null, stripeCheckoutSessionId: session.id }
+            });
+
+            // Atualizar o grupo para SOLD
+            await tx.theaterSeatReservationGroup.update({
+              where: { id: reservationGroup.id },
+              data: { status: "SOLD", expiresAt: null, stripeCheckoutSessionId: session.id }
+            });
 
             const totalAmount = Number(session.amount_total || 0) / 100;
             
@@ -178,7 +210,7 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
             await syncLedgerEntry(tx, finTx.id);
           });
 
-          console.log(`[Webhook] Theater seats ${seatIds.join(", ")} SOLD!`);
+          console.log(`[Webhook] Theater seats linked to group ${reservationGroupId} SOLD!`);
         }
       }
 

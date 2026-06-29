@@ -143,6 +143,15 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
                 }
             });
 
+            // Clean up expired groups first
+            await tx.theaterSeatReservationGroup.deleteMany({
+                where: {
+                    eventId: id,
+                    status: "PENDING",
+                    expiresAt: { lt: new Date() }
+                }
+            });
+
             // Find existing active reservations/sales
             const existing = await tx.theaterSeatReservation.findMany({
                 where: {
@@ -155,18 +164,29 @@ router.post("/sessions/:id/reserve", authMiddleware, async (req, res) => {
                 throw new Error("Um ou mais assentos já estão reservados ou ocupados");
             }
 
+            const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+            const group = await tx.theaterSeatReservationGroup.create({
+                data: {
+                    tenantId: session.tenantId,
+                    eventId: id,
+                    status: "PENDING",
+                    expiresAt
+                }
+            });
+
             const reservations = await Promise.all(seatIds.map(seatId => 
                 tx.theaterSeatReservation.create({
                     data: {
                         eventId: id,
                         seatId,
                         status: "RESERVED",
-                        expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 min
+                        expiresAt,
+                        reservationGroupId: group.id
                     }
                 })
             ));
 
-            return reservations;
+            return { group, reservations };
         });
 
         return res.json(result);
@@ -214,6 +234,15 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                 }
             });
 
+            // Clean up expired groups first
+            await tx.theaterSeatReservationGroup.deleteMany({
+                where: {
+                    eventId: id,
+                    status: "PENDING",
+                    expiresAt: { lt: new Date() }
+                }
+            });
+
             // Find existing active reservations/sales
             const existing = await tx.theaterSeatReservation.findMany({
                 where: {
@@ -248,16 +277,25 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
             const feePercentage = tenant.feePercentage ?? 10.0;
             const totalFee = totalAmount * (feePercentage / 100);
 
+            const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+            const group = await tx.theaterSeatReservationGroup.create({
+                data: {
+                    tenantId: session.tenantId,
+                    eventId: id,
+                    status: "PENDING",
+                    expiresAt
+                }
+            });
+
             const isDigital = paymentMethod === "CARD" || paymentMethod === "PIX";
 
             if (isDigital) {
                 // Update or create reservations as RESERVED for 30 minutes
-                const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
                 for (const seatId of seatIds) {
                     await tx.theaterSeatReservation.upsert({
                         where: { eventId_seatId: { eventId: id, seatId } },
-                        update: { status: "RESERVED", visitorId, ticketId: ticket?.id, expiresAt },
-                        create: { eventId: id, seatId, status: "RESERVED", visitorId, ticketId: ticket?.id, expiresAt }
+                        update: { status: "RESERVED", visitorId, ticketId: ticket?.id, expiresAt, reservationGroupId: group.id },
+                        create: { eventId: id, seatId, status: "RESERVED", visitorId, ticketId: ticket?.id, expiresAt, reservationGroupId: group.id }
                     });
                 }
 
@@ -298,17 +336,23 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                     connectedAccountId,
                     totalAmount,
                     totalFee,
-                    ticketId: ticket?.id
+                    ticketId: ticket?.id,
+                    groupId: group.id
                 };
             } else {
                 // Update or create reservations as SOLD
                 for (const seatId of seatIds) {
                     await tx.theaterSeatReservation.upsert({
                         where: { eventId_seatId: { eventId: id, seatId } },
-                        update: { status: "SOLD", visitorId, ticketId: ticket?.id, expiresAt: null },
-                        create: { eventId: id, seatId, status: "SOLD", visitorId, ticketId: ticket?.id }
+                        update: { status: "SOLD", visitorId, ticketId: ticket?.id, expiresAt: null, reservationGroupId: group.id },
+                        create: { eventId: id, seatId, status: "SOLD", visitorId, ticketId: ticket?.id, reservationGroupId: group.id }
                     });
                 }
+
+                await tx.theaterSeatReservationGroup.update({
+                    where: { id: group.id },
+                    data: { status: "SOLD", expiresAt: null }
+                });
 
                 // Criar a transação financeira da venda do ingresso do teatro
                 const finTx = await tx.financialTransaction.create({
@@ -339,6 +383,7 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                 totalAmount: number;
                 totalFee: number;
                 ticketId?: string;
+                groupId: string;
             };
 
             const { stripeService } = await import("../services/stripeService.js");
@@ -360,7 +405,7 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                 metadata: {
                     type: "THEATER",
                     eventId: id,
-                    seatIds: JSON.stringify(seatIds),
+                    reservationGroupId: digitalResult.groupId,
                     visitorId: visitorId || "",
                     tenantId: session.tenantId,
                     ticketId: digitalResult.ticketId || ""
@@ -368,16 +413,26 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
             });
 
             // Vínculo do Stripe Checkout Session ID com as reservas de assento
-            await prisma.theaterSeatReservation.updateMany({
+            await prisma.theaterSeatReservationGroup.update({
+                where: { id: digitalResult.groupId },
+                data: { stripeCheckoutSessionId: sessionCheckout.id }
+            });
+
+            const updateCount = await prisma.theaterSeatReservation.updateMany({
                 where: {
                     eventId: id,
                     seatId: { in: seatIds },
-                    status: "RESERVED"
+                    status: "RESERVED",
+                    reservationGroupId: digitalResult.groupId
                 },
                 data: {
                     stripeCheckoutSessionId: sessionCheckout.id
                 }
             });
+
+            if (updateCount.count !== seatIds.length) {
+                throw new Error("Erro ao vincular assentos ao checkout (concorrência detectada)");
+            }
 
             return res.json({ success: true, checkoutUrl: sessionCheckout.url });
         }

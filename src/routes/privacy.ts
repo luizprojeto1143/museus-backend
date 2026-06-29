@@ -4,6 +4,7 @@ import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { Role, Prisma } from '@prisma/client';
 import { createAuditLog } from '../domains/governance/audit.js';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -166,7 +167,7 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
 
              for (const u of dbUsers) {
                  const uTenantId = u.tenantId || targetTenantId;
-                 const randomPassword = Math.random().toString(36).substring(2) + Date.now().toString();
+                 const randomPassword = crypto.randomBytes(32).toString('hex');
                  const randomBcryptHash = await bcrypt.hash(randomPassword, 10);
 
                  await prisma.user.update({

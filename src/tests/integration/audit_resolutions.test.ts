@@ -242,14 +242,26 @@ describe('Audit Resolutions Integration Tests', () => {
                 }
             });
 
-            // Setup seat reservation with session 'checkout_123'
+            // Setup seat reservation group with session 'checkout_123'
+            const group = await prisma.theaterSeatReservationGroup.create({
+                data: {
+                    tenantId,
+                    eventId: 'event-theater-test',
+                    status: 'PENDING',
+                    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+                    stripeCheckoutSessionId: 'checkout_123'
+                }
+            });
+
+            // Setup seat reservation linked to that group
             await prisma.theaterSeatReservation.create({
                 data: {
                     eventId: 'event-theater-test',
                     seatId: 'A-1',
                     status: 'RESERVED',
                     expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-                    stripeCheckoutSessionId: 'checkout_123'
+                    stripeCheckoutSessionId: 'checkout_123',
+                    reservationGroupId: group.id
                 }
             });
 
@@ -267,7 +279,7 @@ describe('Audit Resolutions Integration Tests', () => {
                         metadata: {
                             type: 'THEATER',
                             eventId: 'event-theater-test',
-                            seatIds: JSON.stringify(['A-1']),
+                            reservationGroupId: group.id,
                             tenantId
                         }
                     }

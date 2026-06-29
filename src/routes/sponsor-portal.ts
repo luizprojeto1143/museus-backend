@@ -387,14 +387,32 @@ export async function handleSponsorWebhookEvent(event: any) {
               connectAccountId = work.tenant.stripeConnectId;
             }
 
+            let payoutLedgerId: string | null = null;
             if (connectAccountId) {
-              pendingTransferObj = {
-                amount: Math.round(netAmount),
-                destination: connectAccountId,
-                description: `Repasse Patrocínio: ${work.title}`,
-                idempotencyKey: `transfer-sponsor-${sponsorship.id}-${event.id}`
-              };
+              const payout = await tx.payoutLedger.create({
+                data: {
+                  tenantId: work.tenantId,
+                  recipientType: "SPONSOR",
+                  recipientId: connectAccountId,
+                  sourceTransactionId: finTx.id,
+                  grossAmount: amountReceived / 100,
+                  platformFee: platformFee / 100,
+                  gatewayFee: 0,
+                  netAmount: netAmount / 100,
+                  status: "PROCESSING",
+                  availableAt: new Date()
+                }
+              });
+              payoutLedgerId = payout.id;
             }
+
+            return {
+              duplicate: false,
+              payoutLedgerId,
+              netAmount,
+              connectAccountId,
+              sponsorshipId: sponsorship.id
+            };
           }
         }
       }
@@ -412,24 +430,45 @@ export async function handleSponsorWebhookEvent(event: any) {
       data: { status: "PROCESSED" }
     });
 
-    return { duplicate: false, pendingTransfer: pendingTransferObj };
+    return {
+      duplicate: false,
+      payoutLedgerId: null,
+      netAmount: null,
+      connectAccountId: null,
+      sponsorshipId: null
+    };
   });
 
   // Executar a transferência para a conta Connect fora da transação de banco de dados
-  if (result.pendingTransfer) {
+  if (result.payoutLedgerId && result.netAmount && result.connectAccountId) {
     try {
-      console.log(`[Stripe Sponsor Webhook] Executing split transfer to Connect Account ${result.pendingTransfer.destination}...`);
-      await stripe.transfers.create({
-        amount: result.pendingTransfer.amount,
+      console.log(`[Stripe Sponsor Webhook] Executing outbox transfer for PayoutLedger ${result.payoutLedgerId}...`);
+      const transfer = await stripe.transfers.create({
+        amount: Math.round(result.netAmount),
         currency: 'brl',
-        destination: result.pendingTransfer.destination,
-        description: result.pendingTransfer.description
+        destination: result.connectAccountId,
+        description: `Repasse Patrocínio: PayoutLedger ${result.payoutLedgerId}`
       }, {
-        idempotencyKey: result.pendingTransfer.idempotencyKey
+        idempotencyKey: `transfer-sponsor-payout-${result.payoutLedgerId}`
       });
-      console.log(`[Stripe Sponsor Webhook] Split transfer successful!`);
+
+      await prisma.payoutLedger.update({
+        where: { id: result.payoutLedgerId },
+        data: {
+          status: "PAID",
+          stripeTransferId: transfer.id,
+          paidAt: new Date()
+        }
+      });
+      console.log(`[Stripe Sponsor Webhook] Outbox transfer successful!`);
     } catch (err: any) {
-      console.error(`[Stripe Sponsor Webhook Error] Failed to execute transfer:`, err.message);
+      console.error(`[Stripe Sponsor Webhook Error] Outbox transfer failed:`, err.message);
+      await prisma.payoutLedger.update({
+        where: { id: result.payoutLedgerId },
+        data: {
+          status: "FAILED"
+        }
+      }).catch(dbErr => console.error("Failed to update payoutLedger status to FAILED:", dbErr.message));
     }
   }
 

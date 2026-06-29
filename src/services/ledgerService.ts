@@ -25,10 +25,11 @@ export async function syncLedgerEntry(
     return;
   }
 
-  // 2. Identificar a entidade de origem
+  // 2. Identificar a entidade de origem e mapear as taxas corretamente
   let sourceType = 'OTHER';
   let sourceId = tx.id;
   let platformFee = 0;
+  let gatewayFee = Number(tx.fee || 0);
 
   if (tx.orders && tx.orders.length > 0) {
     sourceType = 'ORDER';
@@ -41,10 +42,16 @@ export async function syncLedgerEntry(
   } else if (tx.registrations && tx.registrations.length > 0) {
     sourceType = 'REGISTRATION';
     sourceId = tx.registrations[0].id;
+    platformFee = Number(tx.fee || 0);
+    gatewayFee = 0;
   } else if (tx.source === 'SPONSORSHIP') {
     sourceType = 'SPONSORSHIP';
+    platformFee = Number(tx.fee || 0);
+    gatewayFee = 0;
   } else if (tx.source === 'THEATER') {
     sourceType = 'THEATER';
+    platformFee = Number(tx.fee || 0);
+    gatewayFee = 0;
   }
 
   // 3. Upsert do lançamento principal (CREDIT)
@@ -61,7 +68,7 @@ export async function syncLedgerEntry(
       sourceId,
       direction: 'CREDIT',
       grossAmount: tx.amount,
-      gatewayFee: tx.fee,
+      gatewayFee: gatewayFee,
       platformFee: platformFee,
       netAmount: tx.netAmount,
       currency: 'BRL',
@@ -75,7 +82,8 @@ export async function syncLedgerEntry(
     },
     update: {
       status: mainStatus,
-      gatewayFee: tx.fee,
+      gatewayFee: gatewayFee,
+      platformFee: platformFee,
       netAmount: tx.netAmount,
       stripePaymentIntentId: tx.stripePaymentIntentId,
       stripeChargeId: tx.stripeChargeId,

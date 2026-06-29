@@ -714,6 +714,7 @@ model Event {
   surveyQuestions            SurveyQuestion[]
   theaterCues                TheaterCue[]
   theaterSeatReservations    TheaterSeatReservation[]
+  theaterSeatReservationGroups TheaterSeatReservationGroup[]
   tickets                    Ticket[]
   visitorVisits              VisitorVisit[]
 
@@ -1764,13 +1765,33 @@ model TheaterSeatReservation {
   createdAt               DateTime  @default(now())
   updatedAt               DateTime @updatedAt
   stripeCheckoutSessionId String?
+  reservationGroupId      String?
   event                   Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   ticket                  Ticket?   @relation(fields: [ticketId], references: [id])
   visitor                 Visitor?  @relation(fields: [visitorId], references: [id])
+  reservationGroup        TheaterSeatReservationGroup? @relation(fields: [reservationGroupId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, seatId])
   @@index([eventId])
   @@index([stripeCheckoutSessionId])
+  @@index([reservationGroupId])
+}
+
+model TheaterSeatReservationGroup {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  eventId                 String
+  status                  String    @default("PENDING")
+  expiresAt               DateTime?
+  stripeCheckoutSessionId String?   @unique
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  event                   Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seats                   TheaterSeatReservation[]
+
+  @@index([eventId])
+  @@index([tenantId])
 }
 
 model Ticket {

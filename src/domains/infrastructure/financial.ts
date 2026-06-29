@@ -1002,16 +1002,39 @@ router.get('/reconciliation', async (req: Request, res: Response): Promise<any> 
       where: { tenantId }
     });
 
-    // 3. Obter últimos PaymentIntents do Stripe (para achar MISSING_IN_SYSTEM)
-    const stripeParams: any = { limit: 100 };
-    if (startDate) {
-      stripeParams.created = { gte: Math.floor(new Date(startDate as string).getTime() / 1000) };
-    }
-    const stripePIs = await stripe.paymentIntents.list(stripeParams);
-
     const user = (req as any).user;
     const isMaster = user?.role === Role.MASTER;
-    const filteredPIs = stripePIs.data.filter(pi => {
+
+    let stripePIs: any[] = [];
+    if (isMaster) {
+      // MASTER can scan global Stripe objects
+      const stripeParams: any = { limit: 100 };
+      if (startDate) {
+        stripeParams.created = { gte: Math.floor(new Date(startDate as string).getTime() / 1000) };
+      }
+      const listResult = await stripe.paymentIntents.list(stripeParams);
+      stripePIs = listResult.data;
+    } else {
+      // Non-MASTER tenant users must only fetch their specific local transaction IDs
+      const localPIIds = localTxs
+        .map(tx => tx.stripePaymentIntentId)
+        .filter((id): id is string => !!id);
+
+      const uniquePIIds = Array.from(new Set(localPIIds)).slice(0, 50); // limit to protect rate limits
+      const retrieved = await Promise.all(
+        uniquePIIds.map(async (id) => {
+          try {
+            return await stripe.paymentIntents.retrieve(id);
+          } catch (err) {
+            console.warn(`[Financial Reconciliation] Failed to retrieve PI ${id}:`, err);
+            return null;
+          }
+        })
+      );
+      stripePIs = retrieved.filter(Boolean);
+    }
+
+    const filteredPIs = stripePIs.filter(pi => {
       if (isMaster) return true;
       return pi.metadata?.tenantId === tenantId;
     });

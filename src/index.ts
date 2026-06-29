@@ -237,7 +237,16 @@ app.use("/bookings", bookingsRoutes);
 app.use("/guestbook", guestbookRoutes);
 app.use("/leaderboard", leaderboardRoutes);
 // @deprecated: /finance is legacy. Use the canonical ERP module under /financial instead.
-app.use("/finance", financeRouter);
+app.use("/finance", (req, res, next) => {
+  const isRealProd = process.env.APP_ENV === "production" || process.env.APP_ENV === "homologation";
+  if (isRealProd) {
+    return res.status(410).json({
+      error: "Gone",
+      message: "A rota legada /finance foi desativada em produção. Use o módulo ERP oficial sob /financial."
+    });
+  }
+  next();
+}, financeRouter);
 app.use("/coupons", couponsRouter);
 import gamificationRoutes from "./domains/experience/gamification.js";
 
