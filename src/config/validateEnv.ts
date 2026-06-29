@@ -34,11 +34,13 @@ export function validateEnv(): void {
     
     if (isProduction) {
         const validAppEnvs = ["demo", "staging", "homologation", "production"];
-        const appEnv = process.env.APP_ENV;
+        const appEnvRaw = process.env.APP_ENV;
+        const appEnv = appEnvRaw ? appEnvRaw.toLowerCase().trim() : undefined;
         if (!appEnv || !validAppEnvs.includes(appEnv)) {
-            console.error(`❌ CRITICAL: APP_ENV must be set to one of ${validAppEnvs.join(" | ")} in production environments.`);
+            console.error(`❌ CRITICAL: APP_ENV must be set to one of ${validAppEnvs.join(" | ")} in production environments. Received: "${appEnvRaw}"`);
             process.exit(1);
         }
+        process.env.APP_ENV = appEnv;
     }
 
     const isRealProduction = process.env.APP_ENV === "production";
