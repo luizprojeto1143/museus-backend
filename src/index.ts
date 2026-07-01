@@ -58,6 +58,7 @@ import { couponsRouter } from "./domains/commerce/coupons.js";
 import skinsRoutes from "./domains/experience/skins.js";
 import marketplaceRoutes from "./domains/commerce/marketplace.js";
 import badgeRoutes from "./domains/experience/badgeRoutes.js";
+import totemRoutes from "./routes/totem.js";
 import { roteiroRoutes } from "./domains/cultural/roteiro.routes.js";
 import providerRoutes from "./domains/commerce/provider.routes.js";
 import masterEcosystemRoutes from "./domains/governance/master-ecosystem.routes.js";
@@ -115,6 +116,11 @@ import { csrfMiddleware, getCsrfToken } from "./middleware/csrf.middleware.js";
 import { validateEnv } from "./config/validateEnv.js";
 import { limiter } from "./middleware/rateLimiter.js";
 import { tenantMiddleware } from "./middleware/tenant.js";
+import { requestLogger } from "./middleware/request-logger.js";
+import { masterMonitoringRouter } from "./routes/master-monitoring.js";
+import masterFeesRouter from "./routes/master-fees.js";
+import { createSystemError } from "./services/error-log.service.js";
+import { SystemErrorSeverity, SystemErrorSource } from "@prisma/client";
 
 // Validate critical environment variables on boot
 validateEnv();
@@ -185,6 +191,7 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(correlationIdMiddleware);
 
 app.use(tenantMiddleware);
+app.use(requestLogger);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -211,8 +218,12 @@ app.get("/auth/csrf-token", (req, res) => {
   res.json({ csrfToken: token });
 });
 
-import sponsorPortalRoutes from "./routes/sponsor-portal.js";
+import sponsorPortalRoutes, { municipalSponsorRouter } from "./routes/sponsor-portal.js";
 app.use("/sponsor-portal", sponsorPortalRoutes);
+app.use("/municipal", municipalSponsorRouter);
+app.use("/monitoring", masterMonitoringRouter);
+app.use("/master/monitoring", masterMonitoringRouter);
+app.use("/master/fees", masterFeesRouter);
 app.use("/auth", authRoutes);
 app.use("/tenants", tenantRoutes);
 app.use("/works", worksRoutes);
@@ -272,6 +283,7 @@ app.use("/badges", badgeRoutes);
 app.use("/backup", backupRoutes);
 app.use("/floor-plans", floorPlansRoutes);
 app.use("/roteiro", roteiroRoutes);
+app.use("/totem", totemRoutes);
 app.use("/:tenantSlug/provider", providerRoutes);
 app.use("/:tenantSlug/master-ecosystem", masterEcosystemRoutes);
 
@@ -401,30 +413,29 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     headers: sanitizedHeaders
   });
   
-  // Persist error to AuditLog for remote debugging
-  // C3: Never fall back to a hardcoded tenant ID — null is always preferable to wrong data.
+  // Persist error to SystemErrorLog for remote debugging
   const resolvedTenantId = _req.params.tenantId
     || String(_req.query.tenantId ?? "")
     || (_req as any).tenantId
     || null;
 
-  prisma.auditLog.create({
-    data: {
-      action: "SERVER_ERROR",
-      entity: "SYSTEM",
-      entityId: _req.path,
-      userId: (err as any).userId || null,
-      userEmail: (sanitizedBody && typeof sanitizedBody === 'object') ? (sanitizedBody.email || null) : null,
-      tenantId: resolvedTenantId,
-      oldData: { path: _req.path, method: _req.method },
-      newData: { 
-        message: err.message, 
-        stack: shortStack, 
-        code: err.code,
-        body: sanitizedBody
-      },
-      ipAddress: String(_req.headers['x-forwarded-for'] || _req.socket.remoteAddress || ""),
-      userAgent: _req.headers['user-agent']
+  const isDbError = err.message?.includes("prisma") || err.code?.startsWith("P");
+  const severity = isDbError ? SystemErrorSeverity.CRITICAL : SystemErrorSeverity.HIGH;
+
+  createSystemError({
+    tenantId: resolvedTenantId,
+    userId: (_req as any).user?.id || null,
+    source: SystemErrorSource.BACKEND,
+    severity,
+    message: err.message || "Unknown error",
+    stack: err.stack || null,
+    path: _req.path,
+    method: _req.method,
+    statusCode: 500,
+    metadata: {
+      code: err.code,
+      body: sanitizedBody,
+      headers: sanitizedHeaders
     }
   }).catch((e: any) => console.error("Failed to log error to DB:", e));
   

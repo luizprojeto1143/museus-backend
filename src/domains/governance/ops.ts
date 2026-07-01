@@ -21,14 +21,13 @@ router.get("/test-dashboard", async (req, res) => {
       prisma.visitorVisit.count({ where: { visitor: { tenantId } } }),
       prisma.work.count({ where: { tenantId } })
     ]);
-    // Test WRITE to AuditLog
     await prisma.auditLog.create({
       data: {
-        action: 'DIAGNOSTIC_TEST',
-        entity: 'SYSTEM',
+        action: 'CUSTOM',
+        entityType: 'SYSTEM',
         entityId: 'test-dashboard',
         tenantId,
-        newData: { timestamp: new Date().toISOString(), v: '1.3.0' }
+        metadata: { timestamp: new Date().toISOString(), v: '1.3.0', originalAction: 'DIAGNOSTIC_TEST' }
       }
     });
 

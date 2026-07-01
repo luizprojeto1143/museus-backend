@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
-import { Role, AccessibilityServiceType } from "@prisma/client";
+import { Role, AccessibilityServiceType, PlatformFeeSource } from "@prisma/client";
 import { z } from "zod";
 import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.js";
+import { getPlatformFee } from "../services/fee.service.js";
 
 const router = Router();
 
@@ -200,8 +201,14 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 
         const { stripeService } = await import("../services/stripeService.js");
         const amountCents = Math.round(Number(execution.approvedBudget) * 100);
-        const feePercentage = (execution as any).accessibilityProvider?.feePercentage ?? 10.0;
-        const platformFeeCents = Math.round(amountCents * (feePercentage / 100)); // Taxa configurável
+
+        // Sprint 15: Calcular taxa via Central de Taxas (ACCESSIBILITY)
+        const feeResult = await getPlatformFee({
+            tenantId: execution.tenantId,
+            sourceType: PlatformFeeSource.ACCESSIBILITY,
+            amountCents
+        });
+        const platformFeeCents = feeResult.platformFeeCents;
 
         const stripeCustomerId = await stripeService.createCustomer({
             name: user.name || execution.tenant.name,
@@ -213,7 +220,7 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
 
         const session = await stripeService.createSplitPaymentSession({
             customerId: stripeCustomerId,
-            amount: amountCents,
+            amount: feeResult.buyerPaysCents, // BUYER paga base + taxa
             description: `Serviço de Acessibilidade: ${execution.serviceType}`,
             connectedAccountId: (execution as any).accessibilityProvider.stripeConnectId, 
             applicationFeeAmount: platformFeeCents,
@@ -221,10 +228,15 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
             cancelUrl: `${frontendUrl}/accessibility/cancel?id=${id}`
         });
 
-        // Save session ID to execution record for webhook tracking
+        // Save session ID + fee snapshot details to execution record for webhook tracking
         await prisma.accessibilityExecution.update({
             where: { id },
-            data: { stripePaymentIntentId: session.id }
+            data: { 
+                stripePaymentIntentId: session.id,
+                // Sprint 15 — fee snapshot
+                feeConfigId: feeResult.configId,
+                platformFeeAmountCents: platformFeeCents
+            }
         });
 
         return res.json({

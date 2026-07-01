@@ -182,32 +182,38 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
               data: { status: "SOLD", expiresAt: null, stripeCheckoutSessionId: session.id }
             });
 
-            const totalAmount = Number(session.amount_total || 0) / 100;
-            
-            let feeVal = 0;
-            if (session.application_fee_amount) {
-              feeVal = Number(session.application_fee_amount) / 100;
-            } else {
-              const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
-              const feePercentage = tenant?.feePercentage ?? 10.0;
-              feeVal = totalAmount * (feePercentage / 100);
-            }
+             const totalAmount = Number(session.amount_total || 0) / 100;
+             const amountCents = Math.round(totalAmount * 100);
+             
+             // Resolvendo a taxa configurada para o webhook do teatro
+             const { getPlatformFee } = await import("../services/fee.service.js");
+             const { PlatformFeeSource } = await import("@prisma/client");
+             const feeResult = await getPlatformFee({
+               tenantId,
+               sourceType: PlatformFeeSource.THEATER,
+               amountCents
+             });
 
-            const finTx = await tx.financialTransaction.create({
-              data: {
-                tenantId,
-                type: "PAYMENT",
-                source: "THEATER",
-                amount: totalAmount,
-                fee: feeVal,
-                netAmount: totalAmount - feeVal,
-                status: "COMPLETED",
-                paymentMethod: "CREDIT_CARD",
-                stripePaymentIntentId: paymentIntentId,
-                stripeChargeId: stripeChargeId
-              }
-            });
-            await syncLedgerEntry(tx, finTx.id);
+             const finTx = await tx.financialTransaction.create({
+               data: {
+                 tenantId,
+                 type: "PAYMENT",
+                 source: "THEATER",
+                 amount: totalAmount,
+                 fee: feeResult.platformFeeCents / 100,
+                 netAmount: totalAmount - (feeResult.platformFeeCents / 100),
+                 status: "COMPLETED",
+                 paymentMethod: "CREDIT_CARD",
+                 stripePaymentIntentId: paymentIntentId,
+                 stripeChargeId: stripeChargeId,
+                 // Sprint 15 — fee snapshot
+                 feeConfigId: feeResult.configId,
+                 platformFeePercent: feeResult.percentage,
+                 platformFeeAmountCents: feeResult.platformFeeCents,
+                 feePaidBy: feeResult.feePaidBy
+               }
+             });
+             await syncLedgerEntry(tx, finTx.id);
           });
 
           console.log(`[Webhook] Theater seats linked to group ${reservationGroupId} SOLD!`);
@@ -234,7 +240,12 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
               status: "COMPLETED",
               paymentMethod: "CREDIT_CARD",
               stripePaymentIntentId: paymentIntentId,
-              stripeChargeId: stripeChargeId
+              stripeChargeId: stripeChargeId,
+              // Sprint 15 — fee snapshot copied from order
+              feeConfigId: order.feeConfigId,
+              platformFeePercent: order.platformFeePercent,
+              platformFeeAmountCents: order.platformFeeAmountCents,
+              feePaidBy: order.feePaidBy
             }
           });
 
@@ -306,22 +317,32 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
         await prisma.$transaction(async (tx) => {
           let finTxId: string | undefined;
           if (tenantId) {
-            const tenant = await tx.tenant.findUnique({
-              where: { id: tenantId },
-              select: { feePercentage: true }
+            // Sprint 15: Calcular taxa via Central de Taxas (ACCESSIBILITY)
+            const { getPlatformFee } = await import("../services/fee.service.js");
+            const { PlatformFeeSource } = await import("@prisma/client");
+            const feeResult = await getPlatformFee({
+              tenantId,
+              sourceType: PlatformFeeSource.ACCESSIBILITY,
+              amountCents: Math.round(amount * 100)
             });
-            const feeRate = (tenant?.feePercentage ?? 10) / 100;
-            const fee = Number(amount * feeRate);
 
             const finTx = await tx.financialTransaction.create({
               data: {
                 tenantId,
                 type: "PAYMENT",
-                source: "SERVICE",
-                amount, fee, netAmount: amount - fee,
-                status: "COMPLETED", paymentMethod: "CREDIT_CARD",
+                source: "ACCESSIBILITY",
+                amount,
+                fee: feeResult.platformFeeCents / 100,
+                netAmount: amount - (feeResult.platformFeeCents / 100),
+                status: "COMPLETED", 
+                paymentMethod: "CREDIT_CARD",
                 stripePaymentIntentId: paymentIntentId,
-                stripeChargeId: stripeChargeId
+                stripeChargeId: stripeChargeId,
+                // Sprint 15 — fee snapshot
+                feeConfigId: feeResult.configId,
+                platformFeePercent: feeResult.percentage,
+                platformFeeAmountCents: feeResult.platformFeeCents,
+                feePaidBy: feeResult.feePaidBy
               }
             });
             finTxId = finTx.id;
@@ -354,7 +375,12 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
               amount, fee, netAmount: amount - fee,
               status: "COMPLETED", paymentMethod: "CREDIT_CARD",
               stripePaymentIntentId: paymentIntentId,
-              stripeChargeId: stripeChargeId
+              stripeChargeId: stripeChargeId,
+              // Sprint 15 — fee snapshot copied from donation
+              feeConfigId: donation.feeConfigId,
+              platformFeePercent: donation.platformFeePercent,
+              platformFeeAmountCents: donation.platformFeeAmountCents,
+              feePaidBy: donation.feePaidBy
             }
           });
 
@@ -377,25 +403,23 @@ export async function handleWebhookEvent(event: any): Promise<boolean> {
         const amount = Number(session.amount_total) / 100;
 
         await prisma.$transaction(async (tx) => {
-          const tenant = await tx.tenant.findUnique({
-            where: { id: membership.tenantId },
-            select: { feePercentage: true }
-          });
-          const feeRate = (tenant?.feePercentage ?? 5) / 100;
-          const fee = Number(amount * feeRate);
-
           const finTx = await tx.financialTransaction.create({
             data: {
               tenantId: membership.tenantId,
               type: "PAYMENT",
               source: "MEMBERSHIP",
               amount,
-              fee,
-              netAmount: amount - fee,
+              fee: Number(membership.platformFeeAmountCents || 0) / 100,
+              netAmount: amount - (Number(membership.platformFeeAmountCents || 0) / 100),
               status: "COMPLETED",
               paymentMethod: "CREDIT_CARD",
               stripePaymentIntentId: paymentIntentId,
-              stripeChargeId: stripeChargeId
+              stripeChargeId: stripeChargeId,
+              // Sprint 15 — fee snapshot copied from membership
+              feeConfigId: membership.feeConfigId,
+              platformFeePercent: membership.platformFeePercent,
+              platformFeeAmountCents: membership.platformFeeAmountCents,
+              feePaidBy: "SELLER" // Memberships use SELLER by default
             }
           });
 

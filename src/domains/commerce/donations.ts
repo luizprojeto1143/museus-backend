@@ -3,6 +3,8 @@ import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
 import { limiter } from '../../middleware/rateLimiter.js';
 import { z } from 'zod';
+import { getPlatformFee } from '../../services/fee.service.js';
+import { PlatformFeeSource } from '@prisma/client';
 
 const router = Router();
 
@@ -35,7 +37,7 @@ router.post('/', limiter, async (req, res) => {
         // 1. Fetch Tenant to get its stripeConnectId
         const tenant = await prisma.tenant.findUnique({
             where: { id: data.tenantId },
-            select: { stripeConnectId: true, name: true, feePercentage: true }
+            select: { stripeConnectId: true, name: true }
         });
 
         // 2. Integration with Stripe
@@ -44,8 +46,14 @@ router.post('/', limiter, async (req, res) => {
             const { stripeService } = await import('../../services/stripeService.js');
             
             const amountCents = Math.round(data.amount * 100);
-            const feePercent = tenant?.feePercentage ?? 5.0;
-            const platformFeeCents = Math.round(amountCents * (feePercent / 100)); // Dynamic fee
+
+            // Sprint 15: Calcular taxa via Central de Taxas
+            const feeResult = await getPlatformFee({
+                tenantId: data.tenantId,
+                sourceType: PlatformFeeSource.DONATION,
+                amountCents
+            });
+            const platformFeeCents = feeResult.platformFeeCents;
 
             const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
 
@@ -56,10 +64,10 @@ router.post('/', limiter, async (req, res) => {
                 userId: 'guest'
             });
 
-            // Create Split Session (95% Museum, 5% Platform)
+            // Create Split Session
             const session = await stripeService.createSplitPaymentSession({
                 customerId: stripeCustomerId,
-                amount: amountCents,
+                amount: feeResult.buyerPaysCents, // BUYER paga base + taxa
                 description: `Doação para o Museu: ${tenant?.name || 'Cultura'}`,
                 connectedAccountId: tenant?.stripeConnectId || '', 
                 applicationFeeAmount: platformFeeCents,
@@ -72,12 +80,17 @@ router.post('/', limiter, async (req, res) => {
                 checkoutUrl: session.url
             };
 
-            // Update Donation with Stripe ID
+            // Update Donation with Stripe ID + fee snapshot
             await prisma.donation.update({
                 where: { id: donation.id },
                 data: {
-                    platformFee: data.amount * (feePercent / 100),
-                    stripeCheckoutSessionId: session.id
+                    platformFee: platformFeeCents / 100,
+                    stripeCheckoutSessionId: session.id,
+                    // Sprint 15 — fee snapshot
+                    feeConfigId: feeResult.configId,
+                    platformFeePercent: feeResult.percentage,
+                    platformFeeAmountCents: platformFeeCents,
+                    feePaidBy: feeResult.feePaidBy
                 }
             });
 

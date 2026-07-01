@@ -673,24 +673,38 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
     const { targetTenantId } = req.body;
     const userId = req.user?.id;
     const userRole = req.user?.role;
+    const userTenantId = req.user?.tenantId;
+    const userTenantType = req.user?.type;
 
     if (!targetTenantId || !userId) {
       return res.status(400).json({ message: "Tenant ID e User ID são obrigatórios" });
     }
 
-    if (userRole === Role.ADMIN || userRole === Role.COLLABORATOR || userRole === Role.PRODUCER) {
-      return res.status(403).json({ message: "Apenas usuários MASTER e VISITOR podem alternar de ambiente." });
-    }
-
     const tenant = await prisma.tenant.findUnique({ where: { id: targetTenantId } });
     if (!tenant) {
-      return res.status(404).json({ message: "Museu não encontrado" });
+      return res.status(404).json({ message: "Tenant destino não encontrado" });
+    }
+
+    // Validação de Permissão para Switch Context
+    let canSwitch = false;
+    
+    if (userRole === Role.MASTER || userRole === Role.VISITOR) {
+      canSwitch = true;
+    } else if (userRole === Role.ADMIN && userTenantType === 'CITY') {
+      // Municipal Admin pode trocar para qualquer equipamento da sua cidade (parentId == userTenantId)
+      if (tenant.parentId === userTenantId) {
+        canSwitch = true;
+      }
+    }
+
+    if (!canSwitch) {
+      return res.status(403).json({ message: "Acesso negado. Você não tem permissão para alternar para este ambiente." });
     }
 
     let user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ message: "Usuário não encontrado" });
 
-    // Só muda o tenant principal se for MASTER
+    // Só atualiza o tenantId na tabela User se for MASTER
     if (userRole === Role.MASTER) {
       user = await prisma.user.update({
         where: { id: userId },
@@ -698,24 +712,49 @@ router.post("/switch-tenant", authMiddleware, validate(switchTenantSchema), asyn
       });
     }
 
-    const visitor = await prisma.visitor.findFirst({
-      where: { email: user.email, tenantId: targetTenantId }
-    });
-
-    if (!visitor) {
-      await prisma.visitor.create({
-        data: { name: user.name, email: user.email, tenantId: targetTenantId, isTeacher: (user as any).isTeacher || false }
+    // Garantir perfil de visitante para Visitors
+    if (userRole === Role.VISITOR) {
+      const visitor = await prisma.visitor.findFirst({
+        where: { email: user.email, tenantId: targetTenantId }
       });
+
+      if (!visitor) {
+        await prisma.visitor.create({
+          data: { name: user.name, email: user.email, tenantId: targetTenantId, isTeacher: (user as any).isTeacher || false }
+        });
+      }
     }
 
-    // Passar o targetTenantId no token para refletir a sessão ativa (mesmo para VISITOR)
-    const { accessToken, refreshToken } = await generateTokens(user.id, user.email, user.role, targetTenantId, tenant.type, user.name);
+    // O role no novo token será ADMIN caso o usuário seja de uma Secretaria assumindo um equipamento
+    const newTokenRole = (userRole === Role.ADMIN && userTenantType === 'CITY') ? Role.ADMIN : user.role;
+
+    // Passar o targetTenantId no token para refletir a sessão ativa
+    const { accessToken, refreshToken } = await generateTokens(user.id, user.email, newTokenRole, targetTenantId, tenant.type, user.name);
 
     // Buscar equipamentoId do novo tenant
     const equip = await prisma.equipamentoCultural.findFirst({
       where: { tenantId: targetTenantId, ativo: true },
       orderBy: { createdAt: 'asc' }
     });
+
+    // Registrar Auditoria (Audit Log) - Somente para Gestores/Admins
+    if (userRole === Role.ADMIN || userRole === Role.MASTER) {
+      try {
+        await createAuditLog(
+          'SWITCH_CONTEXT',
+          'Tenant',
+          targetTenantId,
+          user.id,
+          user.email,
+          targetTenantId,
+          { previousTenantId: userTenantId, previousRole: userRole },
+          { newTenantId: targetTenantId, newRole: newTokenRole },
+          req
+        );
+      } catch (auditErr) {
+        console.warn("[AUTH] Failed to create audit log for switch context:", auditErr);
+      }
+    }
 
     // Atualiza os cookies com os novos tokens
     res.cookie("museus_token", accessToken, COOKIE_OPTIONS);

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { stripeService } from '../services/stripeService.js';
+import { PlatformFeeSource } from '@prisma/client';
+import { getPlatformFee } from '../services/fee.service.js';
 
 const router = Router();
 
@@ -88,8 +90,14 @@ router.post('/', authMiddleware, async (req, res) => {
             }
 
             const amountInCents = Math.round(Number(plan.monthlyPrice) * 100);
-            const feeRate = (tenant?.feePercentage ?? 5) / 100;
-            const appFeeInCents = Math.round(amountInCents * feeRate);
+
+            // Sprint 15: Calcular taxa via Central de Taxas (MEMBERSHIP)
+            const feeResult = await getPlatformFee({
+                tenantId,
+                sourceType: PlatformFeeSource.MEMBERSHIP,
+                amountCents: amountInCents
+            });
+            const appFeeInCents = feeResult.platformFeeCents;
 
             const user = req.user!;
             const customerId = await stripeService.createCustomer({
@@ -100,7 +108,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
             const session = await stripeService.createSplitPaymentSession({
                 customerId,
-                amount: amountInCents,
+                amount: feeResult.buyerPaysCents, // BUYER paga base + taxa
                 description: `Assinatura Plano: ${plan.name}`,
                 connectedAccountId: stripeConnectId,
                 applicationFeeAmount: appFeeInCents,
@@ -114,7 +122,13 @@ router.post('/', authMiddleware, async (req, res) => {
 
             await prisma.membership.update({
                 where: { id: membership.id },
-                data: { paymentId: session.id }
+                data: { 
+                    paymentId: session.id,
+                    // Sprint 15 — fee snapshot
+                    feeConfigId: feeResult.configId,
+                    platformFeePercent: feeResult.percentage,
+                    platformFeeAmountCents: appFeeInCents
+                }
             });
 
             return res.status(201).json({

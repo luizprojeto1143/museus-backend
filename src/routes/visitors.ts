@@ -618,7 +618,7 @@ router.post("/visit-from-qr", async (req, res) => {
     if (qr.type === "EVENT") eventId = qr.referenceId;
 
     // Handle Cultural Equipment Check-in
-    if (qr.type === "EQUIPAMENTO" && qr.referenceId) {
+    if (qr.type === "EQUIPMENT" && qr.referenceId) {
        // L5 Fix: Check if already checked in today via QR/GPS
        const today = new Date();
        today.setHours(0,0,0,0);
@@ -972,7 +972,7 @@ router.get("/me/passport", authMiddleware, async (req, res) => {
     const stamps = await (prisma as any).passportStamp.findMany({
       where: { visitorId: visitor.id },
       include: { work: { select: { title: true, artist: true, imageUrl: true } } },
-      orderBy: { createdAt: "desc" }
+      orderBy: { stampedAt: "desc" }
     });
 
     res.json({ xp: visitor.xp, name: visitor.name, stamps });

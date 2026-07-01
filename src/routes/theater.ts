@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
-import { Role } from "@prisma/client";
+import { Role, PlatformFeeSource } from "@prisma/client";
 import { z } from "zod";
 import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.js";
 import { syncLedgerEntry } from "../services/ledgerService.js";
+import { getPlatformFee } from "../services/fee.service.js";
 
 const router = Router();
 
@@ -211,6 +212,19 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
             visitorId: z.string().optional()
         }).parse(req.body);
 
+        // Check active box office shift
+        const activeShift = await prisma.boxOfficeShift.findFirst({
+            where: {
+                tenantId: session.tenantId,
+                operatorId: req.user!.id,
+                closedAt: null
+            }
+        });
+
+        if (!activeShift) {
+            return res.status(400).json({ message: "Não há caixa aberto para este operador neste espaço." });
+        }
+
         // Validar assentos contra layout
         if (session.spaceId) {
             const space = await prisma.space.findUnique({ where: { id: session.spaceId } });
@@ -274,8 +288,15 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
 
             const unitPrice = ticket ? Number(ticket.price) : 100.0;
             const totalAmount = seatIds.length * unitPrice;
-            const feePercentage = tenant.feePercentage ?? 10.0;
-            const totalFee = totalAmount * (feePercentage / 100);
+            const amountCents = Math.round(totalAmount * 100);
+
+            // Sprint 15: Calcular taxa via Central de Taxas (THEATER)
+            const feeResult = await getPlatformFee({
+                tenantId: session.tenantId,
+                sourceType: PlatformFeeSource.THEATER,
+                amountCents
+            });
+            const totalFee = feeResult.platformFeeCents / 100;
 
             const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
             const group = await tx.theaterSeatReservationGroup.create({
@@ -336,6 +357,11 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                     connectedAccountId,
                     totalAmount,
                     totalFee,
+                    buyerPaysCents: feeResult.buyerPaysCents,
+                    platformFeeCents: feeResult.platformFeeCents,
+                    feeConfigId: feeResult.configId,
+                    platformFeePercent: feeResult.percentage,
+                    feePaidBy: feeResult.feePaidBy,
                     ticketId: ticket?.id,
                     groupId: group.id
                 };
@@ -364,11 +390,31 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                         fee: totalFee,
                         netAmount: totalAmount - totalFee,
                         status: "COMPLETED",
-                        paymentMethod: paymentMethod || "CASH"
+                        paymentMethod: paymentMethod || "CASH",
+                        // Sprint 15 — fee snapshot
+                        feeConfigId: feeResult.configId,
+                        platformFeePercent: feeResult.percentage,
+                        platformFeeAmountCents: feeResult.platformFeeCents,
+                        feePaidBy: feeResult.feePaidBy
                     }
                 });
 
                 await syncLedgerEntry(tx, finTx.id);
+
+                // Increment BoxOfficeShift totals
+                let updateData: any = {};
+                if (paymentMethod === "CASH") {
+                    updateData.salesCash = { increment: totalAmount };
+                } else if (paymentMethod === "CARD") {
+                    updateData.salesCard = { increment: totalAmount };
+                } else if (paymentMethod === "PIX") {
+                    updateData.salesPix = { increment: totalAmount };
+                }
+
+                await tx.boxOfficeShift.update({
+                    where: { id: activeShift.id },
+                    data: updateData
+                });
 
                 return { isDigital: false, success: true, amount: totalAmount, transactionId: finTx.id };
             }
@@ -382,6 +428,8 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                 connectedAccountId: string;
                 totalAmount: number;
                 totalFee: number;
+                buyerPaysCents: number;
+                platformFeeCents: number;
                 ticketId?: string;
                 groupId: string;
             };
@@ -396,10 +444,10 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
             const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
             const sessionCheckout = await stripeService.createSplitPaymentSession({
                 customerId: stripeCustomerId,
-                amount: Math.round(digitalResult.totalAmount * 100),
+                amount: digitalResult.buyerPaysCents, // BUYER paga base + taxa
                 description: `Ingressos Teatro: ${session.title} (Assentos: ${seatIds.join(", ")})`,
                 connectedAccountId: digitalResult.connectedAccountId,
-                applicationFeeAmount: Math.round(digitalResult.totalFee * 100),
+                applicationFeeAmount: digitalResult.platformFeeCents,
                 successUrl: `${frontendUrl}/theater/success?session_id={CHECKOUT_SESSION_ID}`,
                 cancelUrl: `${frontendUrl}/theater/cancel`,
                 metadata: {
@@ -607,6 +655,114 @@ router.post("/sessions/:id/cues", authMiddleware, async (req, res) => {
         if (err.status) return res.status(err.status).json({ message: err.message });
         console.error(err);
         return res.status(400).json({ message: "Dados inválidos" });
+    }
+});
+
+// --- BOX OFFICE SHIFTS ---
+
+// Get active shift
+router.get("/box-office/current", authMiddleware, async (req: any, res) => {
+    try {
+        const tenantId = req.user!.tenantId as string;
+        const operatorId = req.user!.id as string;
+
+        const currentShift = await prisma.boxOfficeShift.findFirst({
+            where: { tenantId, operatorId, closedAt: null }
+        });
+
+        return res.json(currentShift || null);
+    } catch (error) {
+        console.error("Error fetching current box office shift", error);
+        return res.status(500).json({ message: "Erro ao buscar caixa atual" });
+    }
+});
+
+// Open shift
+router.post("/box-office/open", authMiddleware, async (req: any, res) => {
+    try {
+        const tenantId = req.user!.tenantId as string;
+        const operatorId = req.user!.id as string;
+
+        const { openedValue, notes } = z.object({
+            openedValue: z.number().min(0, "O valor de abertura deve ser positivo"),
+            notes: z.string().optional()
+        }).parse(req.body);
+
+        // Pre-check for duplicate open shift on server side
+        const existing = await prisma.boxOfficeShift.findFirst({
+            where: { tenantId, operatorId, closedAt: null }
+        });
+
+        if (existing) {
+            return res.status(400).json({ message: "Você já possui um caixa aberto neste espaço." });
+        }
+
+        const shift = await prisma.boxOfficeShift.create({
+            data: {
+                tenantId,
+                operatorId,
+                openedValue,
+                status: "OPEN",
+                notes
+            }
+        });
+
+        return res.status(201).json(shift);
+    } catch (error: any) {
+        if (error.code === "P2002") {
+            return res.status(400).json({ message: "Você já possui um caixa aberto neste espaço (Concorrência)." });
+        }
+        console.error("Error opening box office shift", error);
+        return res.status(400).json({ message: error.message || "Erro ao abrir caixa" });
+    }
+});
+
+// Close shift
+router.post("/box-office/close", authMiddleware, async (req: any, res) => {
+    try {
+        const tenantId = req.user!.tenantId as string;
+        const operatorId = req.user!.id as string;
+
+        const { closedValue, notes } = z.object({
+            closedValue: z.number().min(0, "O valor de fechamento deve ser positivo"),
+            notes: z.string().optional()
+        }).parse(req.body);
+
+        const currentShift = await prisma.boxOfficeShift.findFirst({
+            where: { tenantId, operatorId, closedAt: null }
+        });
+
+        if (!currentShift) {
+            return res.status(400).json({ message: "Não há nenhum caixa aberto para fechar." });
+        }
+
+        const openedVal = Number(currentShift.openedValue);
+        const cash = Number(currentShift.salesCash);
+        const card = Number(currentShift.salesCard);
+        const pix = Number(currentShift.salesPix);
+        const ref = Number(currentShift.refunds);
+
+        const expectedValue = openedVal + cash + card + pix - ref;
+        const difference = closedValue - expectedValue;
+
+        const status = difference === 0 ? "CLOSED" : "REVIEW_REQUIRED";
+
+        const updated = await prisma.boxOfficeShift.update({
+            where: { id: currentShift.id },
+            data: {
+                closedAt: new Date(),
+                closedValue,
+                expectedValue,
+                difference,
+                status,
+                notes: notes ? `${currentShift.notes || ""}\n[Fechamento]: ${notes}` : currentShift.notes
+            }
+        });
+
+        return res.json(updated);
+    } catch (error: any) {
+        console.error("Error closing box office shift", error);
+        return res.status(400).json({ message: error.message || "Erro ao fechar caixa" });
     }
 });
 

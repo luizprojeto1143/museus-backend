@@ -2,7 +2,8 @@ import { Router } from "express";
 import crypto from "crypto";
 import { prisma } from "../../prisma.js";
 import { authMiddleware, softAuthMiddleware, requireRole, requirePermission } from "../../middleware/auth.js";
-import { Role } from "@prisma/client";
+import { Role, PlatformFeeSource } from "@prisma/client";
+import { getPlatformFee } from "../../services/fee.service.js";
 import { sendCertificateEmail, generateCertificateBuffer } from "../../services/email.js";
 import { z } from "zod";
 import { createAuditLog } from "../governance/audit.js";
@@ -885,15 +886,18 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         });
 
         const amountInCents = Math.round(result.totalAmount * 100);
-        // Taxa dinâmica: lê do tenant (fallback 5%)
-        const eventTenant = await prisma.tenant.findUnique({ where: { id: event.tenantId }, select: { feePercentage: true } });
-        const feeRate = (eventTenant?.feePercentage ?? 5) / 100;
-        const appFeeInCents = Math.round(amountInCents * feeRate);
+        // Sprint 15: Calcular taxa via Central de Taxas (Bilheteria)
+        const feeResult = await getPlatformFee({
+          tenantId: event.tenantId,
+          sourceType: PlatformFeeSource.TICKET,
+          amountCents: amountInCents
+        });
+        const appFeeInCents = feeResult.platformFeeCents;
 
         // 3. Create Stripe Checkout session with Connect Split
         const session = await stripeService.createSplitPaymentSession({
           customerId,
-          amount: amountInCents,
+          amount: feeResult.buyerPaysCents, // BUYER paga base + taxa
           description: `Ingresso: ${result.eventTitle} - ${result.ticketName}`,
           connectedAccountId: stripeConnectId,
           applicationFeeAmount: appFeeInCents,
@@ -1193,16 +1197,15 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
         throw new Error("Estoque de ingressos insuficiente.");
       }
 
-      // Fetch tenant to get feePercentage
-      const tenant = await tx.tenant.findUnique({
-        where: { id: event.tenantId },
-        select: { feePercentage: true }
+      // Sprint 15: Calcular taxa via Central de Taxas (Bilheteria / TICKET)
+      const amountCents = Math.round(Number(ticket.price) * quantity * 100);
+      const feeResult = await getPlatformFee({
+        tenantId: event.tenantId,
+        sourceType: PlatformFeeSource.TICKET,
+        amountCents
       });
-      if (!tenant) throw new Error("Tenant não encontrado");
-
-      const feePercentage = tenant.feePercentage ?? 10.0;
       const totalAmount = Number(ticket.price) * quantity;
-      const totalFee = totalAmount * (feePercentage / 100);
+      const totalFee = feeResult.platformFeeCents / 100;
 
       // Create Financial Transaction
       const finTx = await tx.financialTransaction.create({
@@ -1214,7 +1217,12 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
           fee: totalFee,
           netAmount: totalAmount - totalFee,
           status: "COMPLETED",
-          paymentMethod: paymentMethod || "CASH"
+          paymentMethod: paymentMethod || "CASH",
+          // Sprint 15 — fee snapshot
+          feeConfigId: feeResult.configId,
+          platformFeePercent: feeResult.percentage,
+          platformFeeAmountCents: feeResult.platformFeeCents,
+          feePaidBy: feeResult.feePaidBy
         }
       });
 

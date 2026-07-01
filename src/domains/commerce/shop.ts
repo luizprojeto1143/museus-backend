@@ -3,7 +3,8 @@ import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
 import { mailService } from '../../services/email.js';
 import { z } from 'zod';
-import { Role } from '@prisma/client';
+import { Role, PlatformFeeSource } from '@prisma/client';
+import { getPlatformFee } from '../../services/fee.service.js';
 
 const router = Router();
 
@@ -124,13 +125,19 @@ router.post('/orders', authMiddleware, async (req, res) => {
             // Fetch Tenant for Split
             const tenant = await tx.tenant.findUnique({
                 where: { id: tenantId },
-                select: { stripeConnectId: true, name: true, feePercentage: true }
+                select: { stripeConnectId: true, name: true }
             });
 
             const { stripeService } = await import('../../services/stripeService.js');
             const amountCents = Math.round(total * 100);
-            const feePercent = tenant?.feePercentage ?? 5.0;
-            const platformFeeCents = Math.round(amountCents * (feePercent / 100));
+
+            // Sprint 15: Calcular taxa via Central de Taxas
+            const feeResult = await getPlatformFee({
+                tenantId,
+                sourceType: PlatformFeeSource.SHOP,
+                amountCents
+            });
+            const platformFeeCents = feeResult.platformFeeCents;
 
             const stripeCustomerId = await stripeService.createCustomer({
                 name: customerName,
@@ -142,7 +149,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
 
             const session = await stripeService.createSplitPaymentSession({
                 customerId: stripeCustomerId,
-                amount: amountCents,
+                amount: feeResult.buyerPaysCents, // BUYER paga base + taxa
                 description: `Pedido na Loja: ${tenant?.name || 'Cultura'}`,
                 connectedAccountId: tenant?.stripeConnectId || '',
                 applicationFeeAmount: platformFeeCents,
@@ -160,9 +167,14 @@ router.post('/orders', authMiddleware, async (req, res) => {
                     customerPhone,
                     shippingAddress,
                     total,
-                    platformFee: total * (feePercent / 100),
+                    platformFee: platformFeeCents / 100,
                     stripeCheckoutSessionId: session.id,
-                    orderItems: { create: orderItems }
+                    orderItems: { create: orderItems },
+                    // Sprint 15 — fee snapshot
+                    feeConfigId: feeResult.configId,
+                    platformFeePercent: feeResult.percentage,
+                    platformFeeAmountCents: platformFeeCents,
+                    feePaidBy: feeResult.feePaidBy
                 }
             });
 

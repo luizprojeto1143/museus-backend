@@ -1,34 +1,34 @@
-import { prisma } from '../prisma.js';
+/**
+ * src/utils/fees.ts
+ *
+ * Módulo de compatibilidade legada de taxas.
+ * Delega o cálculo para o novo `fee.service.ts`.
+ */
+
+import { getPlatformFee } from '../services/fee.service.js';
+import { PlatformFeeSource } from '@prisma/client';
 
 /**
- * Retorna a taxa da plataforma para um tenant específico.
- * Lê tenant.feePercentage do banco. Fallback: 5%.
+ * Retorna a taxa decimal da plataforma para um tenant específico (legacy).
+ * Ex: se a taxa for 5%, retorna 0.05.
  * 
- * Uso: const fee = await getPlatformFeeRate(tenantId);
- *      const platformFee = amount * fee; // ex: 100 * 0.05 = 5
+ * Uso herdado: const fee = await getPlatformFeeRate(tenantId);
  */
 export async function getPlatformFeeRate(tenantId: string | null | undefined): Promise<number> {
-  if (!tenantId) return 0.05; // fallback padrão
-
   try {
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { feePercentage: true }
+    const feeResult = await getPlatformFee({
+      tenantId,
+      sourceType: PlatformFeeSource.TICKET, // Usa TICKET como fallback genérico de compatibilidade
+      amountCents: 10000
     });
-    // feePercentage é armazenado como número inteiro (ex: 5 = 5%)
-    if (tenant?.feePercentage != null) {
-      return tenant.feePercentage / 100;
-    }
+    return feeResult.percentage / 100;
   } catch {
-    // Silencioso — fallback para 5%
+    return 0.05;
   }
-
-  return 0.05;
 }
 
 /**
- * Versão síncrona com valor já carregado do banco.
- * Use quando já tem feePercentage disponível no tenant object.
+ * Versão síncrona legado.
  */
 export function getPlatformFeeRateFromValue(feePercentage: number | null | undefined): number {
   if (feePercentage != null) return feePercentage / 100;
