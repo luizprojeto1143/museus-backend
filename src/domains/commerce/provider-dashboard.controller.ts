@@ -1,26 +1,42 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../prisma.js';
 import Stripe from 'stripe';
+
+async function findProviderForRequest(req: Request, providerId?: string) {
+  const user = (req as any).user;
+  const { tenantSlug } = req.params;
+  const tenant = tenantSlug ? await prisma.tenant.findUnique({ where: { slug: tenantSlug } }) : null;
+
+  if (providerId) {
+    const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId } });
+    if (!provider) return null;
+    if (tenant && provider.tenantId !== tenant.id) return null;
+    if (provider.ownerId !== user.id && user.role !== 'MASTER') return null;
+    return provider;
+  }
+
+  return prisma.serviceProvider.findFirst({
+    where: {
+      ownerId: user.id,
+      ...(tenant ? { tenantId: tenant.id } : {})
+    }
+  });
+}
+
 export const ProviderDashboardController = {
   // --- Dashboard & Analytics ---
   async getDashboardStats(req: Request, res: Response) {
     try {
-      const { tenantSlug } = req.params;
       const providerId = req.query.providerId as string;
-
-      if (!providerId) {
-        return res.status(400).json({ error: 'Provider ID is required' });
-      }
-
-      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId } });
-      if (!provider || (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER')) {
+      const provider = await findProviderForRequest(req, providerId);
+      if (!provider) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
       // Receita total baseada em transações concluídas
       const transactions = await prisma.transaction.aggregate({
         where: {
-          payeeId: providerId,
+          payeeId: provider.id,
           status: { in: ['PAID', 'RELEASED'] }
         },
         _sum: {
@@ -31,7 +47,7 @@ export const ProviderDashboardController = {
 
       // Média real de avaliações
       const reviews = await prisma.providerReview.aggregate({
-        where: { serviceProviderId: providerId },
+        where: { serviceProviderId: provider.id },
         _avg: { rating: true },
         _count: { id: true }
       });
@@ -43,14 +59,14 @@ export const ProviderDashboardController = {
       today.setHours(0, 0, 0, 0);
       const bookingsToday = await prisma.booking.count({
         where: {
-          serviceProviderId: providerId,
+          serviceProviderId: provider.id,
           createdAt: { gte: today }
         }
       });
 
       const stats = {
         totalRevenue,
-        activeProducts: await prisma.providerProduct.count({ where: { serviceProviderId: providerId, active: true } }),
+        activeProducts: await prisma.providerProduct.count({ where: { serviceProviderId: provider.id, active: true } }),
         averageRating,
         totalReviews,
         viewsToday: bookingsToday 
@@ -69,8 +85,8 @@ export const ProviderDashboardController = {
       const { tenantSlug } = req.params;
       const { name, description, price, imageUrl, serviceProviderId } = req.body;
 
-      const provider = await prisma.serviceProvider.findUnique({ where: { id: serviceProviderId } });
-      if (!provider || (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER')) {
+      const provider = await findProviderForRequest(req, serviceProviderId);
+      if (!provider) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
@@ -83,7 +99,7 @@ export const ProviderDashboardController = {
           description,
           price,
           imageUrl,
-          serviceProviderId,
+          serviceProviderId: provider.id,
           tenantId: tenant.id
         }
       });
@@ -99,13 +115,13 @@ export const ProviderDashboardController = {
     try {
       const providerId = req.query.providerId as string;
 
-      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId } });
-      if (!provider || (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER')) {
+      const provider = await findProviderForRequest(req, providerId);
+      if (!provider) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
       const products = await prisma.providerProduct.findMany({
-        where: { serviceProviderId: providerId }
+        where: { serviceProviderId: provider.id }
       });
       return res.json(products);
     } catch (error) {
@@ -117,14 +133,12 @@ export const ProviderDashboardController = {
   // --- Financial: Stripe Connect Onboarding ---
   async onboardStripe(req: Request, res: Response) {
     try {
-      const { tenantSlug } = req.params;
       const { providerId } = req.body;
 
-      const provider = await prisma.serviceProvider.findUnique({ where: { id: providerId }, include: { user: true } });
-      if (!provider || !provider.user) return res.status(404).json({ error: 'Provider or owner not found' });
-      if (provider.ownerId !== (req as any).user.id && (req as any).user.role !== 'MASTER') {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
+      const provider = await findProviderForRequest(req, providerId);
+      if (!provider) return res.status(404).json({ error: 'Provider not found' });
+      const owner = provider.ownerId ? await prisma.user.findUnique({ where: { id: provider.ownerId } }) : null;
+      if (!owner) return res.status(404).json({ error: 'Provider owner not found' });
 
       // Se não temos a chave do Stripe configurada, retornamos um erro claro ao invés de um mock
       if (!process.env.STRIPE_SECRET_KEY) {
@@ -139,7 +153,7 @@ export const ProviderDashboardController = {
       if (!accountId) {
         const account = await stripe.accounts.create({
           type: 'express',
-          email: provider.user.email,
+          email: owner.email,
           business_type: 'individual',
           business_profile: {
             name: provider.name,
@@ -150,7 +164,7 @@ export const ProviderDashboardController = {
         accountId = account.id;
 
         await prisma.serviceProvider.update({
-          where: { id: providerId },
+          where: { id: provider.id },
           data: { stripeAccountId: accountId }
         });
       }

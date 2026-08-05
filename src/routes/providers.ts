@@ -1,12 +1,19 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { mailService } from "../services/email.js";
+import { getProviderSubscriptionPricing } from "../services/fee.service.js";
 
 const router = Router();
+
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["ACTIVE", "TRIALING"]);
+
+function canProviderSendProposals(subscriptionStatus?: string | null) {
+    return ACTIVE_SUBSCRIPTION_STATUSES.has(String(subscriptionStatus || "").toUpperCase());
+}
 
 // Lista prestadores
 router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
@@ -116,6 +123,9 @@ router.get("/me/stats", authMiddleware, async (req, res) => {
             where: { providerId: provider.id, status: "VALIDATED" } // ou "DELIVERED"/"VALIDATED" etc, vamos considerar as finalizadas
         });
 
+        const pricing = await getProviderSubscriptionPricing(provider.tenantId);
+        const canSendProposals = canProviderSendProposals(provider.subscriptionStatus);
+
         const stats = {
             totalExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id } }),
             completedExecutions: await prisma.accessibilityExecution.count({ where: { providerId: provider.id, status: "VALIDATED" } }),
@@ -136,13 +146,87 @@ router.get("/me/stats", authMiddleware, async (req, res) => {
                     }
                 }
             }),
-            hasStripeConnect: !!provider.stripeConnectId
+            hasStripeConnect: !!provider.stripeConnectId,
+            subscriptionStatus: provider.subscriptionStatus,
+            subscriptionMonthlyPriceCents: pricing.monthlyPriceCents,
+            subscriptionMonthlyPriceBRL: pricing.monthlyPriceBRL,
+            canSendProposals,
+            active: provider.active,
         };
 
         return res.json(stats);
     } catch (err) {
         console.error("Erro ao buscar estatísticas", err);
         return res.status(500).json({ message: "Erro ao buscar estatísticas" });
+    }
+});
+
+router.get("/me/subscription", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const provider = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
+        if (!provider) return res.status(404).json({ message: "Perfil de prestador nao encontrado" });
+
+        const pricing = await getProviderSubscriptionPricing(provider.tenantId);
+        return res.json({
+            providerId: provider.id,
+            status: provider.subscriptionStatus,
+            canSendProposals: canProviderSendProposals(provider.subscriptionStatus),
+            monthlyPriceCents: pricing.monthlyPriceCents,
+            monthlyPriceBRL: pricing.monthlyPriceBRL,
+            pricingRule: pricing.appliedRule,
+            configId: pricing.configId,
+        });
+    } catch (err) {
+        console.error("Erro ao buscar assinatura do prestador", err);
+        return res.status(500).json({ message: "Erro ao buscar assinatura" });
+    }
+});
+
+router.post("/me/subscription/checkout", authMiddleware, async (req, res) => {
+    try {
+        const user = req.user!;
+        const provider = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
+        if (!provider) return res.status(404).json({ message: "Perfil de prestador nao encontrado" });
+
+        const pricing = await getProviderSubscriptionPricing(provider.tenantId);
+        if (pricing.monthlyPriceCents <= 0) {
+            return res.status(400).json({ message: "Mensalidade de prestador esta zerada na central de taxas." });
+        }
+
+        const { stripeService } = await import("../services/stripeService.js");
+        const stripeCustomerId = provider.stripeCustomerId || await stripeService.createCustomer({
+            email: user.email,
+            name: user.name || provider.name,
+            userId: user.id,
+            metadata: { providerId: provider.id }
+        });
+
+        if (!provider.stripeCustomerId) {
+            await prisma.accessibilityProvider.update({
+                where: { id: provider.id },
+                data: { stripeCustomerId }
+            });
+        }
+
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        const session = await stripeService.createSubscriptionSessionWithPriceData({
+            customerId: stripeCustomerId,
+            amountCents: pricing.monthlyPriceCents,
+            name: "Mensalidade Cultura Viva - Prestador",
+            successUrl: `${frontendUrl}/provider/subscription-success`,
+            cancelUrl: `${frontendUrl}/provider/subscription-cancel`,
+            metadata: {
+                providerId: provider.id,
+                sourceType: "PROVIDER_SUBSCRIPTION",
+                feeConfigId: pricing.configId || "",
+            }
+        });
+
+        return res.json({ checkoutUrl: session.url, ...pricing });
+    } catch (err) {
+        console.error("Erro ao criar checkout da assinatura do prestador", err);
+        return res.status(500).json({ message: "Erro ao criar checkout da assinatura" });
     }
 });
 
@@ -227,7 +311,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
                         name: data.name,
                         email: data.email,
                         password: hashedPassword,
-                        role: Role.PRODUCER,
+                        role: Role.PRESTADOR,
                         tenantId: targetTenantId
                     }
                 });
@@ -259,7 +343,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (
 });
 
 // Atualizar prestador
-router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER]), async (req, res) => {
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PRODUCER, Role.PRESTADOR]), async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
@@ -270,10 +354,14 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         }
 
         // Verificar permissão: Se for PRODUCER, só pode editar o próprio perfil
-        if (user.role === Role.PRODUCER) {
+        const isProviderOwner = user.role === Role.PRESTADOR;
+
+        if (isProviderOwner) {
             if (existing.userId !== user.id) {
                 return res.status(403).json({ message: "Você não tem permissão para editar este perfil" });
             }
+        } else if (user.role === Role.PRODUCER) {
+            return res.status(403).json({ message: "Produtores nao podem editar perfis de prestador" });
         } else if (user.role !== Role.MASTER && existing.tenantId !== user.tenantId) {
             // Regra Admin: só edita se for do mesmo museu (tenant)
             return res.status(403).json({ message: "Sem permissão" });
@@ -290,8 +378,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
                 ...(phone !== undefined && { phone }),
                 ...(description !== undefined && { description }),
                 ...(services && { services }),
-                ...(active !== undefined && user.role !== Role.PRODUCER ? { active } : {}), // Produtor não altera o status 'active'
-                ...(rating !== undefined && user.role !== Role.PRODUCER ? { rating } : {})
+                ...(active !== undefined && !isProviderOwner ? { active } : {}), // Produtor não altera o status 'active'
+                ...(rating !== undefined && !isProviderOwner ? { rating } : {})
             }
         });
 
@@ -427,3 +515,4 @@ router.post("/:id/quote", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, 
 });
 
 export default router;
+

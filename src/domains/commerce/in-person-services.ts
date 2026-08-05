@@ -14,19 +14,24 @@ router.get("/", authMiddleware, async (req, res) => {
         const user = req.user!;
         const tenantId = user.role === Role.MASTER ? (req.query.tenantId as string) : user.tenantId;
 
-        if (!tenantId) {
+        const where: any = {};
+        
+        if (tenantId) {
+            where.tenantId = tenantId;
+        } else if (user.role !== Role.MASTER) {
             return res.status(400).json({ message: "Tenant ID required" });
         }
 
-        const where: any = { tenantId };
-
-        // If not master, maybe only show active ones to visitors/admins for booking?
+        // If not master, show only active ones
         if (user.role !== Role.MASTER) {
             where.active = true;
         }
 
         const services = await prisma.inPersonService.findMany({
             where,
+            include: {
+                tenant: { select: { name: true } }
+            },
             orderBy: { createdAt: 'desc' }
         });
 

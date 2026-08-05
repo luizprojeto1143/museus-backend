@@ -20,7 +20,7 @@ const ACCESS_TOKEN_EXPIRES_IN = "15m";
 // Refresh Token: 7 dias (Longa duração para UX)
 const REFRESH_TOKEN_EXPIRES_DAYS = 7;
 const isProd = process.env.NODE_ENV === "production";
-const COOKIE_SAME_SITE = (process.env.COOKIE_SAME_SITE || "lax") as "lax" | "none" | "strict";
+const COOKIE_SAME_SITE = (process.env.COOKIE_SAME_SITE || (isProd ? "none" : "lax")) as "lax" | "none" | "strict";
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: isProd,
@@ -574,8 +574,6 @@ router.post("/register-provider", authLimiter, validate(registerProviderSchema),
   console.log(`🚀 Starting provider registration for: ${email}`);
 
   try {
-    const { stripeService } = await import("../services/stripeService.js");
-
     // 1. Check if user already exists
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) {
@@ -592,7 +590,7 @@ router.post("/register-provider", authLimiter, validate(registerProviderSchema),
           email,
           password: hash,
           name,
-          role: Role.PRODUCER,
+          role: Role.PRESTADOR,
           termsAcceptedAt: new Date(),
         }
       });
@@ -604,7 +602,8 @@ router.post("/register-provider", authLimiter, validate(registerProviderSchema),
           description,
           services: services || [],
           userId: user.id,
-          active: false,
+          active: true,
+          subscriptionStatus: "INACTIVE",
         }
       });
 
@@ -613,47 +612,9 @@ router.post("/register-provider", authLimiter, validate(registerProviderSchema),
 
     console.log(`✅ User and Provider created in DB: ${result.user.id}`);
 
-    // 3. Stripe Integration (Non-blocking for DB transaction)
-    let stripeCustomerId = null;
-    let checkoutUrl = null;
-
-    try {
-      // 3.1 Create Stripe Customer
-      stripeCustomerId = await stripeService.createCustomer({
-        email: result.user.email,
-        name: result.user.name,
-        userId: result.user.id
-      });
-
-      // 3.2 Update Provider with Stripe ID
-      await prisma.accessibilityProvider.update({
-        where: { id: result.provider.id },
-        data: { stripeCustomerId }
-      });
-
-      // 3.3 Create Subscription Session
-      const PRICE_ID = process.env.STRIPE_PRICE_ID_PROVIDER || "price_default_50_monthly";
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-      
-      const session = await stripeService.createSubscriptionSession(
-        stripeCustomerId,
-        PRICE_ID,
-        `${frontendUrl}/provider/subscription-success`,
-        `${frontendUrl}/provider/subscription-cancel`
-      );
-      checkoutUrl = session.url;
-
-      console.log(`💳 Stripe setup complete for: ${email}`);
-    } catch (stripeError: any) {
-      console.error("❌ Stripe Integration Error (Non-Fatal):", stripeError.message);
-      // We don't return 500 here, we let the user know they are registered but payment failed
-    }
-
     return res.status(201).json({
-      message: checkoutUrl 
-        ? "Cadastro realizado com sucesso! Redirecionando para o pagamento."
-        : "Cadastro realizado, mas houve um problema com o sistema de pagamentos. Entre em contato com o suporte para ativar sua conta.",
-      checkoutUrl,
+      message: "Cadastro gratuito realizado com sucesso. A mensalidade habilita o envio de propostas em projetos aprovados.",
+      checkoutUrl: null,
       userId: result.user.id,
       providerId: result.provider.id
     });

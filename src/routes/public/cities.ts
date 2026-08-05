@@ -1,7 +1,33 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma';
+import { TenantType } from '@prisma/client';
 
 const router = Router();
+
+router.get('/', async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const cities = await prisma.tenant.findMany({
+      where: { type: { in: [TenantType.CITY, TenantType.SECRETARIA] } },
+      orderBy: { name: 'asc' },
+      take: limit,
+      include: {
+        _count: { select: { other_Tenant: true, equipamentoCulturals: true } }
+      } as any
+    });
+
+    res.json(cities.map((city: any) => ({
+      id: city.id,
+      slug: city.slug,
+      nome: city.name,
+      estado: city.state || city.address || '',
+      logoUrl: city.logoUrl,
+      equipamentosCount: city._count?.equipamentoCulturals || city._count?.other_Tenant || 0
+    })));
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao listar cidades' });
+  }
+});
 
 router.get('/:id/dashboard', async (req, res) => {
   try {

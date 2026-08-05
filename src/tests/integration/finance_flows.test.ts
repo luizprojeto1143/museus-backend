@@ -1,4 +1,3 @@
-// @ts-nocheck
 import request from 'supertest';
 import { app } from '../../index.js';
 import { prisma } from '../../prisma.js';
@@ -85,7 +84,7 @@ describe('Financial Módulo & ERP Integration Tests', () => {
             .post('/auth/login')
             .send({ email: 'finance.admin@test.com', password });
         
-        const cookies = login.headers['set-cookie'] as string[];
+        const cookies = login.headers['set-cookie'] as unknown as string[];
         const cookie = cookies?.find(c => c.startsWith('museus_token='));
         if (cookie) {
             userToken = cookie.split(';')[0].split('=')[1];
@@ -125,7 +124,7 @@ describe('Financial Módulo & ERP Integration Tests', () => {
                 .set('Authorization', `Bearer ${userToken}`);
             expect(res.status).toBe(200);
             expect(Array.isArray(res.body)).toBe(true);
-            expect(res.body.some(c => c.id === costCenterId)).toBe(true);
+            expect(res.body.some((c: { id: string }) => c.id === costCenterId)).toBe(true);
         });
 
         it('should create an accounting category', async () => {
@@ -149,7 +148,7 @@ describe('Financial Módulo & ERP Integration Tests', () => {
                 .set('Authorization', `Bearer ${userToken}`);
             expect(res.status).toBe(200);
             expect(Array.isArray(res.body)).toBe(true);
-            expect(res.body.some(c => c.id === categoryId)).toBe(true);
+            expect(res.body.some((c: { id: string }) => c.id === categoryId)).toBe(true);
         });
     });
 
@@ -177,7 +176,7 @@ describe('Financial Módulo & ERP Integration Tests', () => {
                 .set('Authorization', `Bearer ${userToken}`);
             expect(res.status).toBe(200);
             expect(Array.isArray(res.body)).toBe(true);
-            expect(res.body.some(r => r.id === receivableId)).toBe(true);
+            expect(res.body.some((r: { id: string }) => r.id === receivableId)).toBe(true);
         });
 
         it('should update an account receivable', async () => {
@@ -220,7 +219,7 @@ describe('Financial Módulo & ERP Integration Tests', () => {
                 .set('Authorization', `Bearer ${userToken}`);
             expect(res.status).toBe(200);
             expect(Array.isArray(res.body)).toBe(true);
-            expect(res.body.some(p => p.id === payableId)).toBe(true);
+            expect(res.body.some((p: { id: string }) => p.id === payableId)).toBe(true);
         });
 
         it('should update an account payable', async () => {
@@ -302,7 +301,7 @@ describe('Financial Módulo & ERP Integration Tests', () => {
                 .set('Authorization', `Bearer ${userToken}`);
             expect(res.status).toBe(200);
             expect(Array.isArray(res.body)).toBe(true);
-            expect(res.body.some(p => p.id === payoutId)).toBe(true);
+            expect(res.body.some((p: { id: string }) => p.id === payoutId)).toBe(true);
         });
 
         it('should release pending payouts', async () => {
@@ -315,3 +314,5 @@ describe('Financial Módulo & ERP Integration Tests', () => {
         });
     });
 });
+
+

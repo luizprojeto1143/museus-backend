@@ -12,8 +12,29 @@ import { createEventSchema, updateEventSchema } from "../../schemas/event.schema
 import { stripe, stripeService } from "../../services/stripeService.js";
 import { dispatchEvent, backgroundQueue } from "../../infrastructure/queue/bullmq.setup.js";
 import { assertTenantOwnership } from "../../utils/ownership.js";
+import { deliverTenantWebhooks } from "../../services/outboundWebhook.service.js";
 
 const router = Router();
+
+async function validateEventRelations(tenantId: string, relations: { categoryId?: string | null; equipamentoId?: string | null }) {
+  if (relations.categoryId) {
+    const category = await prisma.category.findFirst({
+      where: { id: relations.categoryId, tenantId }
+    });
+    if (!category) {
+      throw Object.assign(new Error("Categoria nao encontrada neste tenant"), { status: 400 });
+    }
+  }
+
+  if (relations.equipamentoId) {
+    const equipamento = await prisma.equipamentoCultural.findFirst({
+      where: { id: relations.equipamentoId, tenantId }
+    });
+    if (!equipamento) {
+      throw Object.assign(new Error("Equipamento nao encontrado neste tenant"), { status: 400 });
+    }
+  }
+}
 
 // Lista eventos (Suporta Discovery Mode / Agenda Unificada)
 router.get("/", softAuthMiddleware, async (req, res) => {
@@ -189,7 +210,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       zipCode, address, number, complement, neighborhood, city, state,
       meetingLink, platform,
       producerName, producerDescription, producerLogoUrl, coverImageUrl,
-      // Sympla Killer Features 🚀
+      // Sympla Killer Features
       customFormSchema, galleryUrls,
       certificateRequiresSurvey,
       // Media - Audio Guide
@@ -207,6 +228,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         return res.status(400).json({ message: "Categoria não encontrada. Selecione uma categoria válida." });
       }
     }
+
+    await validateEventRelations(tenantId, { categoryId, equipamentoId });
 
     // Validate Space and Conflicts
     if (spaceId) {
@@ -285,7 +308,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
     });
 
     return res.status(201).json(event);
-  } catch (err) {
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error("Erro criar evento", err);
     return res.status(500).json({ message: "Erro ao criar evento" });
   }
@@ -320,18 +344,24 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       equipamentoId
     } = req.body;
 
+    await validateEventRelations(existingEvent.tenantId, { categoryId, equipamentoId });
+
     // Validate Space and Conflicts if changed
     if (spaceId) {
       const space = await prisma.space.findUnique({ where: { id: spaceId } });
-      if (!space) return res.status(404).json({ message: "Espaço não encontrado" });
+      if (!space || space.tenantId !== existingEvent.tenantId) return res.status(404).json({ message: "Espaco nao encontrado" });
+
+      const conflictStart = startDate ? new Date(startDate) : existingEvent.startDate;
+      const conflictEnd = endDate ? new Date(endDate) : (existingEvent.endDate || conflictStart);
 
       const conflicts = await prisma.booking.count({
         where: {
+          eventId: { not: id },
           spaceId,
           status: { not: "CANCELLED" },
           AND: [
-            { startTime: { lt: new Date(endDate || startDate) } },
-            { endTime: { gt: new Date(startDate) } }
+            { startTime: { lt: conflictEnd } },
+            { endTime: { gt: conflictStart } }
           ]
         }
       });
@@ -558,10 +588,27 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
       });
 
       // Update Registration Status if exists (Sync with Producer Dashboard)
+      const updatedRegistrations = await prisma.registration.findMany({
+        where: { eventId: id, visitorId: targetVisitorId, status: "CONFIRMED" },
+        select: { id: true, ticketId: true, code: true, guestName: true, guestEmail: true }
+      });
       await prisma.registration.updateMany({
         where: { eventId: id, visitorId: targetVisitorId, status: "CONFIRMED" },
         data: { status: "CHECKED_IN", checkInDate: new Date() }
       });
+
+      for (const registration of updatedRegistrations) {
+        deliverTenantWebhooks(event.tenantId, "ticket.checked_in", {
+          registrationId: registration.id,
+          eventId: id,
+          ticketId: registration.ticketId,
+          code: registration.code,
+          guestName: registration.guestName,
+          guestEmail: registration.guestEmail,
+          checkedInAt: new Date().toISOString(),
+          source: "EVENT_CHECKIN"
+        }).catch(err => console.error("Ticket checked-in webhook delivery failed:", err));
+      }
 
       // Add XP logic if check-in successful (first time)
       await prisma.$transaction([
@@ -704,6 +751,11 @@ router.post("/:id/certificate", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Evento não encontrado" });
     }
 
+    const isEventAdmin = user.role === Role.MASTER || (
+      (user.role === Role.ADMIN || user.role === Role.PRODUCER || user.role === Role.COLLABORATOR) &&
+      user.tenantId === event.tenantId
+    );
+
     // If no visitorId, use authenticated user's visitor profile
     if (!visitorId) {
       const visitor = await prisma.visitor.findFirst({
@@ -713,6 +765,13 @@ router.post("/:id/certificate", authMiddleware, async (req, res) => {
         return res.status(404).json({ message: "Perfil de visitante não encontrado" });
       }
       visitorId = visitor.id;
+    } else if (!isEventAdmin) {
+      const visitor = await prisma.visitor.findFirst({
+        where: { email: user.email.toLowerCase(), tenantId: event.tenantId }
+      });
+      if (!visitor || visitor.id !== visitorId) {
+        return res.status(403).json({ message: "Sem permissao para solicitar certificado deste visitante" });
+      }
     }
 
     // Verificar presença
@@ -776,12 +835,17 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { ticketId, quantity, customFormData } = req.body;
     const user = req.user!;
+    const requestedQuantity = Number(quantity);
+
+    if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1 || requestedQuantity > 10) {
+      return res.status(400).json({ message: "Quantidade de ingressos invalida" });
+    }
 
     // 1. Validate Event & Ticket
     const event = await prisma.event.findUnique({ where: { id } });
     if (!event) return res.status(404).json({ message: "Evento não encontrado" });
 
-    // Race Condition Fix: Use Transaction! 🛡️
+    // Race Condition Fix: Use Transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Re-fetch ticket inside transaction to get latest state (Pessimistic Lock)
       const tickets = await tx.$queryRaw<any[]>`SELECT * FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
@@ -811,7 +875,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       });
 
       // Strict Stock Check
-      if (ticket.sold + activePendingCount + quantity > ticket.quantity) {
+      if (ticket.sold + activePendingCount + requestedQuantity > ticket.quantity) {
         throw new Error("Ingressos esgotados (Overbooking prevented)");
       }
 
@@ -825,7 +889,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       const isPaid = Number(ticket.price) > 0;
       const registrations = [];
 
-      for (let i = 0; i < quantity; i++) {
+      for (let i = 0; i < requestedQuantity; i++) {
         const code = `TKT-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
         const reg = await tx.registration.create({
           data: {
@@ -847,11 +911,11 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       if (!isPaid) {
         await tx.ticket.update({
           where: { id: ticketId },
-          data: { sold: { increment: quantity } }
+          data: { sold: { increment: requestedQuantity } }
         });
       }
 
-      return { registrations, isPaid, ticketName: ticket.name, eventTitle: event.title, totalAmount: Number(ticket.price) * quantity };
+      return { registrations, isPaid, ticketName: ticket.name, eventTitle: event.title, totalAmount: Number(ticket.price) * requestedQuantity };
     });
 
     if (result.isPaid) {
@@ -923,7 +987,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
         });
       } catch (stripeErr) {
         console.error("Erro no checkout Stripe (Event Register):", stripeErr);
-        // COMPENSAÇÃO: cancela inscrições criadas para liberar estoque
+        // Compensacao: cancela inscricoes criadas para liberar estoque
         await prisma.registration.updateMany({
           where: { id: { in: result.registrations.map(r => r.id) } },
           data: { status: "CANCELED" }
@@ -976,6 +1040,10 @@ router.get("/:id/report", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
 
     if (!event) {
       return res.status(404).json({ error: "Evento não encontrado" });
+    }
+
+    if (req.user!.role !== Role.MASTER && event.tenantId !== req.user!.tenantId) {
+      return res.status(403).json({ message: "Sem permissao para acessar este relatorio" });
     }
 
     // 2. Calculate Stats
@@ -1175,9 +1243,14 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
     const { id } = req.params;
     const { ticketId, quantity, paymentMethod } = req.body;
     const user = req.user!;
+    const requestedQuantity = Number(quantity);
 
     if (!ticketId || !quantity || !paymentMethod) {
       return res.status(400).json({ message: "Faltam parâmetros obrigatórios." });
+    }
+
+    if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1 || requestedQuantity > 50) {
+      return res.status(400).json({ message: "Quantidade de ingressos invalida" });
     }
 
     const event = await prisma.event.findUnique({ where: { id } });
@@ -1189,22 +1262,23 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const ticket = await tx.ticket.findUnique({ where: { id: ticketId } });
+      const tickets = await tx.$queryRaw<any[]>`SELECT * FROM "Ticket" WHERE id = ${ticketId} FOR UPDATE`;
+      const ticket = tickets[0];
       if (!ticket) throw new Error("Ingresso não encontrado");
       if (ticket.eventId !== id) throw new Error("Ingresso inválido para este evento");
       
-      if (ticket.sold + quantity > ticket.quantity) {
+      if (ticket.sold + requestedQuantity > ticket.quantity) {
         throw new Error("Estoque de ingressos insuficiente.");
       }
 
       // Sprint 15: Calcular taxa via Central de Taxas (Bilheteria / TICKET)
-      const amountCents = Math.round(Number(ticket.price) * quantity * 100);
+      const amountCents = Math.round(Number(ticket.price) * requestedQuantity * 100);
       const feeResult = await getPlatformFee({
         tenantId: event.tenantId,
         sourceType: PlatformFeeSource.TICKET,
         amountCents
       });
-      const totalAmount = Number(ticket.price) * quantity;
+      const totalAmount = Number(ticket.price) * requestedQuantity;
       const totalFee = feeResult.platformFeeCents / 100;
 
       // Create Financial Transaction
@@ -1218,7 +1292,7 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
           netAmount: totalAmount - totalFee,
           status: "COMPLETED",
           paymentMethod: paymentMethod || "CASH",
-          // Sprint 15 — fee snapshot
+          // Sprint 15 fee snapshot
           feeConfigId: feeResult.configId,
           platformFeePercent: feeResult.percentage,
           platformFeeAmountCents: feeResult.platformFeeCents,
@@ -1228,7 +1302,7 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
 
       // Generate tickets
       const registrations = [];
-      for (let i = 0; i < quantity; i++) {
+      for (let i = 0; i < requestedQuantity; i++) {
         const code = `PDV-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
         
         const registration = await tx.registration.create({
@@ -1249,7 +1323,7 @@ router.post("/:id/pos-sell", authMiddleware, requireRole([Role.ADMIN, Role.PRODU
       // Update Stock
       await tx.ticket.update({
         where: { id: ticketId },
-        data: { sold: { increment: quantity } }
+          data: { sold: { increment: requestedQuantity } }
       });
 
       return { registrations, total: totalAmount, transactionId: finTx.id };

@@ -4,53 +4,78 @@ import { authMiddleware, requireRole } from '../../middleware/auth.js';
 
 const router = Router();
 
-// GET /moderation — List reviews with moderation status (admin)
+function requestedTenantId(req: any) {
+    return req.user!.role === 'MASTER' && req.query.tenantId
+        ? (req.query.tenantId as string)
+        : req.user!.tenantId;
+}
+
+// GET /moderation - List reviews with moderation status (admin)
 router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
-        const status = req.query.status as string; // "pending", "flagged", "approved"
-        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const tenantId = requestedTenantId(req);
+        const status = req.query.status as string;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatorio' });
 
         const reviews = await prisma.review.findMany({
-            where: { work: { tenantId }, ...(status === 'flagged' ? { comment: { not: null } } : {}) },
+            where: {
+                OR: [
+                    { work: { tenantId } },
+                    { event: { tenantId } }
+                ],
+                ...(status === 'flagged' ? { comment: { not: null } } : {})
+            },
             include: {
                 work: { select: { id: true, title: true } },
+                event: { select: { id: true, title: true } },
                 visitor: { select: { name: true } }
             },
             orderBy: { createdAt: 'desc' },
             take: 50
         });
 
-        // Get moderation records
-        const reviewIds = reviews.map(r => r.id);
+        const reviewIds = reviews.map((review) => review.id);
         const moderations = await prisma.reviewModeration.findMany({
             where: { reviewId: { in: reviewIds } }
         });
-        const modMap = new Map(moderations.map(m => [m.reviewId, m]));
+        const modMap = new Map(moderations.map((moderation) => [moderation.reviewId, moderation]));
 
-        const enriched = reviews.map(r => ({
-            ...r,
-            moderation: modMap.get(r.id) || null
-        }));
-
-        res.json(enriched);
+        res.json(reviews.map((review) => ({
+            ...review,
+            moderation: modMap.get(review.id) || null
+        })));
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Erro ao buscar moderação' });
+        res.status(500).json({ message: 'Erro ao buscar moderacao' });
     }
 });
 
-// POST /moderation/:reviewId — Moderate a review
+// POST /moderation/:reviewId - Moderate a review
 router.post('/:reviewId', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { reviewId } = req.params;
         const { isApproved, flagReason } = req.body;
-        const moderatedBy = req.user!.id;
+        const tenantId = requestedTenantId(req);
+
+        const review = await prisma.review.findUnique({
+            where: { id: reviewId },
+            include: {
+                work: { select: { tenantId: true } },
+                event: { select: { tenantId: true } }
+            }
+        });
+
+        if (!review) return res.status(404).json({ message: 'Avaliacao nao encontrada' });
+
+        const reviewTenantId = review.work?.tenantId || review.event?.tenantId;
+        if (req.user!.role !== 'MASTER' && reviewTenantId !== tenantId) {
+            return res.status(403).json({ message: 'Sem permissao para moderar esta avaliacao' });
+        }
 
         const moderation = await prisma.reviewModeration.upsert({
             where: { reviewId },
-            create: { reviewId, isApproved, flagReason, moderatedBy, moderatedAt: new Date() },
-            update: { isApproved, flagReason, moderatedBy, moderatedAt: new Date() }
+            create: { reviewId, isApproved, flagReason, moderatedBy: req.user!.id, moderatedAt: new Date() },
+            update: { isApproved, flagReason, moderatedBy: req.user!.id, moderatedAt: new Date() }
         });
 
         res.json(moderation);
@@ -60,18 +85,36 @@ router.post('/:reviewId', authMiddleware, requireRole(['ADMIN', 'MASTER']), asyn
     }
 });
 
-// GET /moderation/stats — Moderation statistics
+// GET /moderation/stats - Moderation statistics
 router.get('/stats', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = (req.user!.role === 'MASTER' && req.query.tenantId) ? (req.query.tenantId as string) : req.user!.tenantId;
-        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
+        const tenantId = requestedTenantId(req);
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatorio' });
 
-        const totalReviews = await prisma.review.count({ where: { work: { tenantId } } });
-        const moderated = await prisma.reviewModeration.count({ where: { reviewId: { not: undefined } } });
-        const flagged = await prisma.reviewModeration.count({ where: { isApproved: false } });
-        const approved = await prisma.reviewModeration.count({ where: { isApproved: true } });
+        const tenantReviews = await prisma.review.findMany({
+            where: {
+                OR: [
+                    { work: { tenantId } },
+                    { event: { tenantId } }
+                ]
+            },
+            select: { id: true }
+        });
+        const reviewIds = tenantReviews.map((review) => review.id);
 
-        res.json({ totalReviews, moderated, flagged, approved, pending: totalReviews - moderated });
+        const [moderated, flagged, approved] = await Promise.all([
+            prisma.reviewModeration.count({ where: { reviewId: { in: reviewIds } } }),
+            prisma.reviewModeration.count({ where: { reviewId: { in: reviewIds }, isApproved: false } }),
+            prisma.reviewModeration.count({ where: { reviewId: { in: reviewIds }, isApproved: true } })
+        ]);
+
+        res.json({
+            totalReviews: reviewIds.length,
+            moderated,
+            flagged,
+            approved,
+            pending: reviewIds.length - moderated
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Erro ao buscar stats' });

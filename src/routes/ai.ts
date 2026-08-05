@@ -4,7 +4,6 @@ import OpenAI from "openai";
 import { authMiddleware } from "../middleware/auth.js";
 import { aiLimiter } from "../middleware/rateLimiter.js";
 import multer from "multer";
-import pdf from "pdf-parse";
 import fs from "fs";
 
 const router = Router();
@@ -334,6 +333,57 @@ router.post("/test", authMiddleware, aiLimiter, async (req, res) => {
   }
 });
 
+router.post("/generate-description", authMiddleware, aiLimiter, async (req, res) => {
+  try {
+    const { workId, tenantId } = req.body as { workId?: string; tenantId?: string };
+    if (!workId || !tenantId) {
+      return res.status(400).json({ message: "workId e tenantId sao obrigatorios" });
+    }
+
+    if (req.user!.role !== "MASTER" && tenantId !== req.user!.tenantId) {
+      return res.status(403).json({ message: "Acesso negado para este tenant" });
+    }
+
+    const work = await prisma.work.findFirst({
+      where: { id: workId, tenantId },
+      include: { category: { select: { name: true } } }
+    });
+
+    if (!work) {
+      return res.status(404).json({ message: "Obra nao encontrada" });
+    }
+
+    if (!openai) {
+      const fallback = `${work.title} e uma obra de ${work.artist || "artista desconhecido"}${work.year ? `, datada de ${work.year}` : ""}. Esta peca convida o visitante a observar seus detalhes, contexto cultural e relacao com o acervo.`;
+      return res.json({ description: fallback, provider: "fallback" });
+    }
+
+    const prompt = `Crie uma descricao museologica em portugues do Brasil, com 1 a 2 paragrafos, para esta obra:
+Titulo: ${work.title}
+Artista: ${work.artist || "Nao informado"}
+Ano: ${work.year || "Nao informado"}
+Categoria: ${work.category?.name || "Nao informada"}
+Tecnica: ${work.technique || "Nao informada"}
+Descricao atual: ${work.description || "Sem descricao atual"}
+
+Use linguagem acessivel, cultural e envolvente. Nao invente fatos especificos que nao estejam nos dados.`;
+
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: "system", content: "Voce e um curador de museu especializado em textos acessiveis para visitantes." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.5
+    });
+
+    return res.json({ description: completion.choices[0]?.message?.content || "" });
+  } catch (err) {
+    console.error("Erro IA generate-description", err);
+    return res.status(500).json({ message: "Erro ao gerar descricao" });
+  }
+});
+
 // Souvenir simples
 router.post("/souvenir", authMiddleware, aiLimiter, async (req, res) => {
   try {
@@ -609,6 +659,7 @@ router.post("/extract-pdf", authMiddleware, upload.single("file"), aiLimiter, as
         return res.status(400).json({ message: "Arquivo inválido. Apenas arquivos PDF reais são permitidos." });
       }
 
+      const { default: pdf } = await import("pdf-parse");
       const data = await (pdf as any)(dataBuffer);
       text = data.text;
     } catch (e: any) {

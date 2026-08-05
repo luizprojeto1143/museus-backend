@@ -1,4 +1,3 @@
-// @ts-nocheck
 import request from 'supertest';
 import express from 'express';
 import { prisma } from '../../prisma';
@@ -63,7 +62,7 @@ describe('Work Code Integration (Isolated)', () => {
             .post('/auth/login')
             .send({ email, password });
 
-        const cookies = loginRes.headers['set-cookie'] as string[];
+        const cookies = loginRes.headers['set-cookie'] as unknown as string[];
         const cookie = cookies?.find(c => c.startsWith('museus_token='));
         if (cookie) {
             token = cookie.split(';')[0].split('=')[1];
@@ -186,5 +185,6 @@ describe('Work Code Integration (Isolated)', () => {
         expect(qrRes.status).toBe(404);
     });
 });
+
 
 

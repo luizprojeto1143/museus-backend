@@ -141,7 +141,7 @@ const corsOrigin = (() => {
     const allUrls = [...baseUrls, ...baseUrls.map(u => `${u}/`)];
     return allUrls.length === 1 ? allUrls[0] : allUrls;
   }
-  return "*";
+  return ["http://localhost:5173", "http://127.0.0.1:5173"];
 })();
 
 const corsOptions = {

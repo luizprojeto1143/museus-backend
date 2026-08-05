@@ -11,8 +11,30 @@ router.post('/', async (req, res) => {
         if (!tenantId || !groupName || !totalTickets || !contactName || !contactEmail) {
             return res.status(400).json({ message: 'Campos obrigatórios: tenantId, groupName, totalTickets, contactName, contactEmail' });
         }
+        const normalizedTotalTickets = Number(totalTickets);
+        if (!Number.isInteger(normalizedTotalTickets) || normalizedTotalTickets < 1 || normalizedTotalTickets > 500) {
+            return res.status(400).json({ message: 'Quantidade de ingressos invalida' });
+        }
+
+        if (eventId) {
+            const event = await prisma.event.findFirst({
+                where: { id: eventId, tenantId, deletedAt: null },
+                select: { id: true }
+            });
+            if (!event) return res.status(404).json({ message: 'Evento nao encontrado para este tenant' });
+        }
+
         const ticket = await prisma.groupTicket.create({
-            data: { groupName, totalTickets, contactName, contactEmail, contactPhone, eventId, tenantId, totalPrice: totalPrice || 0 }
+            data: {
+                groupName,
+                totalTickets: normalizedTotalTickets,
+                contactName,
+                contactEmail,
+                contactPhone,
+                eventId,
+                tenantId,
+                totalPrice: totalPrice ? Number(totalPrice) : 0
+            }
         });
         res.status(201).json(ticket);
     } catch (error) {

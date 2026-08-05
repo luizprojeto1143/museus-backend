@@ -6,6 +6,15 @@ import { dispatchEvent, backgroundQueue } from "../../infrastructure/queue/bullm
 
 const router = Router();
 
+async function findVisitorForUser(email: string, tenantId: string) {
+  return prisma.visitor.findFirst({
+    where: {
+      email: email.toLowerCase(),
+      tenantId
+    }
+  });
+}
+
 // Haversine formula to calculate distance between two points in meters
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371e3; // Earth radius in meters
@@ -71,9 +80,9 @@ router.get("/nearby", authMiddleware, async (req, res) => {
 router.post("/capture", authMiddleware, async (req, res) => {
   try {
     const { workId, lat, lng, accuracy } = req.body;
-    const visitorId = req.user?.id;
+    const user = req.user!;
 
-    if (!workId || !visitorId) {
+    if (!workId) {
       return res.status(400).json({ message: "Dados incompletos para captura" });
     }
 
@@ -86,6 +95,16 @@ router.post("/capture", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Vestígio não encontrado" });
     }
 
+    if (user.role !== Role.MASTER && user.tenantId !== work.tenantId) {
+      return res.status(403).json({ message: "Acesso negado a este museu" });
+    }
+
+    const visitor = await findVisitorForUser(user.email, work.tenantId);
+    if (!visitor) {
+      return res.status(404).json({ message: "Perfil de visitante nao encontrado" });
+    }
+    const visitorId = visitor.id;
+
     // L1 Fix: Check for RELIC status even if not active
     const now = new Date();
     const isExpired = work.vestigeExpiresAt && work.vestigeExpiresAt < now;
@@ -96,7 +115,7 @@ router.post("/capture", authMiddleware, async (req, res) => {
 
     // 2. GPS Proximity (Optional - bypassed for QR-only flow)
     // We still record if provided, but no longer block the user
-    const distance = (work.lat && work.lng && lat && lng) ? getDistance(lat, lng, work.lat, work.lng) : null;
+    const distance = (work.lat !== null && work.lng !== null && lat !== undefined && lng !== undefined) ? getDistance(Number(lat), Number(lng), work.lat, work.lng) : null;
 
     // 3. Verificar se já capturou
     const existing = await (prisma.passportStamp as any).findUnique({
@@ -180,6 +199,13 @@ router.post("/expire/:workId", authMiddleware, async (req, res) => {
     }
 
     const { workId } = req.params;
+    const work = await (prisma.work as any).findUnique({ where: { id: workId } });
+    if (!work || work.deletedAt) {
+      return res.status(404).json({ message: "Vestigio nao encontrado" });
+    }
+    if (req.user?.role !== Role.MASTER && work.tenantId !== req.user?.tenantId) {
+      return res.status(403).json({ message: "Acesso negado" });
+    }
 
     const result = await prisma.$transaction([
       // 1. Inativar vestígio na obra
@@ -215,8 +241,16 @@ router.get("/passport/:visitorId", authMiddleware, async (req, res) => {
     const user = req.user!;
 
     // C1 Fix: Enforce ownership
-    if (user.role !== Role.MASTER && user.id !== visitorId) {
-       return res.status(403).json({ message: "Acesso negado" });
+    if (user.role !== Role.MASTER) {
+      const requestedVisitor = await prisma.visitor.findUnique({ where: { id: visitorId } });
+      if (!requestedVisitor) return res.status(404).json({ message: "Visitante nao encontrado" });
+
+      const isTenantAdmin = (user.role === Role.ADMIN || user.role === Role.COLLABORATOR || user.role === Role.PRODUCER) && user.tenantId === requestedVisitor.tenantId;
+      const ownVisitor = requestedVisitor.email?.toLowerCase() === user.email.toLowerCase() && requestedVisitor.tenantId === user.tenantId;
+
+      if (!isTenantAdmin && !ownVisitor) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
     }
 
     const stamps = await (prisma.passportStamp as any).findMany({

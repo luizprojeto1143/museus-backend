@@ -45,7 +45,7 @@ router.get('/products', async (req, res) => {
 
 router.get('/products/:id', async (req, res) => {
     try {
-        const product = await prisma.product.findUnique({ where: { id: req.params.id } });
+        const product = await prisma.product.findFirst({ where: { id: req.params.id, active: true } });
         if (!product) return res.status(404).json({ message: 'Produto não encontrado' });
         res.json(product);
     } catch (error) {
@@ -55,13 +55,62 @@ router.get('/products/:id', async (req, res) => {
 
 router.post('/products', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
   try {
-    const { tenantId } = req.body;
+    const tenantId = req.user!.role === Role.MASTER ? req.body.tenantId : req.user!.tenantId;
+    if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatorio' });
     const result = productSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ message: 'Erro de validação', errors: result.error.errors });
     const product = await prisma.product.create({ data: { ...result.data, tenantId } as any });
     res.status(201).json(product);
   } catch (error) {
     res.status(500).json({ message: 'Erro ao criar produto' });
+  }
+});
+
+router.put('/products/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+  try {
+    const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ message: 'Produto nao encontrado' });
+    if (req.user!.role !== Role.MASTER && existing.tenantId !== req.user!.tenantId) {
+      return res.status(403).json({ message: 'Sem permissao para editar este produto' });
+    }
+
+    const result = productSchema.partial().safeParse(req.body);
+    if (!result.success) return res.status(400).json({ message: 'Erro de validacao', errors: result.error.errors });
+
+    const product = await prisma.product.update({
+      where: { id: req.params.id },
+      data: result.data as any
+    });
+    res.json(product);
+  } catch (error: any) {
+    if (error?.code === 'P2002') return res.status(409).json({ message: 'SKU ja cadastrado para este tenant' });
+    res.status(500).json({ message: 'Erro ao atualizar produto' });
+  }
+});
+
+router.delete('/products/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+  try {
+    const existing = await prisma.product.findUnique({
+      where: { id: req.params.id },
+      include: { _count: { select: { orderItems: true } } }
+    });
+    if (!existing) return res.status(404).json({ message: 'Produto nao encontrado' });
+    if (req.user!.role !== Role.MASTER && existing.tenantId !== req.user!.tenantId) {
+      return res.status(403).json({ message: 'Sem permissao para excluir este produto' });
+    }
+
+    if (existing._count.orderItems > 0) {
+      const product = await prisma.product.update({
+        where: { id: req.params.id },
+        data: { active: false }
+      });
+      return res.json({ ...product, archived: true });
+    }
+
+    await prisma.product.delete({ where: { id: req.params.id } });
+    return res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao excluir produto' });
   }
 });
 
@@ -89,7 +138,9 @@ router.post('/orders', authMiddleware, async (req, res) => {
         const result = await prisma.$transaction(async (tx) => {
             // Fetch all products to validate stock and calculate total
             const productIds = items.map((i: { productId: string }) => i.productId);
-            const products = await tx.product.findMany({ where: { id: { in: productIds } } });
+            const products = await tx.product.findMany({
+                where: { id: { in: productIds }, tenantId, active: true }
+            });
 
             let total = 0;
             const orderItems: { productId: string; quantity: number; unitPrice: number }[] = [];
@@ -97,6 +148,9 @@ router.post('/orders', authMiddleware, async (req, res) => {
             for (const item of items as Array<{ productId: string; quantity: number }>) {
                 const product = products.find(p => p.id === item.productId);
                 if (!product) throw new Error(`Produto ${item.productId} não encontrado`);
+                if (!Number.isInteger(Number(item.quantity)) || Number(item.quantity) < 1) {
+                    throw new Error(`Quantidade invalida para ${product.name}`);
+                }
                 if (product.stock < item.quantity) throw new Error(`Estoque insuficiente: ${product.name}`);
                 
                 const price = Number(product.price);
@@ -127,6 +181,9 @@ router.post('/orders', authMiddleware, async (req, res) => {
                 where: { id: tenantId },
                 select: { stripeConnectId: true, name: true }
             });
+            if (!tenant?.stripeConnectId) {
+                throw new Error('Loja sem conta Stripe Connect configurada');
+            }
 
             const { stripeService } = await import('../../services/stripeService.js');
             const amountCents = Math.round(total * 100);
@@ -151,7 +208,7 @@ router.post('/orders', authMiddleware, async (req, res) => {
                 customerId: stripeCustomerId,
                 amount: feeResult.buyerPaysCents, // BUYER paga base + taxa
                 description: `Pedido na Loja: ${tenant?.name || 'Cultura'}`,
-                connectedAccountId: tenant?.stripeConnectId || '',
+                connectedAccountId: tenant.stripeConnectId,
                 applicationFeeAmount: platformFeeCents,
                 successUrl: `${frontendUrl}/shop/success?orderId={CHECKOUT_SESSION_ID}`,
                 cancelUrl: `${frontendUrl}/shop/cancel`
@@ -203,12 +260,40 @@ router.get('/orders', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (r
     try {
         const { tenantId, status } = req.query;
         const where: any = {};
-        if (tenantId) where.tenantId = tenantId;
+        const targetTenantId = req.user!.role === Role.MASTER ? (tenantId as string | undefined) : req.user!.tenantId;
+        if (targetTenantId) where.tenantId = targetTenantId;
         if (status) where.status = status;
         const orders = await prisma.order.findMany({ where, include: { orderItems: { include: { product: true } } }, orderBy: { createdAt: 'desc' } });
-        res.json(orders);
+        res.json(orders.map(order => ({
+            ...order,
+            items: order.orderItems
+        })));
     } catch (error) {
         res.status(500).json({ message: 'Erro ao buscar pedidos' });
+    }
+});
+
+router.patch('/orders/:id/status', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+    try {
+        const { status } = req.body as { status?: string };
+        const allowedStatuses = ['PENDING', 'PAID', 'SHIPPED', 'DELIVERED', 'CANCELLED'];
+        if (!status || !allowedStatuses.includes(status)) {
+            return res.status(400).json({ message: 'Status invalido' });
+        }
+
+        const existing = await prisma.order.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ message: 'Pedido nao encontrado' });
+        if (req.user!.role !== Role.MASTER && existing.tenantId !== req.user!.tenantId) {
+            return res.status(403).json({ message: 'Sem permissao para editar este pedido' });
+        }
+
+        const order = await prisma.order.update({
+            where: { id: req.params.id },
+            data: { status }
+        });
+        return res.json(order);
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao atualizar status do pedido' });
     }
 });
 

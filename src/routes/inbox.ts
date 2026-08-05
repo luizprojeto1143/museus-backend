@@ -1,10 +1,24 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
-import { Role } from "@prisma/client";
+import { Role, PlatformFeeSource } from "@prisma/client";
 import { z } from "zod";
+import { getPlatformFee } from "../services/fee.service.js";
 
 const router = Router();
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["ACTIVE", "TRIALING"]);
+
+function isProviderSubscriptionActive(status?: string | null) {
+    return ACTIVE_SUBSCRIPTION_STATUSES.has(String(status || "").toUpperCase());
+}
+
+function serializeConversation(conversation: any) {
+    return {
+        ...conversation,
+        provider: conversation.accessibilityProvider,
+        producer: conversation.user,
+    };
+}
 
 // List Conversations
 router.get("/", authMiddleware, async (req, res) => {
@@ -38,7 +52,7 @@ router.get("/", authMiddleware, async (req, res) => {
             orderBy: { lastMessageAt: "desc" }
         });
 
-        return res.json(conversations);
+        return res.json(conversations.map(serializeConversation));
     } catch (err) {
         console.error("Error listing conversations", err);
         return res.status(500).json({ message: "Error listing conversations" });
@@ -72,7 +86,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        return res.json(conversation);
+        return res.json(serializeConversation(conversation));
     } catch (err) {
         console.error("Error getting conversation", err);
         return res.status(500).json({ message: "Error getting conversation" });
@@ -120,7 +134,7 @@ router.post("/", authMiddleware, async (req, res) => {
             });
         }
 
-        return res.json(conversation);
+        return res.json(serializeConversation(conversation));
     } catch (err) {
         return res.status(500).json({ message: "Error creating conversation" });
     }
@@ -142,6 +156,12 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
         } else {
             const provider = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
             if (provider && provider.id === conversation.providerId) {
+                if (!isProviderSubscriptionActive(provider.subscriptionStatus)) {
+                    return res.status(402).json({
+                        code: "PROVIDER_SUBSCRIPTION_REQUIRED",
+                        message: "Assinatura mensal ativa obrigatoria para responder conversas e enviar propostas.",
+                    });
+                }
                 senderType = "PROVIDER";
             } else if (user.role === Role.MASTER || user.role === Role.ADMIN) {
                 senderType = "SYSTEM";
@@ -185,11 +205,29 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
         });
         if (!conversation) return res.status(404).json({ message: "Conversation not found" });
 
+        const providerProfile = await prisma.accessibilityProvider.findUnique({ where: { userId: user.id } });
+        if (providerProfile?.id === conversation.providerId && !isProviderSubscriptionActive(providerProfile.subscriptionStatus)) {
+            return res.status(402).json({
+                code: "PROVIDER_SUBSCRIPTION_REQUIRED",
+                message: "Assinatura mensal ativa obrigatoria para solicitar pagamentos e formalizar propostas.",
+            });
+        }
+
+        if (!conversation.accessibilityProvider?.stripeConnectId) {
+            return res.status(400).json({
+                code: "PROVIDER_STRIPE_CONNECT_REQUIRED",
+                message: "Configure a conta de recebimento Stripe Connect antes de solicitar pagamentos.",
+            });
+        }
+
         // 1. Stripe Split Payment Logic
         const { stripeService } = await import("../services/stripeService.js");
         const amountCents = Math.round(amount * 100);
-        const feePercentage = (conversation as any).accessibilityProvider?.feePercentage ?? 10.0;
-        const platformFeeCents = Math.round(amountCents * (feePercentage / 100)); // Taxa configurável
+        const feeResult = await getPlatformFee({
+            tenantId: conversation.accessibilityProvider?.tenantId,
+            sourceType: PlatformFeeSource.SERVICE,
+            amountCents,
+        });
 
         const stripeCustomerId = await stripeService.createCustomer({
             name: user.name || "User",
@@ -201,10 +239,10 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
 
         const session = await stripeService.createSplitPaymentSession({
             customerId: stripeCustomerId,
-            amount: amountCents,
+            amount: feeResult.buyerPaysCents,
             description: `Serviço Profissional: ${description}`,
-            connectedAccountId: (conversation as any).accessibilityProvider?.stripeConnectId || '', // Payout to Provider
-            applicationFeeAmount: platformFeeCents,
+            connectedAccountId: conversation.accessibilityProvider.stripeConnectId,
+            applicationFeeAmount: feeResult.platformFeeCents,
             successUrl: `${frontendUrl}/inbox/${id}/success?session_id={CHECKOUT_SESSION_ID}`,
             cancelUrl: `${frontendUrl}/inbox/${id}/cancel`
         });
@@ -228,7 +266,7 @@ router.post("/:id/payment", authMiddleware, async (req, res) => {
                 conversationId: id,
                 senderId: user.id,
                 senderType: "SYSTEM",
-                content: `Solicitação de Pagamento gerada: R$ ${amount}. [Clique aqui para pagar](${session.url})`,
+                content: `Solicitacao de pagamento gerada: R$ ${amount}. Checkout seguro: ${session.url}`,
                 type: "PAYMENT_REQUEST"
             }
         });

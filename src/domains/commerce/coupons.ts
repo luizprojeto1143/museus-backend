@@ -96,9 +96,17 @@ router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (r
 // GET /coupons/available - Get coupons available for exchange using XP
 router.get('/available', authMiddleware, requireRole(['VISITOR']), async (req, res) => {
     try {
-        const reqUser = req.user as any;
-        const visitorId = reqUser.visitorId;
         const tenantId = req.user!.tenantId as string;
+        const visitor = await prisma.visitor.findFirst({
+            where: {
+                email: req.user!.email.toLowerCase(),
+                tenantId
+            }
+        });
+
+        if (!visitor) {
+            return res.json({ available: [], redeemed: [] });
+        }
 
         // Get coupons that cost XP and are active
         const availableCoupons = await prisma.coupon.findMany({
@@ -111,7 +119,7 @@ router.get('/available', authMiddleware, requireRole(['VISITOR']), async (req, r
 
         // Which ones did the visitor already redeem?
         const redeemed = await prisma.visitorCoupon.findMany({
-            where: { visitorId },
+            where: { visitorId: visitor.id },
             include: { coupon: true }
         });
 
@@ -143,12 +151,15 @@ router.get('/available', authMiddleware, requireRole(['VISITOR']), async (req, r
 router.post('/:id/redeem', authMiddleware, requireRole(['VISITOR']), async (req, res) => {
     try {
         const { id } = req.params; // Coupon ID
-        const reqUser = req.user as any;
-        const visitorId = reqUser.visitorId;
         const tenantId = req.user!.tenantId as string;
 
         const [visitor, coupon] = await Promise.all([
-            prisma.visitor.findUnique({ where: { id: visitorId } }),
+            prisma.visitor.findFirst({
+                where: {
+                    email: req.user!.email.toLowerCase(),
+                    tenantId
+                }
+            }),
             prisma.coupon.findUnique({ where: { id } })
         ]);
 
@@ -168,9 +179,11 @@ router.post('/:id/redeem', authMiddleware, requireRole(['VISITOR']), async (req,
             return res.status(400).json({ error: 'Este cupom não é trocável por XP' });
         }
 
+        const xpCost = coupon.xpCost;
+
         // Check if already redeemed
         const existingRedemption = await prisma.visitorCoupon.findUnique({
-            where: { visitorId_couponId: { visitorId, couponId: id } }
+            where: { visitorId_couponId: { visitorId: visitor.id, couponId: id } }
         });
 
         if (existingRedemption) {
@@ -178,29 +191,41 @@ router.post('/:id/redeem', authMiddleware, requireRole(['VISITOR']), async (req,
         }
 
         // Check Balance
-        if (visitor.xp < coupon.xpCost) {
-            return res.status(400).json({ error: `XP Insuficiente. Requer ${coupon.xpCost} XP.` });
+        if (visitor.xp < xpCost) {
+            return res.status(400).json({ error: `XP Insuficiente. Requer ${xpCost} XP.` });
         }
 
         // Perform Trade (Transaction)
-        await prisma.$transaction([
-            // Deduct XP
-            prisma.visitor.update({
-                where: { id: visitorId },
-                data: { xp: { decrement: coupon.xpCost } }
-            }),
-            // Give Coupon
-            prisma.visitorCoupon.create({
+        await prisma.$transaction(async (tx) => {
+            const updated = await tx.visitor.updateMany({
+                where: {
+                    id: visitor.id,
+                    xp: { gte: xpCost }
+                },
+                data: { xp: { decrement: xpCost } }
+            });
+
+            if (updated.count !== 1) {
+                throw new Error("INSUFFICIENT_XP");
+            }
+
+            await tx.visitorCoupon.create({
                 data: {
-                    visitorId,
+                    visitorId: visitor.id,
                     couponId: id
                 }
-            })
-        ]);
+            });
+        });
 
         res.json({ message: 'Cupom resgatado com sucesso!', code: coupon.code });
 
-    } catch (err) {
+    } catch (err: any) {
+        if (err?.message === "INSUFFICIENT_XP") {
+            return res.status(400).json({ error: 'XP Insuficiente.' });
+        }
+        if (err?.code === 'P2002') {
+            return res.status(400).json({ error: 'Você já resgatou este cupom!' });
+        }
         console.error(err);
         res.status(500).json({ error: 'Erro ao resgatar cupom' });
     }

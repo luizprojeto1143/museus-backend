@@ -402,7 +402,7 @@ router.post("/sessions/:id/sell", authMiddleware, async (req, res) => {
                 await syncLedgerEntry(tx, finTx.id);
 
                 // Increment BoxOfficeShift totals
-                let updateData: any = {};
+                const updateData: any = {};
                 if (paymentMethod === "CASH") {
                     updateData.salesCash = { increment: totalAmount };
                 } else if (paymentMethod === "CARD") {

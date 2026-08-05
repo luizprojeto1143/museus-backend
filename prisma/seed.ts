@@ -70,7 +70,8 @@ async function main() {
                 endereco: "Rua do Museu, 123",
                 cidade: "Cidade das Artes",
                 estado: "MG",
-                ativo: true
+                ativo: true,
+                qrCodeEntrada: "galeria-qr"
             }
         });
     }
@@ -472,7 +473,8 @@ async function main() {
                 tipo: "museu",
                 endereco: "Centro, Betim",
                 cidade: "Betim",
-                estado: "MG"
+                estado: "MG",
+                qrCodeEntrada: "sede-betim-qr"
             }
         });
     }
@@ -508,7 +510,8 @@ async function main() {
                 tipo: "teatro",
                 endereco: "Praça Central, Betim",
                 cidade: "Betim",
-                estado: "MG"
+                estado: "MG",
+                qrCodeEntrada: "teatro-betim-qr"
             }
         });
     }

@@ -41,8 +41,17 @@ export interface FeeCalculationResult {
   appliedRule: "TENANT" | "GLOBAL" | "FALLBACK";
 }
 
+export interface ProviderSubscriptionPricing {
+  configId: string | null;
+  monthlyPriceCents: number;
+  monthlyPriceBRL: string;
+  isTenantSpecific: boolean;
+  appliedRule: "TENANT" | "GLOBAL" | "FALLBACK";
+  sourceLabel: string;
+}
+
 // Taxas globais padrão (fallback seguro se não houver config no banco)
-const SYSTEM_FALLBACK_FEES: Record<PlatformFeeSource, { percentage: number; feePaidBy: FeePaidBy }> = {
+const SYSTEM_FALLBACK_FEES: Record<PlatformFeeSource, { percentage: number; feePaidBy: FeePaidBy; fixedFee?: number }> = {
   [PlatformFeeSource.TICKET]: { percentage: 5, feePaidBy: FeePaidBy.BUYER },
   [PlatformFeeSource.THEATER]: { percentage: 8, feePaidBy: FeePaidBy.BUYER },
   [PlatformFeeSource.SHOP]: { percentage: 10, feePaidBy: FeePaidBy.SELLER },
@@ -54,7 +63,13 @@ const SYSTEM_FALLBACK_FEES: Record<PlatformFeeSource, { percentage: number; feeP
   [PlatformFeeSource.ACCESSIBILITY]: { percentage: 10, feePaidBy: FeePaidBy.SELLER },
   [PlatformFeeSource.MARKETPLACE]: { percentage: 12, feePaidBy: FeePaidBy.SELLER },
   [PlatformFeeSource.GUIDE]: { percentage: 10, feePaidBy: FeePaidBy.SELLER },
-  [PlatformFeeSource.PROVIDER_SUBSCRIPTION]: { percentage: 10, feePaidBy: FeePaidBy.SELLER },
+  [PlatformFeeSource.PROVIDER_SUBSCRIPTION]: { percentage: 0, fixedFee: 50, feePaidBy: FeePaidBy.SELLER },
+  [PlatformFeeSource.SKIN_PREMIUM]: { percentage: 0, feePaidBy: FeePaidBy.SELLER },
+  [PlatformFeeSource.AVATAR_AI]: { percentage: 0, feePaidBy: FeePaidBy.SELLER },
+  [PlatformFeeSource.BADGE_PRINTING]: { percentage: 0, feePaidBy: FeePaidBy.SELLER },
+  [PlatformFeeSource.BADGE_REISSUE]: { percentage: 0, feePaidBy: FeePaidBy.SELLER },
+  [PlatformFeeSource.BADGE_SHIPPING]: { percentage: 0, feePaidBy: FeePaidBy.SELLER },
+  [PlatformFeeSource.SKIN_EVENT_EXCLUSIVE]: { percentage: 0, feePaidBy: FeePaidBy.SELLER },
 };
 
 // ==========================================
@@ -154,7 +169,7 @@ export async function getPlatformFee(input: FeeCalculationInput): Promise<FeeCal
     // Fallback hardcoded seguro
     const fallback = SYSTEM_FALLBACK_FEES[sourceType] ?? { percentage: 5, feePaidBy: FeePaidBy.SELLER };
     percentage = fallback.percentage;
-    fixedFeeCents = 0;
+    fixedFeeCents = fallback.fixedFee ? Math.round(fallback.fixedFee * 100) : 0;
     feePaidBy = fallback.feePaidBy;
     configId = null;
   }
@@ -174,6 +189,10 @@ export async function getPlatformFee(input: FeeCalculationInput): Promise<FeeCal
     // Comprador paga base; recebedor recebe base menos a taxa
     buyerPaysCents = amountCents;
     sellerGrossCents = amountCents - platformFeeCents;
+  }
+
+  if (sellerGrossCents < 0) {
+    throw new Error("A taxa da plataforma nao pode ser maior que o valor base quando paga pelo recebedor.");
   }
 
   return {
@@ -200,6 +219,26 @@ export async function getPlatformFee(input: FeeCalculationInput): Promise<FeeCal
  * o mesmo par (tenantId, sourceType).
  * Retorna a config conflitante, ou null se não houver.
  */
+export async function getProviderSubscriptionPricing(
+  tenantId: string | null | undefined
+): Promise<ProviderSubscriptionPricing> {
+  const { config, rule } = await getActiveFeeConfig(tenantId, PlatformFeeSource.PROVIDER_SUBSCRIPTION);
+  const fallback = SYSTEM_FALLBACK_FEES[PlatformFeeSource.PROVIDER_SUBSCRIPTION];
+  const fixedFee = config?.fixedFee !== null && config?.fixedFee !== undefined
+    ? Number(config.fixedFee)
+    : fallback.fixedFee ?? 50;
+  const monthlyPriceCents = Math.max(0, Math.round(fixedFee * 100));
+
+  return {
+    configId: config?.id ?? null,
+    monthlyPriceCents,
+    monthlyPriceBRL: (monthlyPriceCents / 100).toFixed(2),
+    isTenantSpecific: rule === "TENANT",
+    appliedRule: rule,
+    sourceLabel: FEE_SOURCE_LABELS[PlatformFeeSource.PROVIDER_SUBSCRIPTION]
+  };
+}
+
 export async function validateNoOverlap(params: {
   tenantId: string | null;
   sourceType: PlatformFeeSource;
@@ -242,7 +281,9 @@ const DEFAULT_GLOBAL_FEES: {
   sourceType: PlatformFeeSource;
   name: string;
   percentage: number;
+  fixedFee?: number;
   feePaidBy: FeePaidBy;
+  notes?: string;
 }[] = [
   { sourceType: PlatformFeeSource.TICKET, name: "Taxa padrão — Bilheteria", percentage: 5, feePaidBy: FeePaidBy.BUYER },
   { sourceType: PlatformFeeSource.THEATER, name: "Taxa padrão — Teatro", percentage: 8, feePaidBy: FeePaidBy.BUYER },
@@ -255,7 +296,14 @@ const DEFAULT_GLOBAL_FEES: {
   { sourceType: PlatformFeeSource.ACCESSIBILITY, name: "Taxa padrão — Acessibilidade", percentage: 10, feePaidBy: FeePaidBy.SELLER },
   { sourceType: PlatformFeeSource.MARKETPLACE, name: "Taxa padrão — Marketplace", percentage: 12, feePaidBy: FeePaidBy.SELLER },
   { sourceType: PlatformFeeSource.GUIDE, name: "Taxa padrão — Guias Turísticos", percentage: 10, feePaidBy: FeePaidBy.SELLER },
-  { sourceType: PlatformFeeSource.PROVIDER_SUBSCRIPTION, name: "Taxa padrão — Assinatura de Prestador", percentage: 10, feePaidBy: FeePaidBy.SELLER },
+  {
+    sourceType: PlatformFeeSource.PROVIDER_SUBSCRIPTION,
+    name: "Mensalidade padrao - Prestador habilitado para propostas",
+    percentage: 0,
+    fixedFee: 50,
+    feePaidBy: FeePaidBy.SELLER,
+    notes: "Cadastro gratuito. A mensalidade habilita o prestador a responder conversas, enviar propostas e solicitar pagamentos em projetos aprovados."
+  },
 ];
 
 /**
@@ -296,6 +344,7 @@ export async function seedDefaultFees(createdById: string): Promise<{
         sourceType: fee.sourceType,
         name: fee.name,
         percentage: fee.percentage,
+        fixedFee: fee.fixedFee ?? null,
         feePaidBy: fee.feePaidBy,
         isActive: true,
         priority: 0,
@@ -328,4 +377,10 @@ export const FEE_SOURCE_LABELS: Record<PlatformFeeSource, string> = {
   [PlatformFeeSource.MARKETPLACE]: "Marketplace",
   [PlatformFeeSource.GUIDE]: "Guias Turísticos",
   [PlatformFeeSource.PROVIDER_SUBSCRIPTION]: "Assinatura de Prestador",
+  [PlatformFeeSource.SKIN_PREMIUM]: "Skins Premium",
+  [PlatformFeeSource.AVATAR_AI]: "Geração Avatar IA",
+  [PlatformFeeSource.BADGE_PRINTING]: "Impressão de Crachá",
+  [PlatformFeeSource.BADGE_REISSUE]: "Reemissão de Crachá",
+  [PlatformFeeSource.BADGE_SHIPPING]: "Envio de Crachá",
+  [PlatformFeeSource.SKIN_EVENT_EXCLUSIVE]: "Skin Evento Exclusivo",
 };

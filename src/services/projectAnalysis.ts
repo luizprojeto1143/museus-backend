@@ -1,4 +1,3 @@
-// @ts-nocheck
 import OpenAI from "openai";
 import { prisma } from "../prisma.js";
 import { trackAIUsage } from "../middleware/aiUsage.js";
@@ -23,12 +22,12 @@ export async function analyzeProjectWithAI(projectId: string, tenantId: string) 
         const project = await prisma.culturalProject.findUnique({
             where: { id: projectId },
             include: {
-                notice: true,
+                publicNotice: true,
                 tenant: true
             }
         });
 
-        if (!project || !project.Notice) {
+        if (!project || !project.publicNotice) {
             console.error("Projeto ou edital não encontrado");
             return null;
         }
@@ -39,12 +38,12 @@ export async function analyzeProjectWithAI(projectId: string, tenantId: string) 
         Sua tarefa é analisar a proposta abaixo comparando-a com os requisitos e objetivos do edital vinculado.
 
         DADOS DO EDITAL:
-        Título: ${project.Notice?.title || ""}
-        Descrição: ${project.Notice.description || "N/A"}
-        Objetivos: ${project.Notice.objectives || "N/A"}
-        Requisitos: ${project.Notice.requirements || "N/A"}
-        Teto por projeto: R$ ${project.Notice.maxPerProject || "N/A"}
-        Acessibilidade obrigatória: ${project.Notice.requiresAccessibilityPlan ? "Sim" : "Não"}
+        Título: ${project.publicNotice?.title || ""}
+        Descrição: ${project.publicNotice.description || "N/A"}
+        Objetivos: ${project.publicNotice.objectives || "N/A"}
+        Requisitos: ${project.publicNotice.requirements || "N/A"}
+        Teto por projeto: R$ ${project.publicNotice.maxPerProject || "N/A"}
+        Acessibilidade obrigatória: ${project.publicNotice.requiresAccessibilityPlan ? "Sim" : "Não"}
 
         DADOS DO PROJETO:
         Título: ${project.title}
@@ -135,5 +134,6 @@ export async function analyzeProjectWithAI(projectId: string, tenantId: string) 
         return null;
     }
 }
+
 
 

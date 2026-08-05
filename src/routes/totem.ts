@@ -5,6 +5,7 @@ import { Role, TotemValidationStatus } from "@prisma/client";
 import { z } from "zod";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
+import { deliverTenantWebhooks } from "../services/outboundWebhook.service.js";
 
 const router = Router();
 
@@ -220,8 +221,8 @@ async function validateTicketCode(ticketCode: string, device: any, clientValidat
 
   try {
     // Perform check-in inside atomic transaction
-    await prisma.$transaction(async (tx) => {
-      await tx.registration.update({
+    const updated = await prisma.$transaction(async (tx) => {
+      const checkedIn = await tx.registration.update({
         where: { id: reg.id },
         data: {
           status: "CHECKED_IN",
@@ -235,7 +236,20 @@ async function validateTicketCode(ticketCode: string, device: any, clientValidat
           data: { xp: { increment: XP_AMOUNT } }
         });
       }
+
+      return checkedIn;
     });
+
+    deliverTenantWebhooks(reg.event.tenantId, "ticket.checked_in", {
+      registrationId: updated.id,
+      eventId: reg.eventId,
+      ticketId: reg.ticketId,
+      code: updated.code,
+      guestName: updated.guestName,
+      guestEmail: updated.guestEmail,
+      checkedInAt: updated.checkInDate,
+      source: wasOffline ? "TOTEM_OFFLINE_SYNC" : "TOTEM"
+    }).catch(err => console.error("Ticket checked-in webhook delivery failed:", err));
 
     return { status: wasOffline ? "SYNCED" : "VALID", message: "Entrada Liberada!", ticketId: reg.id };
   } catch (err: any) {

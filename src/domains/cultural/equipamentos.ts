@@ -110,22 +110,24 @@ router.post("/:id/checkin", authMiddleware, async (req, res) => {
       return res.status(403).json({ message: "Apenas visitantes podem fazer check-in" });
     }
 
-    // Check if visitor entry exists
-    const visitor = await prisma.visitor.findUnique({
-      where: { id: user.id }
-    });
-
-    if (!visitor) {
-      return res.status(404).json({ message: "Perfil de visitante não encontrado" });
-    }
-
-    // Verify equipment existence
     const equipment = await prisma.equipamentoCultural.findUnique({
       where: { id }
     });
 
     if (!equipment) {
       return res.status(404).json({ message: "Equipamento não encontrado" });
+    }
+
+    // Check if visitor entry exists
+    const visitor = await prisma.visitor.findFirst({
+      where: {
+        email: user.email.toLowerCase(),
+        tenantId: equipment.tenantId
+      }
+    });
+
+    if (!visitor) {
+      return res.status(404).json({ message: "Perfil de visitante não encontrado" });
     }
 
     // L5 Fix: Prevent XP duplication (Check if already checked in today)

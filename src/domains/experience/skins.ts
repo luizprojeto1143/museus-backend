@@ -19,9 +19,11 @@ router.get("/", authenticate, authorize(["MASTER"]), async (req, res) => {
 router.post("/", authenticate, authorize(["MASTER"]), async (req, res) => {
   try {
     // L3 Fix: Whitelist fields to prevent injection
-    const { 
-      name, description, imageUrl, xpCost, rarity, 
-      tenantId, active, eventOnly, spaceId, characterBaseId 
+    const {
+      name, description, imageUrl, animatedUrl, model3dUrl, previewUrl, thumbnailUrl,
+      xpCost, priceCents, currency, acquisitionMode, assetType, rarity,
+      tenantId, active, eventOnly, spaceId, characterBaseId, rigType, animationName,
+      animationSetUrl, aiPrompt
     } = req.body;
 
     let aiDescription = null;
@@ -39,13 +41,25 @@ router.post("/", authenticate, authorize(["MASTER"]), async (req, res) => {
         name,
         description,
         imageUrl,
+        animatedUrl: animatedUrl || null,
+        model3dUrl: model3dUrl || null,
+        previewUrl: previewUrl || null,
+        thumbnailUrl: thumbnailUrl || null,
         xpCost: parseInt(xpCost) || 0,
+        priceCents: priceCents !== undefined && priceCents !== "" ? parseInt(priceCents) : null,
+        currency: currency || "BRL",
+        acquisitionMode: acquisitionMode || "XP_ONLY",
+        assetType: assetType || "IMAGE_2D",
         rarity: rarity || "COMMON",
         tenantId,
         active: active !== undefined ? active : true,
         eventOnly: eventOnly !== undefined ? eventOnly : false,
         spaceId,
-        characterBaseId,
+        rigType: rigType || "NONE",
+        animationName: animationName || null,
+        animationSetUrl: animationSetUrl || null,
+        aiPrompt: aiPrompt || null,
+        compatibleCharacterBaseId: characterBaseId,
         aiDescription
       } 
     });
@@ -59,9 +73,11 @@ router.put("/:id", authenticate, authorize(["MASTER"]), async (req, res) => {
   try {
     const { id } = req.params;
     // L3 Fix: Whitelist fields
-    const { 
-      name, description, imageUrl, xpCost, rarity, 
-      active, eventOnly, spaceId, characterBaseId 
+    const {
+      name, description, imageUrl, animatedUrl, model3dUrl, previewUrl, thumbnailUrl,
+      xpCost, priceCents, currency, acquisitionMode, assetType, rarity,
+      tenantId, active, eventOnly, spaceId, characterBaseId, rigType, animationName,
+      animationSetUrl, aiPrompt
     } = req.body;
 
     const oldSkin = await prisma.skin.findUnique({ where: { id } });
@@ -84,12 +100,25 @@ router.put("/:id", authenticate, authorize(["MASTER"]), async (req, res) => {
         name,
         description,
         imageUrl,
+        animatedUrl: animatedUrl || null,
+        model3dUrl: model3dUrl || null,
+        previewUrl: previewUrl || null,
+        thumbnailUrl: thumbnailUrl || null,
         xpCost: xpCost !== undefined ? parseInt(xpCost) : undefined,
+        priceCents: priceCents !== undefined ? (priceCents === "" || priceCents === null ? null : parseInt(priceCents)) : undefined,
+        currency,
+        acquisitionMode,
+        assetType,
         rarity,
+        tenantId: tenantId === undefined ? undefined : tenantId,
         active,
         eventOnly,
-        spaceId,
-        characterBaseId,
+        spaceId: spaceId || null,
+        rigType,
+        animationName: animationName || null,
+        animationSetUrl: animationSetUrl || null,
+        aiPrompt: aiPrompt || null,
+        compatibleCharacterBaseId: characterBaseId,
         aiDescription
       }
     });

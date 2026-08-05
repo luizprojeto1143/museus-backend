@@ -43,7 +43,11 @@ import { authMiddleware } from "../../middleware/auth.js";
 import { gamificationLimiter } from "../../middleware/rateLimiter.js";
 
 const GAME_SECRET = process.env.GAME_SECRET || (() => {
-    console.warn("⚠️  WARNING: GAME_SECRET not set. Using insecure default. Set GAME_SECRET in production!");
+    const appEnv = process.env.APP_ENV?.toLowerCase();
+    if (process.env.NODE_ENV === "production" || appEnv === "production" || appEnv === "homologation") {
+        throw new Error("GAME_SECRET is required for production/homologation gamification tokens.");
+    }
+    console.warn("WARNING: GAME_SECRET not set. Using insecure development default. Set GAME_SECRET in production!");
     return "dev-only-insecure-game-key";
 })();
 
@@ -86,7 +90,7 @@ router.post("/session/end", authMiddleware, gamificationLimiter, async (req, res
             return res.status(403).json({ message: "Token não pertence ao usuário." });
         }
 
-        // ANTI-CHEAT LOGIC 🛡️
+        // ANTI-CHEAT LOGIC
         const durationSeconds = (Date.now() - decoded.startTime) / 1000;
 
         // Max realistic speed: 10 points per second (assuming fast quiz answers)

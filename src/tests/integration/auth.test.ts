@@ -26,6 +26,8 @@ describe('Auth Integration', () => {
     it('should validate Health Check', async () => {
         const res = await request(app).get('/health');
         expect(res.status).toBe(200);
-        expect(res.body).toEqual({ status: 'ok', database: 'connected' });
+        expect(res.body.status).toBe('healthy');
+        expect(res.body.services.database.status).toBe('connected');
+        expect(res.body.timestamp).toBeDefined();
     });
 });

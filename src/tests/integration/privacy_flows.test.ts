@@ -1,4 +1,3 @@
-// @ts-nocheck
 import request from 'supertest';
 import { app } from '../../index.js';
 import { prisma } from '../../prisma.js';
@@ -73,7 +72,7 @@ describe('LGPD Privacy & Consent Integration Tests', () => {
             .post('/auth/login')
             .send({ email: 'privacy.admin@test.com', password });
         
-        const cookies = login.headers['set-cookie'] as string[];
+        const cookies = login.headers['set-cookie'] as unknown as string[];
         const cookie = cookies?.find(c => c.startsWith('museus_token='));
         if (cookie) {
             userToken = cookie.split(';')[0].split('=')[1];
@@ -83,10 +82,16 @@ describe('LGPD Privacy & Consent Integration Tests', () => {
     afterAll(async () => {
         // Cleanup remaining entries
         await prisma.contactRequest.deleteMany({ where: { subject: 'LGPD_REQUEST' } });
-        await prisma.user.deleteMany({ where: { id: { in: [targetUserId] } } });
+        if (targetUserId) {
+            await prisma.user.deleteMany({ where: { id: { in: [targetUserId] } } });
+        }
         await prisma.user.deleteMany({ where: { email: { in: ['privacy.admin@test.com'] } } });
-        await prisma.visitor.deleteMany({ where: { id: targetVisitorId } });
-        await prisma.tenant.deleteMany({ where: { id: tenantId } });
+        if (targetVisitorId) {
+            await prisma.visitor.deleteMany({ where: { id: targetVisitorId } });
+        }
+        if (tenantId) {
+            await prisma.tenant.deleteMany({ where: { id: tenantId } });
+        }
     });
 
     describe('Privacy Requests & Consent Flows', () => {
@@ -122,15 +127,17 @@ describe('LGPD Privacy & Consent Integration Tests', () => {
                 .set('Authorization', `Bearer ${userToken}`);
             expect(res.status).toBe(200);
             expect(Array.isArray(res.body)).toBe(true);
-            expect(res.body.some(r => r.id === lgpdRequestId)).toBe(true);
+            expect(res.body.some((r: { id: string }) => r.id === lgpdRequestId)).toBe(true);
         });
 
         it('should resolve request and trigger automated user/visitor anonymization', async () => {
             // Check pre-anonymized status
             const userBefore = await prisma.user.findUnique({ where: { id: targetUserId } });
             const visitorBefore = await prisma.visitor.findUnique({ where: { id: targetVisitorId } });
-            expect(userBefore.email).toBe(targetEmail);
-            expect(visitorBefore.email).toBe(targetEmail);
+            expect(userBefore).not.toBeNull();
+            expect(visitorBefore).not.toBeNull();
+            expect(userBefore!.email).toBe(targetEmail);
+            expect(visitorBefore!.email).toBe(targetEmail);
 
             // Admin resolves request as COMPLETED
             const res = await request(app)
@@ -144,15 +151,19 @@ describe('LGPD Privacy & Consent Integration Tests', () => {
 
             // Verify user has been anonymized
             const userAfter = await prisma.user.findUnique({ where: { id: targetUserId } });
-            expect(userAfter.name).toBe('Usuário Anonimizado (LGPD)');
-            expect(userAfter.email).toContain('anon-');
-            expect(userAfter.email).not.toBe(targetEmail);
+            expect(userAfter).not.toBeNull();
+            expect(userAfter!.name).toBe('Usuário Anonimizado (LGPD)');
+            expect(userAfter!.email).toContain('anon-');
+            expect(userAfter!.email).not.toBe(targetEmail);
 
             // Verify visitor has been anonymized
             const visitorAfter = await prisma.visitor.findUnique({ where: { id: targetVisitorId } });
-            expect(visitorAfter.name).toBe('Visitante Anonimizado (LGPD)');
-            expect(visitorAfter.email).toContain('anon-visitor-');
-            expect(visitorAfter.email).not.toBe(targetEmail);
+            expect(visitorAfter).not.toBeNull();
+            expect(visitorAfter!.name).toBe('Visitante Anonimizado (LGPD)');
+            expect(visitorAfter!.email).toContain('anon-visitor-');
+            expect(visitorAfter!.email).not.toBe(targetEmail);
         });
     });
 });
+
+

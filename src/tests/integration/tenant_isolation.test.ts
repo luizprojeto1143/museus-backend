@@ -1,4 +1,3 @@
-// @ts-nocheck
 import request from 'supertest';
 import { app } from '../../index.js';
 import { prisma } from '../../prisma.js';
@@ -101,11 +100,20 @@ describe('Tenant Isolation & Permissions Matrix Integration Tests', () => {
 
     afterAll(async () => {
         // Cleanup
-        await prisma.event.deleteMany({ where: { id: testEventTenant2.id } });
-        await prisma.work.deleteMany({ where: { id: testWorkTenant2.id } });
-        await prisma.space.deleteMany({ where: { id: testSpaceTenant2.id } });
+        if (testEventTenant2?.id) {
+            await prisma.event.deleteMany({ where: { id: testEventTenant2.id } });
+        }
+        if (testWorkTenant2?.id) {
+            await prisma.work.deleteMany({ where: { id: testWorkTenant2.id } });
+        }
+        if (testSpaceTenant2?.id) {
+            await prisma.space.deleteMany({ where: { id: testSpaceTenant2.id } });
+        }
         await prisma.user.deleteMany({ where: { email: { in: ['admin1@iso1.com', 'admin2@iso2.com'] } } });
-        await prisma.tenant.deleteMany({ where: { id: { in: [tenant1Id, tenant2Id] } } });
+        const tenantIds = [tenant1Id, tenant2Id].filter(Boolean);
+        if (tenantIds.length > 0) {
+            await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });
+        }
     });
 
     function getToken(res: any): string {

@@ -6,6 +6,26 @@ import { checkEntityOwnership } from '../../utils/ownership.js';
 
 const router = Router();
 
+async function resolveReviewTargetTenant(workId?: string, eventId?: string) {
+    if (workId) {
+        const work = await prisma.work.findFirst({
+            where: { id: workId, deletedAt: null },
+            select: { tenantId: true }
+        });
+        return work?.tenantId || null;
+    }
+
+    if (eventId) {
+        const event = await prisma.event.findFirst({
+            where: { id: eventId, deletedAt: null },
+            select: { tenantId: true }
+        });
+        return event?.tenantId || null;
+    }
+
+    return null;
+}
+
 const reviewSchema = z.object({
     rating: z.number().min(1).max(5),
     comment: z.string().optional(),
@@ -74,6 +94,11 @@ router.post('/', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'workId ou eventId é obrigatório' });
         }
 
+        const targetTenantId = await resolveReviewTargetTenant(data.workId, data.eventId);
+        if (!targetTenantId || targetTenantId !== tenantId) {
+            return res.status(404).json({ message: 'Item avaliado nao encontrado neste tenant' });
+        }
+
         // Check for existing review
         if (data.workId) {
             const existing = await prisma.review.findUnique({
@@ -81,6 +106,15 @@ router.post('/', authMiddleware, async (req, res) => {
             });
             if (existing) {
                 return res.status(409).json({ message: 'Você já avaliou esta obra' });
+            }
+        }
+
+        if (data.eventId) {
+            const existing = await prisma.review.findUnique({
+                where: { visitorId_eventId: { visitorId: visitor.id, eventId: data.eventId } }
+            });
+            if (existing) {
+                return res.status(409).json({ message: 'Voce ja avaliou este evento' });
             }
         }
 
@@ -126,8 +160,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user!;
-        const { tenantId } = req.query;
-
         // If privileged (ADMIN/MASTER), use central checkEntityOwnership to validate tenant isolation
         if (['ADMIN', 'MASTER'].includes(user.role || '')) {
             const check = await checkEntityOwnership('review', id, user);
@@ -140,14 +172,20 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         // For visitors, check ownership by matching visitor ID
         const review = await prisma.review.findUnique({
             where: { id },
-            include: { work: { select: { tenantId: true } } }
+            include: {
+                work: { select: { tenantId: true } },
+                event: { select: { tenantId: true } }
+            }
         });
 
         if (!review) {
             return res.status(404).json({ message: 'Avaliação não encontrada' });
         }
 
-        const reviewTenantId = tenantId as string || review.work?.tenantId;
+        const reviewTenantId = review.work?.tenantId || review.event?.tenantId;
+        if (!reviewTenantId) {
+            return res.status(404).json({ message: 'Avaliação não encontrada' });
+        }
         const visitor = await prisma.visitor.findFirst({
             where: { email: user.email.toLowerCase(), tenantId: reviewTenantId }
         });

@@ -1,0 +1,3234 @@
+{
+  "generatedAt": "2026-07-30T01:52:40.766Z",
+  "backendRoutes": 645,
+  "frontendCalls": 295,
+  "unmatchedCalls": 0,
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/:tenantSlug/roteiro/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/achievements/:id",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/bookings/:id",
+      "file": "museus-backend/src/domains/commerce/bookings.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/categories/:id",
+      "file": "museus-backend/src/routes/categories.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/certificate-rules/:id",
+      "file": "museus-backend/src/domains/trust-safety/certificate-rules.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/certificate-templates/:id",
+      "file": "museus-backend/src/domains/trust-safety/certificate-templates.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/characters/:id",
+      "file": "museus-backend/src/routes/characters.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/clues/:id",
+      "file": "museus-backend/src/domains/experience/clues.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/collectibles/:id",
+      "file": "museus-backend/src/domains/experience/collectibles.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/coupons/:id",
+      "file": "museus-backend/src/domains/commerce/coupons.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/curator-notes/:id",
+      "file": "museus-backend/src/domains/cultural/curator-notes.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/events/:id",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/favorites/:type/:itemId",
+      "file": "museus-backend/src/routes/favorites.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/floor-plans/:id",
+      "file": "museus-backend/src/domains/cultural/floorPlans.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/guestbook/:id",
+      "file": "museus-backend/src/routes/guestbook.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/heritage/:id",
+      "file": "museus-backend/src/domains/cultural/heritage.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/in-person-services/:id",
+      "file": "museus-backend/src/domains/commerce/in-person-services.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/master/fees/:id",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/municipal/:id/cancel",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/notices/:id",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/notifications/unregister",
+      "file": "museus-backend/src/routes/notifications.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/outbound-webhooks/:id",
+      "file": "museus-backend/src/routes/outbound-webhooks.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/plans/:id",
+      "file": "museus-backend/src/domains/governance/plans.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/ppa/:id",
+      "file": "museus-backend/src/domains/governance/ppa.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/projects/:id",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/providers/:id",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/qrcodes/:id",
+      "file": "museus-backend/src/routes/qrcodes.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/reviews/:id",
+      "file": "museus-backend/src/domains/trust-safety/reviews.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/roteiro/:tenantSlug/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/roteiros/:tenantSlug/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/seeder/bulk",
+      "file": "museus-backend/src/routes/master/seeder.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/shop/products/:id",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/skins/:id",
+      "file": "museus-backend/src/domains/experience/skins.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/spaces/:id",
+      "file": "museus-backend/src/domains/cultural/spaces.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/sponsor-portal/:id/cancel",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/stamps/:id",
+      "file": "museus-backend/src/domains/experience/stamps.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/tenants/:id",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/tenants/utils/demo",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/tickets/:id",
+      "file": "museus-backend/src/domains/commerce/tickets.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/trails/:id",
+      "file": "museus-backend/src/domains/cultural/trails.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/translations/:id",
+      "file": "museus-backend/src/routes/translations.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/upload/:id",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/users/:id",
+      "file": "museus-backend/src/routes/users.ts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/works/:id",
+      "file": "museus-backend/src/domains/cultural/works.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/master-ecosystem/reviews/pending",
+      "file": "museus-backend/src/domains/governance/master-ecosystem.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/master-ecosystem/stats",
+      "file": "museus-backend/src/domains/governance/master-ecosystem.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/provider/dashboard",
+      "file": "museus-backend/src/domains/commerce/provider.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/provider/products",
+      "file": "museus-backend/src/domains/commerce/provider.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/roteiro/providers",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/roteiro/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/roteiro/providers/admin",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/:tenantSlug/roteiro/routes",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/accessibility",
+      "file": "museus-backend/src/routes/accessibility.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/accessibility-execution",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/accessibility-execution/:id",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/accessibility-execution/dashboard",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/accessibility/master",
+      "file": "museus-backend/src/routes/accessibility.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/achievements",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/achievements/:id",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/achievements/visitor/:visitorId",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ai-costs/limits",
+      "file": "museus-backend/src/routes/ai-costs.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ai-costs/report",
+      "file": "museus-backend/src/routes/ai-costs.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ai-costs/usage",
+      "file": "museus-backend/src/routes/ai-costs.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ai-costs/usage/:tenantId",
+      "file": "museus-backend/src/routes/ai-costs.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/accessibility-summary",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/advanced/:tenantId",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/dashboard/:tenantId",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/funnel",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/heatmap",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/municipal-pwa/settings",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/municipal-pwa/summary",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/popular-works/:tenantId",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/sales-summary",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/summary",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/tenant-summary/:tenantId",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/tenants-summary",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/analytics/territorial-gaps",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/audit-logs",
+      "file": "museus-backend/src/domains/governance/audit.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/audit-logs/entity/:entity/:id",
+      "file": "museus-backend/src/domains/governance/audit.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/audit-logs/summary",
+      "file": "museus-backend/src/domains/governance/audit.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/auth/me",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/backup/full",
+      "file": "museus-backend/src/routes/backup.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/badges/:id/print",
+      "file": "museus-backend/src/domains/experience/badgeRoutes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/badges/my",
+      "file": "museus-backend/src/domains/experience/badgeRoutes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/badges/queue",
+      "file": "museus-backend/src/domains/experience/badgeRoutes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/bookings",
+      "file": "museus-backend/src/domains/commerce/bookings.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/bookings/in-person",
+      "file": "museus-backend/src/domains/commerce/bookings.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/bookings/my",
+      "file": "museus-backend/src/domains/commerce/bookings.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/categories",
+      "file": "museus-backend/src/routes/categories.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/categories/:id",
+      "file": "museus-backend/src/routes/categories.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/certificate-rules",
+      "file": "museus-backend/src/domains/trust-safety/certificate-rules.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/certificate-templates",
+      "file": "museus-backend/src/domains/trust-safety/certificate-templates.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/certificates/:id/pdf",
+      "file": "museus-backend/src/domains/trust-safety/certificates.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/certificates/mine",
+      "file": "museus-backend/src/domains/trust-safety/certificates.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/certificates/verify/:code",
+      "file": "museus-backend/src/domains/trust-safety/certificates.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/challenges/hunts",
+      "file": "museus-backend/src/domains/experience/challenges.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/challenges/hunts/:id",
+      "file": "museus-backend/src/domains/experience/challenges.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/challenges/my-progress",
+      "file": "museus-backend/src/domains/experience/challenges.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/challenges/today",
+      "file": "museus-backend/src/domains/experience/challenges.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/characters",
+      "file": "museus-backend/src/routes/characters.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/clues",
+      "file": "museus-backend/src/domains/experience/clues.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/collectibles",
+      "file": "museus-backend/src/domains/experience/collectibles.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/collectibles/my",
+      "file": "museus-backend/src/domains/experience/collectibles.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/collectibles/stats",
+      "file": "museus-backend/src/domains/experience/collectibles.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/community",
+      "file": "museus-backend/src/routes/community.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/community/admin",
+      "file": "museus-backend/src/routes/community.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/conservation",
+      "file": "museus-backend/src/domains/cultural/conservation.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/conservation/loans",
+      "file": "museus-backend/src/domains/cultural/conservation.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/contact",
+      "file": "museus-backend/src/routes/contact.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/coupons",
+      "file": "museus-backend/src/domains/commerce/coupons.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/coupons/available",
+      "file": "museus-backend/src/domains/commerce/coupons.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/curator-notes",
+      "file": "museus-backend/src/domains/cultural/curator-notes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/curator-notes/all",
+      "file": "museus-backend/src/domains/cultural/curator-notes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/donations/stats",
+      "file": "museus-backend/src/domains/commerce/donations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/donations/wall",
+      "file": "museus-backend/src/domains/commerce/donations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/equipamentos",
+      "file": "museus-backend/src/domains/cultural/equipamentos.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/equipamentos/public",
+      "file": "museus-backend/src/domains/cultural/equipamentos.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/equipamentos/public/:identifier",
+      "file": "museus-backend/src/domains/cultural/equipamentos.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/event-operations/events/:eventId/capacity",
+      "file": "museus-backend/src/routes/event-operations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/event-operations/registrations/:code/wallet",
+      "file": "museus-backend/src/routes/event-operations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/:eventId/survey",
+      "file": "museus-backend/src/routes/surveys.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/:eventId/survey/my-responses",
+      "file": "museus-backend/src/routes/surveys.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/:eventId/survey/results",
+      "file": "museus-backend/src/routes/surveys.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/:id",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/:id/certificate/download",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/:id/my-attendance",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/:id/report",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/events/pos/sessions",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/executive-reports/pdf",
+      "file": "museus-backend/src/domains/governance/executive-reports.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/executive-reports/summary",
+      "file": "museus-backend/src/domains/governance/executive-reports.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/favorites",
+      "file": "museus-backend/src/routes/favorites.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/favorites/check",
+      "file": "museus-backend/src/routes/favorites.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/categories",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/chargebacks",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/cost-centers",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/dashboard",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/disputes",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/dre",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/export",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/payables",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/payouts",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/receivables",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/reconciliation",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/refunds",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/settings/financial",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/statement",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/stripe/dashboard-link",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/stripe/status",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/financial/summary",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/floor-plans",
+      "file": "museus-backend/src/domains/cultural/floorPlans.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/floor-plans/:id",
+      "file": "museus-backend/src/domains/cultural/floorPlans.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/gamification/clues",
+      "file": "museus-backend/src/domains/experience/gamification.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/gamification/leaderboard",
+      "file": "museus-backend/src/domains/experience/gamification.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/group-tickets",
+      "file": "museus-backend/src/domains/commerce/group-tickets.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/guestbook",
+      "file": "museus-backend/src/routes/guestbook.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "file": "museus-backend/src/routes/health.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/health/live",
+      "file": "museus-backend/src/routes/health.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/health/ready",
+      "file": "museus-backend/src/routes/health.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/heritage",
+      "file": "museus-backend/src/domains/cultural/heritage.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/in-person-services",
+      "file": "museus-backend/src/domains/commerce/in-person-services.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/inbox",
+      "file": "museus-backend/src/routes/inbox.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/inbox/:id",
+      "file": "museus-backend/src/routes/inbox.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/institutional-export/csv",
+      "file": "museus-backend/src/routes/institutional-export.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/institutional-export/pdf",
+      "file": "museus-backend/src/routes/institutional-export.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/leaderboard",
+      "file": "museus-backend/src/domains/experience/leaderboard.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/leaderboard/city/:cityId",
+      "file": "museus-backend/src/domains/experience/leaderboard.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/marketplace",
+      "file": "museus-backend/src/domains/commerce/marketplace.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/fees",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/fees/:id/audit",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/fees/overview",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/fees/simulate",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/fees/sources",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/api-requests",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/audit-logs",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/errors",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/integrations",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/jobs",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/overview",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/security-events",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/master/monitoring/tenants/:tenantId/activity",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/memberships",
+      "file": "museus-backend/src/routes/memberships.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/memberships/benefits/national",
+      "file": "museus-backend/src/routes/memberships.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/memberships/me/card",
+      "file": "museus-backend/src/routes/memberships.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/memberships/plans",
+      "file": "museus-backend/src/routes/memberships.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/memberships/stats",
+      "file": "museus-backend/src/routes/memberships.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/moderation",
+      "file": "museus-backend/src/domains/trust-safety/moderation.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/moderation/stats",
+      "file": "museus-backend/src/domains/trust-safety/moderation.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/api-requests",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/audit-logs",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/errors",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/integrations",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/jobs",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/overview",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/security-events",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/tenants/:tenantId/activity",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/admin/list",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/certificates",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/contracts/:contractId/assets",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/dashboard",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/my-contracts",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/my-sponsorships",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/my-work-sponsorships",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/opportunities",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/pricing",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/works",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/municipal/works/:workId/sponsorships",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/museum-battle/ranking",
+      "file": "museus-backend/src/domains/experience/museum-battle.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/newsletter/list",
+      "file": "museus-backend/src/routes/newsletter.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/notices",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/notices/:id",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/notices/:id/projects",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/notices/public",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/notices/public/:id",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/notices/public/:id/results",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/notices/public/:id/transparency",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/nps/report",
+      "file": "museus-backend/src/routes/nps.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/debug-env",
+      "file": "museus-backend/src/domains/governance/ops.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/error-logs",
+      "file": "museus-backend/src/domains/governance/ops.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ops/test-dashboard",
+      "file": "museus-backend/src/domains/governance/ops.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/outbound-webhooks",
+      "file": "museus-backend/src/routes/outbound-webhooks.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/persona/:tenantId",
+      "file": "museus-backend/src/routes/persona.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/plans",
+      "file": "museus-backend/src/domains/governance/plans.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/plans/:id",
+      "file": "museus-backend/src/domains/governance/plans.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/platform/settings/financial",
+      "file": "museus-backend/src/routes/platform.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ppa",
+      "file": "museus-backend/src/domains/governance/ppa.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ppa/consolidated",
+      "file": "museus-backend/src/domains/governance/ppa.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/privacy/requests",
+      "file": "museus-backend/src/routes/privacy.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/projects",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/projects/:id",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/projects/:id/accessibility",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/projects/:id/accountability/:accountabilityId/pdf",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/projects/:id/terms/:termId/pdf",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/projects/:id/workflow",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/projects/my",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/providers",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/providers/:id",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/providers/:id/history",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/providers/me",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/providers/me/executions",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/providers/me/stats",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public-passport/passport/:id",
+      "file": "museus-backend/src/routes/public/passport.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/certificates/:code",
+      "file": "museus-backend/src/routes/public/certificates.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/cities",
+      "file": "museus-backend/src/routes/public/cities.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/cities/:id/dashboard",
+      "file": "museus-backend/src/routes/public/cities.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/national/digital-collections",
+      "file": "museus-backend/src/routes/public/national.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/national/events",
+      "file": "museus-backend/src/routes/public/national.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/national/indicators",
+      "file": "museus-backend/src/routes/public/national.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/national/map",
+      "file": "museus-backend/src/routes/public/national.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/national/rankings/equipments",
+      "file": "museus-backend/src/routes/public/national.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/national/search",
+      "file": "museus-backend/src/routes/public/national.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/national/services",
+      "file": "museus-backend/src/routes/public/national.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/public/providers/:id",
+      "file": "museus-backend/src/routes/public/providers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/qr/:code",
+      "file": "museus-backend/src/routes/qr.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/qrcodes",
+      "file": "museus-backend/src/routes/qrcodes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/qrcodes/:code/resolve",
+      "file": "museus-backend/src/routes/qrcodes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/quiz",
+      "file": "museus-backend/src/routes/quiz.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/registrations",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/registrations/:code",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/registrations/:code/wallet/apple",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/registrations/my-registrations",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/registrations/stats/today",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/reports/financial",
+      "file": "museus-backend/src/domains/governance/reports.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/reviews",
+      "file": "museus-backend/src/domains/trust-safety/reviews.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roadmap-extra",
+      "file": "museus-backend/src/domains/governance/roadmap-extra.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roadmap-extra/:id",
+      "file": "museus-backend/src/domains/governance/roadmap-extra.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roadmap-extra/events",
+      "file": "museus-backend/src/domains/governance/roadmap-extra.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roadmap-family/profiles",
+      "file": "museus-backend/src/domains/governance/roadmap-family.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roadmap-family/profiles/:id",
+      "file": "museus-backend/src/domains/governance/roadmap-family.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roadmap-family/submissions",
+      "file": "museus-backend/src/domains/governance/roadmap-family.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiro/:tenantSlug/providers",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiro/:tenantSlug/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiro/:tenantSlug/providers/admin",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiro/:tenantSlug/routes",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiros/:tenantSlug/providers",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiros/:tenantSlug/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiros/:tenantSlug/providers/admin",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/roteiros/:tenantSlug/routes",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/rpg/avatar-status",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/rpg/me",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/rpg/skin-status/:skinId",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/scanner/models/:tenantId",
+      "file": "museus-backend/src/routes/scanner.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/search",
+      "file": "museus-backend/src/routes/search.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/secretary/accessibility-timeline",
+      "file": "museus-backend/src/domains/governance/secretary.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/secretary/dashboard",
+      "file": "museus-backend/src/domains/governance/secretary.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/secretary/legal-compliance",
+      "file": "museus-backend/src/domains/governance/secretary.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sentiment/report",
+      "file": "museus-backend/src/routes/sentiment.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/shop/my-orders",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/shop/orders",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/shop/products",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/shop/products/:id",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/skins",
+      "file": "museus-backend/src/domains/experience/skins.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/social-checkin",
+      "file": "museus-backend/src/domains/experience/social-checkin.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/spaces",
+      "file": "museus-backend/src/domains/cultural/spaces.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/spaces/:id",
+      "file": "museus-backend/src/domains/cultural/spaces.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/spaces/:id/availability",
+      "file": "museus-backend/src/domains/cultural/spaces.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/admin/list",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/certificates",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/contracts/:contractId/assets",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/dashboard",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/my-contracts",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/my-sponsorships",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/my-work-sponsorships",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/opportunities",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/pricing",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/works",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/sponsor-portal/works/:workId/sponsorships",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/stamps/visitor/:visitorId",
+      "file": "museus-backend/src/domains/experience/stamps.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/stripe/balance",
+      "file": "museus-backend/src/domains/commerce/stripe.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/stripe/dashboard-link",
+      "file": "museus-backend/src/domains/commerce/stripe.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/stripe/onboarding-link",
+      "file": "museus-backend/src/domains/commerce/stripe.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/teachers",
+      "file": "museus-backend/src/routes/teachers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/teachers/visits",
+      "file": "museus-backend/src/routes/teachers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenant-services/:tenantId",
+      "file": "museus-backend/src/domains/governance/tenant-services.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenant-services/admin/:tenantId",
+      "file": "museus-backend/src/domains/governance/tenant-services.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenants",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenants/:id",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenants/:id/features",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenants/:id/settings",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenants/list/options",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tenants/public",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/theater/analytics",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/theater/box-office/current",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/theater/members",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/theater/sessions",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/theater/sessions/:id/cues",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/theater/sessions/:id/seats",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/ticket-transfers",
+      "file": "museus-backend/src/domains/commerce/ticket-transfers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tickets",
+      "file": "museus-backend/src/domains/commerce/tickets.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/tickets/events/:eventId/tickets",
+      "file": "museus-backend/src/domains/commerce/tickets.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/totem/devices",
+      "file": "museus-backend/src/routes/totem.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/totem/devices/:id/config",
+      "file": "museus-backend/src/routes/totem.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/trails",
+      "file": "museus-backend/src/domains/cultural/trails.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/trails/:id",
+      "file": "museus-backend/src/domains/cultural/trails.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/translations",
+      "file": "museus-backend/src/routes/translations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/translations/all",
+      "file": "museus-backend/src/routes/translations.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/upload",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/upload/proxy",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/users",
+      "file": "museus-backend/src/routes/users.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/users/:id",
+      "file": "museus-backend/src/routes/users.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/vestige-alerts",
+      "file": "museus-backend/src/domains/cultural/vestige-alerts.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/vestiges/nearby",
+      "file": "museus-backend/src/domains/cultural/vestiges.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/vestiges/passport/:visitorId",
+      "file": "museus-backend/src/domains/cultural/vestiges.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/:id",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/:id/skins",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/:visitorId/summary",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/me",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/me/active-tickets",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/me/passport",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/me/recent-visits",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/me/skins",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/me/stats",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/me/summary",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/visitors/public-passport/:id",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/volunteers",
+      "file": "museus-backend/src/routes/volunteers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/volunteers/:id/shifts",
+      "file": "museus-backend/src/routes/volunteers.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/works",
+      "file": "museus-backend/src/domains/cultural/works.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/works/:id",
+      "file": "museus-backend/src/domains/cultural/works.ts"
+    },
+    {
+      "method": "GET",
+      "path": "/works/:id/related",
+      "file": "museus-backend/src/domains/cultural/works.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/achievements/:id",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/categories/:id",
+      "file": "museus-backend/src/routes/categories.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/conservation/loans/:id",
+      "file": "museus-backend/src/domains/cultural/conservation.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/contact/:id",
+      "file": "museus-backend/src/routes/contact.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/group-tickets/:id",
+      "file": "museus-backend/src/domains/commerce/group-tickets.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/guestbook/:id/visibility",
+      "file": "museus-backend/src/routes/guestbook.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/master/fees/:id",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/outbound-webhooks/:id",
+      "file": "museus-backend/src/routes/outbound-webhooks.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/ppa/:id",
+      "file": "museus-backend/src/domains/governance/ppa.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/reviews/:id/approve",
+      "file": "museus-backend/src/domains/trust-safety/reviews.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/shop/orders/:id/status",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/teachers/visits/:id",
+      "file": "museus-backend/src/routes/teachers.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/upload/:id",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "PATCH",
+      "path": "/volunteers/:id/shifts/:shiftId",
+      "file": "museus-backend/src/routes/volunteers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/:tenantSlug/provider/products",
+      "file": "museus-backend/src/domains/commerce/provider.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/:tenantSlug/provider/stripe/onboard",
+      "file": "museus-backend/src/domains/commerce/provider.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/:tenantSlug/roteiro/ai-generate",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/:tenantSlug/roteiro/intelligent",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/:tenantSlug/roteiro/providers",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/:tenantSlug/roteiro/routes/ai-generate",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/accessibility",
+      "file": "museus-backend/src/routes/accessibility.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/accessibility-execution",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/accessibility-execution/:id/pay",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/accessibility-execution/request",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/accessibility/:id/fulfill",
+      "file": "museus-backend/src/routes/accessibility.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/achievements",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/achievements/unlock",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/chat",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/chat/stream",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/extract-pdf",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/generate-description",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/itinerary",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/refine-proposal",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/souvenir",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/test",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/translate",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ai/tts",
+      "file": "museus-backend/src/routes/ai.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/login",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/logout",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/recover-password",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/register",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/register-provider",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/reset-password",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/auth/switch-tenant",
+      "file": "museus-backend/src/routes/auth.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/badges",
+      "file": "museus-backend/src/domains/experience/badgeRoutes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/bookings",
+      "file": "museus-backend/src/domains/commerce/bookings.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/categories",
+      "file": "museus-backend/src/routes/categories.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/certificate-rules",
+      "file": "museus-backend/src/domains/trust-safety/certificate-rules.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/certificate-templates",
+      "file": "museus-backend/src/domains/trust-safety/certificate-templates.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/certificates/generate",
+      "file": "museus-backend/src/domains/trust-safety/certificates.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/challenges/:id/progress",
+      "file": "museus-backend/src/domains/experience/challenges.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/challenges/hunts/:id/answer",
+      "file": "museus-backend/src/domains/experience/challenges.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/challenges/hunts/:id/start",
+      "file": "museus-backend/src/domains/experience/challenges.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/characters",
+      "file": "museus-backend/src/routes/characters.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/clues",
+      "file": "museus-backend/src/domains/experience/clues.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/collectibles",
+      "file": "museus-backend/src/domains/experience/collectibles.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/collectibles/earn/:cardId",
+      "file": "museus-backend/src/domains/experience/collectibles.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/community",
+      "file": "museus-backend/src/routes/community.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/conservation",
+      "file": "museus-backend/src/domains/cultural/conservation.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/conservation/loans",
+      "file": "museus-backend/src/domains/cultural/conservation.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/contact",
+      "file": "museus-backend/src/routes/contact.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/coupons",
+      "file": "museus-backend/src/domains/commerce/coupons.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/coupons/:id/redeem",
+      "file": "museus-backend/src/domains/commerce/coupons.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/curator-notes",
+      "file": "museus-backend/src/domains/cultural/curator-notes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/donations",
+      "file": "museus-backend/src/domains/commerce/donations.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/equipamentos",
+      "file": "museus-backend/src/domains/cultural/equipamentos.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/equipamentos/:id/checkin",
+      "file": "museus-backend/src/domains/cultural/equipamentos.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/event-operations/events/:eventId/queue/join",
+      "file": "museus-backend/src/routes/event-operations.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events/:eventId/survey",
+      "file": "museus-backend/src/routes/surveys.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events/:eventId/survey/respond",
+      "file": "museus-backend/src/routes/surveys.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events/:id/certificate",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events/:id/checkin",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events/:id/pos-sell",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events/:id/register",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/events/:id/view",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/favorites",
+      "file": "museus-backend/src/routes/favorites.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/financial/categories",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/financial/cost-centers",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/financial/ledger/rebuild",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/financial/payables",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/financial/receivables",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/financial/refund/:refundId/retry",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/financial/refund/:transactionId",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/floor-plans",
+      "file": "museus-backend/src/domains/cultural/floorPlans.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/gamification/session/end",
+      "file": "museus-backend/src/domains/experience/gamification.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/gamification/session/start",
+      "file": "museus-backend/src/domains/experience/gamification.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/group-tickets",
+      "file": "museus-backend/src/domains/commerce/group-tickets.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/guestbook",
+      "file": "museus-backend/src/routes/guestbook.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/heritage",
+      "file": "museus-backend/src/domains/cultural/heritage.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/in-person-services",
+      "file": "museus-backend/src/domains/commerce/in-person-services.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/inbox",
+      "file": "museus-backend/src/routes/inbox.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/inbox/:id/messages",
+      "file": "museus-backend/src/routes/inbox.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/inbox/:id/payment",
+      "file": "museus-backend/src/routes/inbox.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/marketplace/:skinId/buy",
+      "file": "museus-backend/src/domains/commerce/marketplace.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/marketplace/:skinId/buy-money",
+      "file": "museus-backend/src/domains/commerce/marketplace.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/marketplace/:skinId/buy-xp",
+      "file": "museus-backend/src/domains/commerce/marketplace.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/master/fees",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/master/fees/seed-defaults",
+      "file": "museus-backend/src/routes/master-fees.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/master/monitoring/frontend-error",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/memberships",
+      "file": "museus-backend/src/routes/memberships.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/memberships/plans",
+      "file": "museus-backend/src/routes/memberships.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/moderation/:reviewId",
+      "file": "museus-backend/src/domains/trust-safety/moderation.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/monitoring/frontend-error",
+      "file": "museus-backend/src/routes/master-monitoring.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/municipal/contracts/:contractId/assets",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/municipal/contracts/:contractId/issue-certificate",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/municipal/opportunities/:opportunityId/apply",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/municipal/sponsorship-assets/:assetId/review",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/municipal/sponsorship-opportunities",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/municipal/subscribe",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/museum-battle/calculate",
+      "file": "museus-backend/src/domains/experience/museum-battle.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/navigation/directions",
+      "file": "museus-backend/src/routes/navigation.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/newsletter/subscribe",
+      "file": "museus-backend/src/routes/newsletter.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/newsletter/unsubscribe",
+      "file": "museus-backend/src/routes/newsletter.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/notices",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/notifications/broadcast",
+      "file": "museus-backend/src/routes/notifications.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/notifications/register",
+      "file": "museus-backend/src/routes/notifications.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/notifications/test",
+      "file": "museus-backend/src/routes/notifications.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/nps",
+      "file": "museus-backend/src/routes/nps.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/outbound-webhooks",
+      "file": "museus-backend/src/routes/outbound-webhooks.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/outbound-webhooks/:id/test",
+      "file": "museus-backend/src/routes/outbound-webhooks.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/persona/:tenantId",
+      "file": "museus-backend/src/routes/persona.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/plans",
+      "file": "museus-backend/src/domains/governance/plans.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/plans/:planId/assign/:tenantId",
+      "file": "museus-backend/src/domains/governance/plans.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ppa",
+      "file": "museus-backend/src/domains/governance/ppa.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/privacy/consent",
+      "file": "museus-backend/src/routes/privacy.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/privacy/request",
+      "file": "museus-backend/src/routes/privacy.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/accountability",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/accountability/:accountabilityId/submit",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/analyze",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/appeals",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/appeals/:appealId/counter",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/invoice",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/publish-event",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/submit",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/terms",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/projects/:id/terms/:termId/sign",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/providers",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/providers/:id/quote",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/public/providers/:id/checkout",
+      "file": "museus-backend/src/routes/public/providers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/qrcodes",
+      "file": "museus-backend/src/routes/qrcodes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/qrcodes/:code/scan",
+      "file": "museus-backend/src/routes/qrcodes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/quiz",
+      "file": "museus-backend/src/routes/quiz.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/quiz/:id/answer",
+      "file": "museus-backend/src/routes/quiz.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/registrations",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/registrations/:code/check-in",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/registrations/checkin",
+      "file": "museus-backend/src/routes/registrations.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/reviews",
+      "file": "museus-backend/src/domains/trust-safety/reviews.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roadmap-extra",
+      "file": "museus-backend/src/domains/governance/roadmap-extra.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roadmap-extra/events",
+      "file": "museus-backend/src/domains/governance/roadmap-extra.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roadmap-family/profiles",
+      "file": "museus-backend/src/domains/governance/roadmap-family.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roadmap-family/profiles/:id/events",
+      "file": "museus-backend/src/domains/governance/roadmap-family.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roadmap-family/submissions",
+      "file": "museus-backend/src/domains/governance/roadmap-family.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiro/:tenantSlug/intelligent",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiro/:tenantSlug/providers",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiro/:tenantSlug/routes/ai-generate",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiro/ai-generate",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiros/:tenantSlug/intelligent",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiros/:tenantSlug/providers",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiros/:tenantSlug/routes/ai-generate",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/roteiros/ai-generate",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/rpg/admin/visitors/:id/grant-xp",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/rpg/apply-skin/:skinId",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/rpg/retry-avatar",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/rpg/select-character",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/rpg/selfie",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/seeder/generate",
+      "file": "museus-backend/src/routes/master/seeder.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/seeder/interact",
+      "file": "museus-backend/src/routes/master/seeder.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/seeder/simulate-traffic",
+      "file": "museus-backend/src/routes/master/seeder.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/shop/orders",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/shop/products",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/skins",
+      "file": "museus-backend/src/domains/experience/skins.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/social-checkin",
+      "file": "museus-backend/src/domains/experience/social-checkin.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/spaces",
+      "file": "museus-backend/src/domains/cultural/spaces.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/sponsor-portal/contracts/:contractId/assets",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/sponsor-portal/contracts/:contractId/issue-certificate",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/sponsor-portal/opportunities/:opportunityId/apply",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/sponsor-portal/sponsorship-assets/:assetId/review",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/sponsor-portal/sponsorship-opportunities",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/sponsor-portal/subscribe",
+      "file": "museus-backend/src/routes/sponsor-portal.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/stamps",
+      "file": "museus-backend/src/domains/experience/stamps.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/stripe/payout",
+      "file": "museus-backend/src/domains/commerce/stripe.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/teachers",
+      "file": "museus-backend/src/routes/teachers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/teachers/activities",
+      "file": "museus-backend/src/routes/teachers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/teachers/visits",
+      "file": "museus-backend/src/routes/teachers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/tenant-services",
+      "file": "museus-backend/src/domains/governance/tenant-services.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/tenants",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/theater/box-office/close",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/theater/box-office/open",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/theater/members",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/theater/sessions/:id/cues",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/theater/sessions/:id/reserve",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/theater/sessions/:id/sell",
+      "file": "museus-backend/src/routes/theater.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/ticket-transfers",
+      "file": "museus-backend/src/domains/commerce/ticket-transfers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/tickets",
+      "file": "museus-backend/src/domains/commerce/tickets.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/tickets/events/:eventId/tickets",
+      "file": "museus-backend/src/domains/commerce/tickets.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/totem/devices/:id/deactivate",
+      "file": "museus-backend/src/routes/totem.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/totem/devices/:id/verify-pin",
+      "file": "museus-backend/src/routes/totem.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/totem/devices/register",
+      "file": "museus-backend/src/routes/totem.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/totem/offline-sync",
+      "file": "museus-backend/src/routes/totem.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/totem/validations",
+      "file": "museus-backend/src/routes/totem.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/trails",
+      "file": "museus-backend/src/domains/cultural/trails.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/trails/generate",
+      "file": "museus-backend/src/domains/cultural/trails.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/trails/save",
+      "file": "museus-backend/src/domains/cultural/trails.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/translations",
+      "file": "museus-backend/src/routes/translations.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/upload",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/upload/audio",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/upload/document",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/upload/image",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/upload/video",
+      "file": "museus-backend/src/routes/upload.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/users",
+      "file": "museus-backend/src/routes/users.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/vestige-alerts",
+      "file": "museus-backend/src/domains/cultural/vestige-alerts.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/vestiges/capture",
+      "file": "museus-backend/src/domains/cultural/vestiges.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/vestiges/expire/:workId",
+      "file": "museus-backend/src/domains/cultural/vestiges.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/visitors/register",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/visitors/track",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/visitors/visit-from-qr",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/volunteers",
+      "file": "museus-backend/src/routes/volunteers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/volunteers/:id/shifts",
+      "file": "museus-backend/src/routes/volunteers.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/webhooks/reprocess/:eventId",
+      "file": "museus-backend/src/routes/webhooks.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/webhooks/stripe",
+      "file": "museus-backend/src/routes/webhooks.ts"
+    },
+    {
+      "method": "POST",
+      "path": "/works",
+      "file": "museus-backend/src/domains/cultural/works.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/:tenantSlug/roteiro/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.scoped.routes.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/accessibility-execution/:id",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/accessibility-execution/:id/approve",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/accessibility-execution/:id/deliver",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/accessibility-execution/:id/nota-fiscal",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/accessibility-execution/:id/payment-receipt",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/accessibility-execution/:id/validate",
+      "file": "museus-backend/src/routes/accessibility-execution.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/achievements/:id",
+      "file": "museus-backend/src/domains/experience/achievements.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/analytics/municipal-pwa/settings",
+      "file": "museus-backend/src/domains/governance/analytics.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/badges/:id/status",
+      "file": "museus-backend/src/domains/experience/badgeRoutes.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/bookings/:id",
+      "file": "museus-backend/src/domains/commerce/bookings.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/categories/:id",
+      "file": "museus-backend/src/routes/categories.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/certificate-rules/:id",
+      "file": "museus-backend/src/domains/trust-safety/certificate-rules.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/certificate-templates/:id",
+      "file": "museus-backend/src/domains/trust-safety/certificate-templates.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/characters/:id",
+      "file": "museus-backend/src/routes/characters.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/clues/:id",
+      "file": "museus-backend/src/domains/experience/clues.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/community/:id/status",
+      "file": "museus-backend/src/routes/community.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/coupons/:id/toggle",
+      "file": "museus-backend/src/domains/commerce/coupons.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/curator-notes/:id",
+      "file": "museus-backend/src/domains/cultural/curator-notes.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/equipamentos/:id",
+      "file": "museus-backend/src/domains/cultural/equipamentos.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/events/:id",
+      "file": "museus-backend/src/domains/cultural/events.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/financial/categories/:id",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/financial/cost-centers/:id",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/financial/payables/:id",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/financial/payables/:id/baixa",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/financial/receivables/:id",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/financial/receivables/:id/baixa",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/financial/settings/financial",
+      "file": "museus-backend/src/domains/infrastructure/financial.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/floor-plans/:id",
+      "file": "museus-backend/src/domains/cultural/floorPlans.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/heritage/:id",
+      "file": "museus-backend/src/domains/cultural/heritage.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/in-person-services/:id",
+      "file": "museus-backend/src/domains/commerce/in-person-services.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/notices/:id",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/notices/:id/publish",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/notices/:id/publish-results",
+      "file": "museus-backend/src/routes/notices.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/plans/:id",
+      "file": "museus-backend/src/domains/governance/plans.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/platform/settings/financial",
+      "file": "museus-backend/src/routes/platform.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/privacy/requests/:id",
+      "file": "museus-backend/src/routes/privacy.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/projects/:id",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/projects/:id/accountability/:accountabilityId/review",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/projects/:id/appeals/:appealId",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/projects/:id/status",
+      "file": "museus-backend/src/routes/projects.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/providers/:id",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/providers/:id/verify",
+      "file": "museus-backend/src/routes/providers.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/roadmap-family/submissions/:id",
+      "file": "museus-backend/src/domains/governance/roadmap-family.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/roteiro/:tenantSlug/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/roteiros/:tenantSlug/providers/:id",
+      "file": "museus-backend/src/domains/cultural/roteiro.routes.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/rpg/customize",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/rpg/equip-skin",
+      "file": "museus-backend/src/domains/experience/rpg.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/scanner/models/:tenantId",
+      "file": "museus-backend/src/routes/scanner.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/shop/products/:id",
+      "file": "museus-backend/src/domains/commerce/shop.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/skins/:id",
+      "file": "museus-backend/src/domains/experience/skins.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/spaces/:id",
+      "file": "museus-backend/src/domains/cultural/spaces.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/tenants/:id",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/tenants/:id/settings",
+      "file": "museus-backend/src/domains/governance/tenants.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/tickets/:id",
+      "file": "museus-backend/src/domains/commerce/tickets.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/trails/:id",
+      "file": "museus-backend/src/domains/cultural/trails.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/users/:id",
+      "file": "museus-backend/src/routes/users.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/users/me/password",
+      "file": "museus-backend/src/routes/users.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/users/me/settings",
+      "file": "museus-backend/src/routes/users.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/visitors/me",
+      "file": "museus-backend/src/routes/visitors.ts"
+    },
+    {
+      "method": "PUT",
+      "path": "/works/:id",
+      "file": "museus-backend/src/domains/cultural/works.ts"
+    }
+  ],
+  "unmatched": []
+}

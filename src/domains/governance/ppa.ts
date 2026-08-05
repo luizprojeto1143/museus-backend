@@ -79,7 +79,9 @@ router.delete('/:id', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (r
 router.get('/consolidated', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const user = req.user!;
-        const parentId = (req.query.tenantId as string) || user.tenantId;
+        const parentId = user.role === 'MASTER'
+            ? ((req.query.tenantId as string) || user.tenantId)
+            : user.tenantId;
         const year = parseInt(req.query.year as string) || new Date().getFullYear();
 
         if (!parentId) return res.status(400).json({ message: 'tenantId (parentId) obrigatório' });

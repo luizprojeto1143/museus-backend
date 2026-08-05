@@ -1,4 +1,3 @@
-// @ts-nocheck
 import request from 'supertest';
 import { app } from '../../index.js';
 import { prisma } from '../../prisma.js';
@@ -71,6 +70,12 @@ describe('Critical Flows Integration Tests', () => {
 
     afterAll(async () => {
         // Clean up test data
+        await prisma.visitor.deleteMany({
+            where: {
+                email: { in: ['user1@tenant1.com', 'visitor2@example.com'] },
+                tenantId: { in: [tenant1Id, tenant2Id] }
+            }
+        });
         await prisma.user.deleteMany({
             where: { email: { in: ['user1@tenant1.com', 'user2@tenant2.com'] } }
         });
@@ -112,8 +117,17 @@ describe('Critical Flows Integration Tests', () => {
 
         it('should allow a user to retrieve their own visitor summary', async () => {
             // Create visitor for user 1 email
-            const visitor = await prisma.visitor.create({
-                data: {
+            const visitor = await prisma.visitor.upsert({
+                where: {
+                    email_tenantId: {
+                        email: 'user1@tenant1.com',
+                        tenantId: tenant1Id
+                    }
+                },
+                update: {
+                    name: 'Visitor 1'
+                },
+                create: {
                     tenantId: tenant1Id,
                     name: 'Visitor 1',
                     email: 'user1@tenant1.com'
@@ -260,7 +274,7 @@ describe('Critical Flows Integration Tests', () => {
                 id: eventId,
                 type: 'payment_intent.created',
                 data: { object: { id: 'sess_stale_lock_test', metadata: {} } }
-            });
+            } as any);
 
             // Call the route using supertest
             const res = await request(app)

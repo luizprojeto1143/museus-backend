@@ -27,8 +27,15 @@ router.get('/events', async (req, res) => {
 // ADMIN: POST /timeline — Create timeline event
 router.post('/events', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const { spaceId, year, title, description, imageUrl, people } = req.body;
-        const tenantId = req.user!.tenantId!;
+        const { spaceId, year, title, description, imageUrl, people, tenantId: requestedTenantId } = req.body;
+        const tenantId = req.user!.role === 'MASTER' ? requestedTenantId : req.user!.tenantId!;
+        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatorio' });
+
+        const space = await prisma.space.findFirst({
+            where: { id: spaceId, tenantId },
+            select: { id: true }
+        });
+        if (!space) return res.status(404).json({ message: 'Espaco nao encontrado neste tenant' });
 
         const event = await prisma.timelineEvent.create({
             data: {

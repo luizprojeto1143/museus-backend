@@ -1,19 +1,23 @@
 import { Router } from "express";
+import { Role } from "@prisma/client";
 import { prisma } from "../../prisma.js";
 import { authMiddleware, requireRole } from "../../middleware/auth.js";
-import { Role } from "@prisma/client";
 
 const router = Router();
 
-// GET /vestige-alerts - Listar alertas de um tenant
+function targetTenant(req: any, requestedTenantId?: string) {
+  return req.user!.role === Role.MASTER ? requestedTenantId : req.user!.tenantId;
+}
+
+// GET /vestige-alerts - List alerts for a tenant
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const { tenantId } = req.query;
-    if (!tenantId) return res.status(400).json({ message: "tenantId é obrigatório" });
+    const tenantId = targetTenant(req, req.query.tenantId as string | undefined);
+    if (!tenantId) return res.status(400).json({ message: "tenantId obrigatorio" });
 
     const alerts = await (prisma as any).vestigeAlert.findMany({
-      where: { 
-        tenantId: tenantId as string,
+      where: {
+        tenantId,
         OR: [
           { expiresAt: null },
           { expiresAt: { gte: new Date() } }
@@ -29,11 +33,13 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /vestige-alerts - Criar alerta (Admin only)
+// POST /vestige-alerts - Create alert
 router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
-    const { tenantId, titulo, mensagem, tipo, link, expiresAt } = req.body;
-    
+    const { tenantId: requestedTenantId, titulo, mensagem, tipo, link, expiresAt } = req.body;
+    const tenantId = targetTenant(req, requestedTenantId);
+    if (!tenantId) return res.status(400).json({ message: "tenantId obrigatorio" });
+
     const alert = await (prisma as any).vestigeAlert.create({
       data: {
         tenantId,

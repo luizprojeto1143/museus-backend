@@ -46,8 +46,35 @@ router.get("/public", limiter, async (req, res) => {
     return res.status(500).json({ 
       message: "Erro ao listar museus. Por favor, verifique o status do banco de dados.",
       error: err instanceof Error ? err.message : String(err),
-      code: (err as any)?.code || "UNKNOWN_ERROR"
     });
+  }
+});
+
+// GET /list/options - Retorna lista simplificada de tenants ativos para dropdowns administrativos
+router.get("/list/options", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
+  try {
+    const user = req.user!;
+    const tenants = await prisma.tenant.findMany({
+      where: user.role === Role.MASTER
+        ? { deletedAt: null }
+        : {
+            deletedAt: null,
+            OR: [
+              { id: user.tenantId as string },
+              { parentId: user.tenantId as string }
+            ]
+          },
+      select: {
+        id: true,
+        name: true,
+        slug: true
+      },
+      orderBy: { name: "asc" }
+    });
+    return res.json(tenants);
+  } catch (err) {
+    console.error("Erro ao listar opções de tenants:", err);
+    return res.status(500).json({ message: "Erro ao buscar opções de museus" });
   }
 });
 

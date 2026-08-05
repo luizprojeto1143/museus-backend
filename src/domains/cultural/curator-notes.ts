@@ -10,7 +10,8 @@ const noteSchema = z.object({
     content: z.string().min(1),
     author: z.string().optional(),
     pinned: z.boolean().default(false),
-    workId: z.string()
+    workId: z.string(),
+    tenantId: z.string().optional()
 });
 
 // GET /curator-notes?workId=xxx — Get notes for a work (public)
@@ -25,6 +26,7 @@ router.get('/', async (req, res) => {
         const notes = await prisma.curatorNote.findMany({
             where: {
                 workId: workId as string,
+                work: { deletedAt: null, published: true },
                 ...(tenantId ? { tenantId: tenantId as string } : {})
             },
             orderBy: [
@@ -70,7 +72,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
     try {
         const user = req.user!;
         const data = noteSchema.parse(req.body);
-        const tenantId = user.tenantId;
+        const tenantId = user.role === 'MASTER' ? data.tenantId : user.tenantId;
 
         if (!tenantId) {
             return res.status(400).json({ message: 'tenantId obrigatório' });
@@ -78,7 +80,7 @@ router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, r
 
         // Verify work belongs to tenant
         const work = await prisma.work.findFirst({
-            where: { id: data.workId, tenantId }
+            where: { id: data.workId, tenantId, deletedAt: null }
         });
 
         if (!work) {

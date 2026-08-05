@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+﻿import { Router, Request, Response } from 'express';
 import { prisma } from '../prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { Role, Prisma } from '@prisma/client';
@@ -8,23 +8,25 @@ import crypto from 'crypto';
 
 const router = Router();
 
-// Helper to resolve a valid tenant ID to avoid foreign key violations in AuditLog
-async function getValidTenantId(email: string | null, userTenantId?: string | null): Promise<string> {
-    if (userTenantId) return userTenantId;
+// Helper to resolve a valid tenant ID without assigning requests to the wrong city.
+async function getValidTenantId(email: string | null, requestedTenantId?: string | null): Promise<string | null> {
+    if (requestedTenantId) {
+        const tenant = await prisma.tenant.findUnique({ where: { id: requestedTenantId }, select: { id: true } });
+        if (tenant) return tenant.id;
+    }
     if (email) {
         const user = await prisma.user.findFirst({ where: { email } });
         const visitor = await prisma.visitor.findFirst({ where: { email } });
         const tId = user?.tenantId || visitor?.tenantId;
         if (tId) return tId;
     }
-    const firstTenant = await prisma.tenant.findFirst();
-    return firstTenant?.id || '';
+    return null;
 }
 
 // 1. POST /privacy/request - Titular de dados solicita direitos LGPD (Público)
 router.post('/request', async (req: Request, res: Response) => {
     try {
-        const { name, email, requestType, details } = req.body;
+        const { name, email, requestType, details, tenantId } = req.body;
 
         if (!name || !email || !requestType) {
             return res.status(400).json({ message: 'Nome, e-mail e tipo de solicitação são obrigatórios' });
@@ -35,7 +37,7 @@ router.post('/request', async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Tipo de solicitação inválido' });
         }
 
-        const targetTenantId = await getValidTenantId(email);
+        const targetTenantId = await getValidTenantId(email, tenantId);
 
         // Criar registro de contato especial (LGPD_REQUEST)
         const lgpdRequest = await prisma.contactRequest.create({
@@ -52,18 +54,20 @@ router.post('/request', async (req: Request, res: Response) => {
             }
         });
 
-        // Registrar no log de auditoria
-        await createAuditLog(
-            'LGPD_REQUEST_CREATED',
-            'PRIVACY',
-            lgpdRequest.id,
-            null,
-            email,
-            targetTenantId,
-            null,
-            { requestType, name },
-            req
-        );
+        // Registrar no log de auditoria apenas quando houver tenant real vinculado.
+        if (targetTenantId) {
+            await createAuditLog(
+                'LGPD_REQUEST_CREATED',
+                'PRIVACY',
+                lgpdRequest.id,
+                null,
+                email,
+                targetTenantId,
+                null,
+                { requestType, name },
+                req
+            );
+        }
 
         return res.status(201).json({
             message: 'Solicitação de privacidade registrada com sucesso. O comitê de privacidade (DPO) analisará seu pedido em até 15 dias.',
@@ -88,6 +92,10 @@ router.post('/consent', authMiddleware, async (req: Request, res: Response) => {
         const targetTenantId = await getValidTenantId(user.email, user.tenantId);
 
         // Registra o consentimento no log de auditoria oficial (imutável e rastreável)
+        if (!targetTenantId) {
+            return res.status(400).json({ message: 'Tenant nao identificado para registrar consentimento' });
+        }
+
         await createAuditLog(
             accepted ? 'PRIVACY_CONSENT_ACCEPTED' : 'PRIVACY_CONSENT_REJECTED',
             'PRIVACY',
@@ -143,11 +151,11 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         }
 
         // Se for admin comum, valida se pertence ao mesmo tenant (se houver tenantId)
-        if (user.role !== Role.MASTER && record.tenantId && record.tenantId !== user.tenantId) {
+        if (user.role !== Role.MASTER && record.tenantId !== user.tenantId) {
             return res.status(403).json({ message: 'Sem permissão para alterar esta solicitação' });
         }
 
-        const targetTenantId = await getValidTenantId(record.email, user.tenantId || record.tenantId);
+        const targetTenantId = await getValidTenantId(record.email, record.tenantId || (user.role === Role.MASTER ? null : user.tenantId));
 
         const payload = JSON.parse(record.message);
         const { requestType } = payload;
@@ -155,9 +163,15 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
         // Se a solicitação foi concluída (COMPLETED) e requer exclusão ou anonimização de dados
         if (status === 'COMPLETED' && (requestType === 'DELETE_DATA' || requestType === 'ANONIMIZE_DATA')) {
             const targetEmail = record.email;
+            const userWhere: Prisma.UserWhereInput = { email: targetEmail };
+            const visitorWhere: Prisma.VisitorWhereInput = { email: targetEmail };
+            if (targetTenantId) {
+                userWhere.tenantId = targetTenantId;
+                visitorWhere.tenantId = targetTenantId;
+            }
 
              // 1. Anonimiza usuários com este e-mail no banco e revoga sessões
-             const dbUsers = await prisma.user.findMany({ where: { email: targetEmail } });
+             const dbUsers = await prisma.user.findMany({ where: userWhere });
              const userIds = dbUsers.map(u => u.id);
              if (userIds.length > 0) {
                  await prisma.refreshToken.deleteMany({ where: { userId: { in: userIds } } });
@@ -181,21 +195,23 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
                      }
                  });
                 
-                await createAuditLog(
-                    'LGPD_USER_DATA_ANONIMIZED',
-                    'USER',
-                    u.id,
-                    user.id,
-                    user.email,
-                    uTenantId,
-                    { email: u.email },
-                    { email: `anon-${u.id}@lgpd` },
-                    req
-                );
+                if (uTenantId) {
+                    await createAuditLog(
+                        'LGPD_USER_DATA_ANONIMIZED',
+                        'USER',
+                        u.id,
+                        user.id,
+                        user.email,
+                        uTenantId,
+                        { email: u.email },
+                        { email: `anon-${u.id}@lgpd` },
+                        req
+                    );
+                }
             }
 
             // 2. Anonimiza visitantes com este e-mail
-            const dbVisitors = await prisma.visitor.findMany({ where: { email: targetEmail } });
+            const dbVisitors = await prisma.visitor.findMany({ where: visitorWhere });
             for (const v of dbVisitors) {
                 const vTenantId = v.tenantId || targetTenantId;
                 await prisma.visitor.update({
@@ -206,17 +222,19 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
                     }
                 });
 
-                await createAuditLog(
-                    'LGPD_VISITOR_DATA_ANONIMIZED',
-                    'VISITOR',
-                    v.id,
-                    user.id,
-                    user.email,
-                    vTenantId,
-                    { email: v.email },
-                    { email: `anon-visitor-${v.id}@lgpd` },
-                    req
-                );
+                if (vTenantId) {
+                    await createAuditLog(
+                        'LGPD_VISITOR_DATA_ANONIMIZED',
+                        'VISITOR',
+                        v.id,
+                        user.id,
+                        user.email,
+                        vTenantId,
+                        { email: v.email },
+                        { email: `anon-visitor-${v.id}@lgpd` },
+                        req
+                    );
+                }
             }
         }
 
@@ -225,17 +243,19 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
             data: { status }
         });
 
-        await createAuditLog(
-            'LGPD_REQUEST_RESOLVED',
-            'PRIVACY',
-            id,
-            user.id,
-            user.email,
-            targetTenantId,
-            { oldStatus: record.status },
-            { newStatus: status },
-            req
-        );
+        if (targetTenantId) {
+            await createAuditLog(
+                'LGPD_REQUEST_RESOLVED',
+                'PRIVACY',
+                id,
+                user.id,
+                user.email,
+                targetTenantId,
+                { oldStatus: record.status },
+                { newStatus: status },
+                req
+            );
+        }
 
         res.json(updatedRequest);
     } catch (err) {
@@ -245,3 +265,6 @@ router.put('/requests/:id', authMiddleware, requireRole([Role.ADMIN, Role.MASTER
 });
 
 export default router;
+
+
+

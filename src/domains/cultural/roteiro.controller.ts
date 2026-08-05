@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from '../../prisma.js';
+import { ServiceProviderType } from "@prisma/client";
 
 export class RoteiroController {
   // 1. Listar roteiros do Tenant (Cidade/Destino)
@@ -134,6 +135,136 @@ export class RoteiroController {
       return res.json(providers);
     } catch (error) {
       console.error("Erro ao buscar parceiros:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  async getServiceProvidersAdmin(req: Request, res: Response) {
+    try {
+      const { tenantSlug } = req.params;
+      const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+      if (!tenant) return res.status(404).json({ error: "Destino nao encontrado" });
+
+      const providers = await prisma.serviceProvider.findMany({
+        where: { tenantId: tenant.id },
+        orderBy: { name: "asc" },
+        include: {
+          providerProducts: true,
+          providerReviews: true,
+        },
+      });
+
+      return res.json(providers);
+    } catch (error) {
+      console.error("Erro ao buscar parceiros admin:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  async getServiceProviderAdmin(req: Request, res: Response) {
+    try {
+      const { tenantSlug, id } = req.params;
+      const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+      if (!tenant) return res.status(404).json({ error: "Destino nao encontrado" });
+
+      const provider = await prisma.serviceProvider.findFirst({
+        where: { id, tenantId: tenant.id },
+        include: {
+          providerProducts: true,
+          providerReviews: true,
+        },
+      });
+
+      if (!provider) return res.status(404).json({ error: "Parceiro nao encontrado" });
+      return res.json(provider);
+    } catch (error) {
+      console.error("Erro ao buscar parceiro admin:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  async createServiceProvider(req: Request, res: Response) {
+    try {
+      const { tenantSlug } = req.params;
+      const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+      if (!tenant) return res.status(404).json({ error: "Destino nao encontrado" });
+
+      const provider = await prisma.serviceProvider.create({
+        data: {
+          tenantId: tenant.id,
+          type: (req.body.type || ServiceProviderType.TOUR_GUIDE) as ServiceProviderType,
+          name: req.body.name,
+          description: req.body.description || null,
+          phone: req.body.phone || null,
+          email: req.body.email || null,
+          website: req.body.website || null,
+          address: req.body.address || null,
+          latitude: req.body.latitude !== undefined ? Number(req.body.latitude) : null,
+          longitude: req.body.longitude !== undefined ? Number(req.body.longitude) : null,
+          feePercentage: req.body.feePercentage !== undefined ? Number(req.body.feePercentage) : 10,
+          active: req.body.active ?? true,
+          verified: req.body.verified ?? false,
+          coverUrl: req.body.coverUrl || null,
+          galleryUrls: Array.isArray(req.body.galleryUrls) ? req.body.galleryUrls : [],
+        },
+      });
+
+      return res.status(201).json(provider);
+    } catch (error) {
+      console.error("Erro ao criar parceiro:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  async updateServiceProvider(req: Request, res: Response) {
+    try {
+      const { tenantSlug, id } = req.params;
+      const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+      if (!tenant) return res.status(404).json({ error: "Destino nao encontrado" });
+
+      const existing = await prisma.serviceProvider.findFirst({ where: { id, tenantId: tenant.id } });
+      if (!existing) return res.status(404).json({ error: "Parceiro nao encontrado" });
+
+      const provider = await prisma.serviceProvider.update({
+        where: { id },
+        data: {
+          ...(req.body.type !== undefined ? { type: req.body.type as ServiceProviderType } : {}),
+          ...(req.body.name !== undefined ? { name: req.body.name } : {}),
+          ...(req.body.description !== undefined ? { description: req.body.description || null } : {}),
+          ...(req.body.phone !== undefined ? { phone: req.body.phone || null } : {}),
+          ...(req.body.email !== undefined ? { email: req.body.email || null } : {}),
+          ...(req.body.website !== undefined ? { website: req.body.website || null } : {}),
+          ...(req.body.address !== undefined ? { address: req.body.address || null } : {}),
+          ...(req.body.latitude !== undefined ? { latitude: Number(req.body.latitude) } : {}),
+          ...(req.body.longitude !== undefined ? { longitude: Number(req.body.longitude) } : {}),
+          ...(req.body.feePercentage !== undefined ? { feePercentage: Number(req.body.feePercentage) } : {}),
+          ...(req.body.active !== undefined ? { active: Boolean(req.body.active) } : {}),
+          ...(req.body.verified !== undefined ? { verified: Boolean(req.body.verified) } : {}),
+          ...(req.body.coverUrl !== undefined ? { coverUrl: req.body.coverUrl || null } : {}),
+          ...(Array.isArray(req.body.galleryUrls) ? { galleryUrls: req.body.galleryUrls } : {}),
+        },
+      });
+
+      return res.json(provider);
+    } catch (error) {
+      console.error("Erro ao atualizar parceiro:", error);
+      return res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  async deleteServiceProvider(req: Request, res: Response) {
+    try {
+      const { tenantSlug, id } = req.params;
+      const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
+      if (!tenant) return res.status(404).json({ error: "Destino nao encontrado" });
+
+      const existing = await prisma.serviceProvider.findFirst({ where: { id, tenantId: tenant.id } });
+      if (!existing) return res.status(404).json({ error: "Parceiro nao encontrado" });
+
+      await prisma.serviceProvider.delete({ where: { id } });
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Erro ao excluir parceiro:", error);
       return res.status(500).json({ error: "Erro interno do servidor" });
     }
   }

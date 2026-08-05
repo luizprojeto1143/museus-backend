@@ -53,7 +53,7 @@ router.post("/", requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
         const { riddle, answer, order, workId, active } = req.body;
         const user = req.user!;
-        const tenantId = user.tenantId || req.body.tenantId;
+        const tenantId = user.role === Role.MASTER ? (req.body.tenantId as string | undefined) : user.tenantId;
 
         if (!tenantId) {
             return res.status(400).json({ message: "Tenant ID obrigatório" });
@@ -61,6 +61,11 @@ router.post("/", requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
 
         if (!riddle || !answer) {
             return res.status(400).json({ message: "Charada e Resposta são obrigatórios" });
+        }
+
+        if (workId) {
+            const work = await prisma.work.findFirst({ where: { id: workId, tenantId, deletedAt: null } });
+            if (!work) return res.status(404).json({ message: "Obra nao encontrada neste tenant" });
         }
 
         const clue = await prisma.clue.create({
@@ -94,6 +99,11 @@ router.put("/:id", requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
         // Master pode editar de qualquer um, Admin só do seu
         if (req.user?.role !== Role.MASTER && existing.tenantId !== req.user?.tenantId) {
             return res.status(403).json({ message: "Acesso negado" });
+        }
+
+        if (workId) {
+            const work = await prisma.work.findFirst({ where: { id: workId, tenantId: existing.tenantId, deletedAt: null } });
+            if (!work) return res.status(404).json({ message: "Obra nao encontrada neste tenant" });
         }
 
         const updated = await prisma.clue.update({

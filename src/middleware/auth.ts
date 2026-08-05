@@ -5,8 +5,9 @@ import { prisma } from "../prisma.js";
 
 // SECURITY: JWT_SECRET must be set in production. In dev, we warn if missing.
 if (!process.env.JWT_SECRET) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error("FATAL: JWT_SECRET environment variable is not set in production!");
+  const appEnv = process.env.APP_ENV?.toLowerCase();
+  if (process.env.NODE_ENV === 'production' || appEnv === "production" || appEnv === "homologation") {
+    throw new Error("FATAL: JWT_SECRET environment variable is not set in production/homologation!");
   } else {
     console.warn("WARNING: JWT_SECRET not set. Using temporary unsafe secret for development.");
   }
@@ -17,6 +18,7 @@ interface JwtPayload {
   sub: string;
   role: Role;
   tenantId: string;
+  type?: string | null;
   email: string;
   name?: string;
   permissions?: any;
@@ -63,6 +65,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       id: payload.sub,
       role: payload.role,
       tenantId: payload.tenantId,
+      type: payload.type,
       email: payload.email,
       name: payload.name,
       permissions: payload.permissions

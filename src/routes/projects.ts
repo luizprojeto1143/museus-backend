@@ -4,8 +4,137 @@ import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role } from "@prisma/client";
 import { z } from "zod";
 import { analyzeProjectWithAI } from "../services/projectAnalysis.js";
+import { createAuditLog } from "../services/audit.service.js";
+import { mailService } from "../services/email.js";
+import PDFDocument from "pdfkit";
 
 const router = Router();
+
+async function resolveProjectTenant(
+    user: { role: Role; tenantId?: string | null } | undefined,
+    bodyTenantId: string,
+    noticeId?: string
+) {
+    if (!user) return null;
+    if (user.role === Role.MASTER) return bodyTenantId;
+    if (user.tenantId) return user.tenantId;
+
+    if (noticeId) {
+        const notice = await prisma.publicNotice.findUnique({
+            where: { id: noticeId },
+            select: { tenantId: true }
+        });
+        return notice?.tenantId || null;
+    }
+
+    return null;
+}
+
+async function getProjectOr404(id: string) {
+    return prisma.culturalProject.findUnique({
+        where: { id },
+        include: {
+            publicNotice: { select: { id: true, title: true, status: true } },
+            tenant: { select: { id: true, name: true } },
+            user: { select: { id: true, name: true, email: true } }
+        }
+    });
+}
+
+function canAccessProjectWorkflow(
+    project: { proponentId: string; tenantId: string },
+    user: { id: string; role: Role; tenantId?: string | null }
+) {
+    return project.proponentId === user.id
+        || user.role === Role.MASTER
+        || ((user.role === Role.ADMIN || user.role === Role.COLLABORATOR) && project.tenantId === user.tenantId);
+}
+
+function canAdminProjectWorkflow(
+    project: { tenantId: string },
+    user: { role: Role; tenantId?: string | null }
+) {
+    return user.role === Role.MASTER
+        || ((user.role === Role.ADMIN || user.role === Role.COLLABORATOR) && project.tenantId === user.tenantId);
+}
+
+function getActorIp(req: any) {
+    return String(req.ip || req.headers["x-forwarded-for"] || "");
+}
+
+function getActorAgent(req: any) {
+    return typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : undefined;
+}
+
+function publicApiBase(req: any) {
+    return process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`;
+}
+
+async function notifyProjectProponent(project: { user?: { email?: string | null; name?: string | null } | null; title: string }, subject: string, body: string) {
+    const email = project.user?.email;
+    if (!email) return;
+    await mailService.sendGenericEmail(email, subject, `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #1f2937;">
+            <h2 style="color:#111827;">${subject}</h2>
+            <p>Olá${project.user?.name ? `, ${project.user.name}` : ""}.</p>
+            <p>${body}</p>
+            <p><strong>Projeto:</strong> ${project.title}</p>
+            <p style="color:#6b7280; font-size:12px;">Mensagem automática do Cultura Viva.</p>
+        </div>
+    `);
+}
+
+function streamProjectTermPdf(res: any, term: any, project: any) {
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="termo-${term.id}.pdf"`);
+    doc.pipe(res);
+
+    doc.font("Helvetica-Bold").fontSize(18).text(term.title || "Termo de Execução Cultural", { align: "center" });
+    doc.moveDown();
+    doc.font("Helvetica").fontSize(11).text(`Projeto: ${project.title}`);
+    doc.text(`Proponente: ${project.user?.name || "Não informado"}`);
+    doc.text(`Município/tenant: ${project.tenant?.name || project.tenantId}`);
+    doc.text(`Status do termo: ${term.status}`);
+    if (term.signedAt) doc.text(`Assinado em: ${new Date(term.signedAt).toLocaleString("pt-BR")}`);
+    doc.moveDown();
+    doc.font("Helvetica-Bold").text("Cláusulas e condições");
+    doc.moveDown(0.5);
+    doc.font("Helvetica").fontSize(11).text(term.termsText || "", { align: "justify" });
+    doc.moveDown();
+    doc.fontSize(9).fillColor("#555").text(`Documento gerado automaticamente pelo Cultura Viva. ID do termo: ${term.id}`);
+    doc.end();
+}
+
+function streamProjectAccountabilityPdf(res: any, accountability: any, project: any) {
+    const doc = new PDFDocument({ margin: 50 });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="prestacao-contas-${accountability.id}.pdf"`);
+    doc.pipe(res);
+
+    doc.font("Helvetica-Bold").fontSize(18).text("Prestação de Contas do Projeto", { align: "center" });
+    doc.moveDown();
+    doc.font("Helvetica").fontSize(11).text(`Projeto: ${project.title}`);
+    doc.text(`Proponente: ${project.user?.name || "Não informado"}`);
+    doc.text(`Município/tenant: ${project.tenant?.name || project.tenantId}`);
+    doc.text(`Status: ${accountability.status}`);
+    if (accountability.submittedAt) doc.text(`Enviada em: ${new Date(accountability.submittedAt).toLocaleString("pt-BR")}`);
+    if (accountability.reviewedAt) doc.text(`Revisada em: ${new Date(accountability.reviewedAt).toLocaleString("pt-BR")}`);
+    doc.moveDown();
+    doc.font("Helvetica-Bold").text("Resumo da execução");
+    doc.font("Helvetica").text(accountability.executionSummary || "Não informado.", { align: "justify" });
+    doc.moveDown();
+    doc.text(`Público alcançado: ${accountability.audienceReached ?? "Não informado"}`);
+    doc.text(`Valor executado: R$ ${Number(accountability.amountSpent || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+    if (accountability.reviewNotes) {
+        doc.moveDown();
+        doc.font("Helvetica-Bold").text("Parecer da gestão");
+        doc.font("Helvetica").text(accountability.reviewNotes, { align: "justify" });
+    }
+    doc.moveDown();
+    doc.fontSize(9).fillColor("#555").text(`Documento gerado automaticamente pelo Cultura Viva. ID da prestação: ${accountability.id}`);
+    doc.end();
+}
 
 // ========== ADMIN/SECRETARIA ENDPOINTS ==========
 
@@ -131,19 +260,27 @@ const createProjectSchema = z.object({
     proposalUrl: z.string().optional(),
     accessibilityPlan: z.any().optional(),
     noticeId: z.string().optional(),
-    tenantId: z.string()
+    tenantId: z.string().optional()
 });
 
 router.post("/", authMiddleware, async (req, res) => {
     try {
         const user = req.user!;
         const data = createProjectSchema.parse(req.body);
+        const targetTenantId = await resolveProjectTenant(user, data.tenantId || "", data.noticeId);
+        if (!targetTenantId) {
+            return res.status(400).json({ message: "tenantId e obrigatorio" });
+        }
 
         // Verificar se tenant tem feature habilitada
         const tenant = await prisma.tenant.findUnique({
-            where: { id: data.tenantId },
+            where: { id: targetTenantId },
             select: { featureProjects: true, featureEditaisSubmission: true }
         });
+
+        if (!tenant) {
+            return res.status(404).json({ message: "Tenant nao encontrado" });
+        }
 
         if (!tenant?.featureProjects && user.role !== Role.MASTER) {
             return res.status(403).json({ message: "Módulo de projetos não habilitado" });
@@ -160,6 +297,9 @@ router.post("/", authMiddleware, async (req, res) => {
             const notice = await prisma.publicNotice.findUnique({ where: { id: data.noticeId } });
             if (!notice) {
                 return res.status(404).json({ message: "Edital não encontrado" });
+            }
+            if (notice.tenantId !== targetTenantId) {
+                return res.status(403).json({ message: "Edital nao pertence ao tenant do projeto" });
             }
             if (notice.status !== "INSCRIPTIONS_OPEN") {
                 return res.status(400).json({ message: "Edital não está com inscrições abertas" });
@@ -183,7 +323,7 @@ router.post("/", authMiddleware, async (req, res) => {
                 accessibilityPlan: data.accessibilityPlan,
                 noticeId: data.noticeId,
                 proponentId: user.id,
-                tenantId: data.tenantId,
+                tenantId: targetTenantId,
                 status: "DRAFT"
             }
         });
@@ -404,6 +544,479 @@ router.put("/:id/status", authMiddleware, requireRole([Role.ADMIN, Role.MASTER])
     }
 });
 
+// Ciclo institucional do edital: recursos, termos e prestação de contas
+router.get("/:id/workflow", authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (!canAccessProjectWorkflow(project, user)) return res.status(403).json({ message: "Sem permissão" });
+
+        const [appeals, terms, accountabilities] = await Promise.all([
+            prisma.projectAppeal.findMany({
+                where: { projectId: id },
+                orderBy: { createdAt: "desc" }
+            }),
+            prisma.projectTerm.findMany({
+                where: { projectId: id },
+                orderBy: { createdAt: "desc" }
+            }),
+            prisma.projectAccountability.findMany({
+                where: { projectId: id },
+                orderBy: { createdAt: "desc" }
+            })
+        ]);
+
+        return res.json({ project, appeals, terms, accountabilities });
+    } catch (err) {
+        console.error("Erro ao buscar workflow do projeto", err);
+        return res.status(500).json({ message: "Erro ao buscar ciclo do projeto" });
+    }
+});
+
+const createAppealSchema = z.object({
+    reason: z.string().min(10),
+    requestedAdjustment: z.string().optional()
+});
+
+router.post("/:id/appeals", authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        const data = createAppealSchema.parse(req.body);
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (project.proponentId !== user.id && user.role !== Role.MASTER) {
+            return res.status(403).json({ message: "Apenas o proponente pode abrir recurso" });
+        }
+        if (!["UNDER_REVIEW", "APPROVED", "REJECTED"].includes(project.status)) {
+            return res.status(400).json({ message: "Recurso só pode ser aberto após avaliação preliminar" });
+        }
+
+        const appeal = await prisma.projectAppeal.create({
+            data: {
+                projectId: project.id,
+                noticeId: project.noticeId,
+                tenantId: project.tenantId,
+                proponentId: project.proponentId,
+                reason: data.reason,
+                requestedAdjustment: data.requestedAdjustment
+            }
+        });
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectAppeal",
+            entityId: appeal.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: "PROJECT_APPEAL_SUBMITTED", projectId: project.id, noticeId: project.noticeId }
+        });
+
+        return res.status(201).json(appeal);
+    } catch (err) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        console.error("Erro ao criar recurso", err);
+        return res.status(500).json({ message: "Erro ao criar recurso" });
+    }
+});
+
+const reviewAppealSchema = z.object({
+    status: z.enum(["UNDER_REVIEW", "ACCEPTED", "REJECTED", "PARTIALLY_ACCEPTED"]),
+    response: z.string().min(3)
+});
+
+router.put("/:id/appeals/:appealId", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
+    try {
+        const { id, appealId } = req.params;
+        const user = req.user!;
+        const data = reviewAppealSchema.parse(req.body);
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (!canAdminProjectWorkflow(project, user)) return res.status(403).json({ message: "Sem permissão" });
+
+        const appeal = await prisma.projectAppeal.findFirst({ where: { id: appealId, projectId: id } });
+        if (!appeal) return res.status(404).json({ message: "Recurso não encontrado" });
+
+        const updated = await prisma.projectAppeal.update({
+            where: { id: appealId },
+            data: {
+                status: data.status,
+                response: data.response,
+                reviewedBy: user.id,
+                reviewedAt: new Date()
+            }
+        });
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectAppeal",
+            entityId: updated.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: "PROJECT_APPEAL_REVIEWED", projectId: project.id, status: data.status }
+        });
+        await notifyProjectProponent(project, "Recurso analisado", `Seu recurso foi analisado com o status: <strong>${data.status}</strong>.`);
+
+        return res.json(updated);
+    } catch (err) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        console.error("Erro ao avaliar recurso", err);
+        return res.status(500).json({ message: "Erro ao avaliar recurso" });
+    }
+});
+
+const counterAppealSchema = z.object({
+    counterResponse: z.string().min(10)
+});
+
+router.post("/:id/appeals/:appealId/counter", authMiddleware, async (req, res) => {
+    try {
+        const { id, appealId } = req.params;
+        const user = req.user!;
+        const data = counterAppealSchema.parse(req.body);
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (project.proponentId !== user.id && user.role !== Role.MASTER) {
+            return res.status(403).json({ message: "Apenas o proponente pode enviar contrarrazão" });
+        }
+
+        const appeal = await prisma.projectAppeal.findFirst({ where: { id: appealId, projectId: id } });
+        if (!appeal) return res.status(404).json({ message: "Recurso não encontrado" });
+
+        const updated = await prisma.projectAppeal.update({
+            where: { id: appealId },
+            data: {
+                type: "COUNTER_ARGUMENT",
+                counterResponse: data.counterResponse
+            }
+        });
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectAppeal",
+            entityId: updated.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: "PROJECT_APPEAL_COUNTER_ARGUMENT_SUBMITTED", projectId: project.id }
+        });
+
+        return res.json(updated);
+    } catch (err) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        console.error("Erro ao enviar contrarrazão", err);
+        return res.status(500).json({ message: "Erro ao enviar contrarrazão" });
+    }
+});
+
+const createTermSchema = z.object({
+    title: z.string().min(3),
+    termsText: z.string().min(20),
+    documentUrl: z.string().optional()
+});
+
+router.post("/:id/terms", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        const data = createTermSchema.parse(req.body);
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (!canAdminProjectWorkflow(project, user)) return res.status(403).json({ message: "Sem permissão" });
+        if (!["APPROVED", "IN_EXECUTION", "COMPLETED"].includes(project.status)) {
+            return res.status(400).json({ message: "Termo só pode ser emitido para projeto aprovado ou em execução" });
+        }
+
+        const term = await prisma.projectTerm.create({
+            data: {
+                projectId: project.id,
+                tenantId: project.tenantId,
+                proponentId: project.proponentId,
+                title: data.title,
+                termsText: data.termsText,
+                documentUrl: data.documentUrl,
+                createdBy: user.id
+            }
+        });
+
+        const documentUrl = data.documentUrl || `${publicApiBase(req)}/projects/${project.id}/terms/${term.id}/pdf`;
+        const updatedTerm = data.documentUrl ? term : await prisma.projectTerm.update({
+            where: { id: term.id },
+            data: { documentUrl }
+        });
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectTerm",
+            entityId: term.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: "PROJECT_TERM_ISSUED", projectId: project.id, documentUrl }
+        });
+        await notifyProjectProponent(project, "Termo disponível para assinatura", "A gestão emitiu um termo para assinatura no ciclo do edital.");
+
+        return res.status(201).json(updatedTerm);
+    } catch (err) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        console.error("Erro ao criar termo", err);
+        return res.status(500).json({ message: "Erro ao criar termo" });
+    }
+});
+
+const signTermSchema = z.object({
+    signedDocumentUrl: z.string().optional()
+});
+
+router.post("/:id/terms/:termId/sign", authMiddleware, async (req, res) => {
+    try {
+        const { id, termId } = req.params;
+        const user = req.user!;
+        const data = signTermSchema.parse(req.body);
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (project.proponentId !== user.id && user.role !== Role.MASTER) {
+            return res.status(403).json({ message: "Apenas o proponente pode assinar o termo" });
+        }
+
+        const term = await prisma.projectTerm.findFirst({ where: { id: termId, projectId: id } });
+        if (!term) return res.status(404).json({ message: "Termo não encontrado" });
+        if (term.status !== "PENDING_SIGNATURE") {
+            return res.status(400).json({ message: "Termo não está pendente de assinatura" });
+        }
+
+        const updated = await prisma.projectTerm.update({
+            where: { id: termId },
+            data: {
+                status: "SIGNED",
+                signedDocumentUrl: data.signedDocumentUrl || `${publicApiBase(req)}/projects/${project.id}/terms/${termId}/pdf`,
+                signedAt: new Date(),
+                signedByIp: req.ip
+            }
+        });
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectTerm",
+            entityId: updated.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: "PROJECT_TERM_SIGNED", projectId: project.id, signedAt: updated.signedAt }
+        });
+
+        return res.json(updated);
+    } catch (err) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        console.error("Erro ao assinar termo", err);
+        return res.status(500).json({ message: "Erro ao assinar termo" });
+    }
+});
+
+const saveAccountabilitySchema = z.object({
+    periodStart: z.string().optional(),
+    periodEnd: z.string().optional(),
+    executionSummary: z.string().optional(),
+    audienceReached: z.number().int().min(0).optional(),
+    amountSpent: z.number().min(0).optional(),
+    documents: z.any().optional()
+});
+
+router.post("/:id/accountability", authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = req.user!;
+        const data = saveAccountabilitySchema.parse(req.body);
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (!canAccessProjectWorkflow(project, user)) return res.status(403).json({ message: "Sem permissão" });
+        if (!["APPROVED", "IN_EXECUTION", "COMPLETED"].includes(project.status)) {
+            return res.status(400).json({ message: "Prestação de contas só é liberada após aprovação" });
+        }
+
+        const existing = await prisma.projectAccountability.findFirst({
+            where: { projectId: id, status: { in: ["DRAFT", "ADJUSTMENTS_REQUIRED"] } },
+            orderBy: { createdAt: "desc" }
+        });
+
+        const payload = {
+            periodStart: data.periodStart ? new Date(data.periodStart) : undefined,
+            periodEnd: data.periodEnd ? new Date(data.periodEnd) : undefined,
+            executionSummary: data.executionSummary,
+            audienceReached: data.audienceReached,
+            amountSpent: data.amountSpent,
+            documents: data.documents
+        };
+
+        const accountability = existing
+            ? await prisma.projectAccountability.update({ where: { id: existing.id }, data: payload })
+            : await prisma.projectAccountability.create({
+                data: {
+                    projectId: project.id,
+                    tenantId: project.tenantId,
+                    proponentId: project.proponentId,
+                    ...payload
+                }
+            });
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectAccountability",
+            entityId: accountability.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: existing ? "PROJECT_ACCOUNTABILITY_UPDATED" : "PROJECT_ACCOUNTABILITY_CREATED", projectId: project.id }
+        });
+
+        return res.status(existing ? 200 : 201).json(accountability);
+    } catch (err) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        console.error("Erro ao salvar prestação de contas", err);
+        return res.status(500).json({ message: "Erro ao salvar prestação de contas" });
+    }
+});
+
+router.post("/:id/accountability/:accountabilityId/submit", authMiddleware, async (req, res) => {
+    try {
+        const { id, accountabilityId } = req.params;
+        const user = req.user!;
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (project.proponentId !== user.id && user.role !== Role.MASTER) {
+            return res.status(403).json({ message: "Apenas o proponente pode submeter prestação de contas" });
+        }
+
+        const accountability = await prisma.projectAccountability.findFirst({ where: { id: accountabilityId, projectId: id } });
+        if (!accountability) return res.status(404).json({ message: "Prestação de contas não encontrada" });
+        if (!["DRAFT", "ADJUSTMENTS_REQUIRED"].includes(accountability.status)) {
+            return res.status(400).json({ message: "Prestação de contas não pode ser submetida neste status" });
+        }
+
+        const updated = await prisma.projectAccountability.update({
+            where: { id: accountabilityId },
+            data: { status: "SUBMITTED", submittedAt: new Date() }
+        });
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectAccountability",
+            entityId: updated.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: "PROJECT_ACCOUNTABILITY_SUBMITTED", projectId: project.id }
+        });
+
+        return res.json(updated);
+    } catch (err) {
+        console.error("Erro ao submeter prestação de contas", err);
+        return res.status(500).json({ message: "Erro ao submeter prestação de contas" });
+    }
+});
+
+const reviewAccountabilitySchema = z.object({
+    status: z.enum(["UNDER_REVIEW", "APPROVED", "REJECTED", "ADJUSTMENTS_REQUIRED"]),
+    reviewNotes: z.string().optional()
+});
+
+router.put("/:id/accountability/:accountabilityId/review", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLLABORATOR]), async (req, res) => {
+    try {
+        const { id, accountabilityId } = req.params;
+        const user = req.user!;
+        const data = reviewAccountabilitySchema.parse(req.body);
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (!canAdminProjectWorkflow(project, user)) return res.status(403).json({ message: "Sem permissão" });
+
+        const accountability = await prisma.projectAccountability.findFirst({ where: { id: accountabilityId, projectId: id } });
+        if (!accountability) return res.status(404).json({ message: "Prestação de contas não encontrada" });
+
+        const updated = await prisma.projectAccountability.update({
+            where: { id: accountabilityId },
+            data: {
+                status: data.status,
+                reviewNotes: data.reviewNotes,
+                reviewedBy: user.id,
+                reviewedAt: new Date()
+            }
+        });
+
+        if (data.status === "APPROVED" && project.status !== "COMPLETED") {
+            await prisma.culturalProject.update({
+                where: { id },
+                data: {
+                    status: "COMPLETED",
+                    actualAudience: updated.audienceReached ?? undefined
+                }
+            });
+        }
+
+        await createAuditLog({
+            tenantId: project.tenantId,
+            userId: user.id,
+            action: "CUSTOM",
+            entityType: "ProjectAccountability",
+            entityId: updated.id,
+            ipAddress: getActorIp(req),
+            userAgent: getActorAgent(req),
+            metadata: { event: "PROJECT_ACCOUNTABILITY_REVIEWED", projectId: project.id, status: data.status }
+        });
+        await notifyProjectProponent(project, "Prestação de contas analisada", `Sua prestação de contas foi analisada com o status: <strong>${data.status}</strong>.`);
+
+        return res.json(updated);
+    } catch (err) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+        console.error("Erro ao revisar prestação de contas", err);
+        return res.status(500).json({ message: "Erro ao revisar prestação de contas" });
+    }
+});
+
+router.get("/:id/terms/:termId/pdf", authMiddleware, async (req, res) => {
+    try {
+        const { id, termId } = req.params;
+        const user = req.user!;
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (!canAccessProjectWorkflow(project, user)) return res.status(403).json({ message: "Sem permissão" });
+
+        const term = await prisma.projectTerm.findFirst({ where: { id: termId, projectId: id } });
+        if (!term) return res.status(404).json({ message: "Termo não encontrado" });
+        return streamProjectTermPdf(res, term, project);
+    } catch (err) {
+        console.error("Erro ao gerar PDF do termo", err);
+        return res.status(500).json({ message: "Erro ao gerar PDF do termo" });
+    }
+});
+
+router.get("/:id/accountability/:accountabilityId/pdf", authMiddleware, async (req, res) => {
+    try {
+        const { id, accountabilityId } = req.params;
+        const user = req.user!;
+        const project = await getProjectOr404(id);
+        if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
+        if (!canAccessProjectWorkflow(project, user)) return res.status(403).json({ message: "Sem permissão" });
+
+        const accountability = await prisma.projectAccountability.findFirst({ where: { id: accountabilityId, projectId: id } });
+        if (!accountability) return res.status(404).json({ message: "Prestação de contas não encontrada" });
+        return streamProjectAccountabilityPdf(res, accountability, project);
+    } catch (err) {
+        console.error("Erro ao gerar PDF da prestação de contas", err);
+        return res.status(500).json({ message: "Erro ao gerar PDF da prestação de contas" });
+    }
+});
+
 // Deletar projeto
 router.delete("/:id", authMiddleware, async (req, res) => {
     try {
@@ -508,6 +1121,7 @@ router.get("/:id/accessibility", authMiddleware, async (req, res) => {
 router.post("/:id/publish-event", authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
+        const user = req.user!;
         const project = await prisma.culturalProject.findUnique({
             where: { id },
             include: { publicNotice: true, user: true, tenant: true }
@@ -516,6 +1130,13 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
         if (!project) return res.status(404).json({ message: "Projeto não encontrado" });
         if (project.eventId) return res.status(400).json({ message: "Projeto já publicado como evento" });
         
+        const isOwner = project.proponentId === user.id;
+        const isAdmin = user.role === Role.ADMIN && project.tenantId === user.tenantId;
+        const isMaster = user.role === Role.MASTER;
+        if (!isOwner && !isAdmin && !isMaster) {
+            return res.status(403).json({ message: "Sem permissao" });
+        }
+
         // SECURITY LOCK: Only APPROVED projects can be published to the agenda
         if (project.status !== "APPROVED") {
             return res.status(403).json({ 
@@ -525,7 +1146,7 @@ router.post("/:id/publish-event", authMiddleware, async (req, res) => {
 
         // Find or create default category
         let category = await prisma.category.findFirst({
-            where: { type: "EVENT" }
+            where: { type: "EVENT", tenantId: project.tenantId }
         });
 
         if (!category) {

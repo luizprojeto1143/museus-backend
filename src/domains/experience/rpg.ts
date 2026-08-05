@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../prisma.js';
-import { authMiddleware } from '../../middleware/auth.js';
+import { authMiddleware, requireRole } from '../../middleware/auth.js';
+import { Role, AuditAction } from '@prisma/client';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -10,7 +11,18 @@ import { generateCartoonAvatar, applySkinToAvatar, saveBase64ToR2 } from '../../
 
 const router = Router();
 
-const upload = multer({ dest: 'uploads/', limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 5 * 1024 * 1024 }, // Limit to 5MB
+    fileFilter: (req, file, cb) => {
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/jpg'];
+        if (allowedMimes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Mime type não suportado. Envie apenas JPG, JPEG ou PNG.'));
+        }
+    }
+});
 
 const classThresholds = [
     { level: 1, xp: 0, name: 'NOVATO' },
@@ -86,7 +98,7 @@ router.get('/me', authMiddleware, async (req, res) => {
                 // Tenta achar skin cacheada
                 if (c.equippedSkinId) {
                     const cache = await prisma.visitorAvatarCache.findUnique({
-                        where: { visitorId_skinId: { visitorId, skinId: c.equippedSkinId } }
+                        where: { visitorId_cacheKey: { visitorId, cacheKey: `SKIN:${c.equippedSkinId}` } }
                     });
                     if (cache?.status === 'READY') {
                         displayAvatarUrl = cache.imageUrl;
@@ -127,63 +139,104 @@ router.get('/me', authMiddleware, async (req, res) => {
     }
 });
 
-router.post('/add-xp', authMiddleware, async (req, res) => {
+// POST /admin/visitors/:id/grant-xp — Admin/Master only can grant XP manually
+router.post('/admin/visitors/:id/grant-xp', authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
     try {
-        const userEmail = req.user!.email.toLowerCase();
-        const tenantId = req.user!.tenantId;
-        if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
-        const visitor = await prisma.visitor.findFirst({ where: { email: userEmail, tenantId } });
-        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
-        const visitorId = visitor.id;
+        const { id } = req.params;
+        const { xp, reason } = req.body;
 
-        const { xp } = req.body;
         const amount = parseInt(xp) || 0;
-        if (amount <= 0) return res.status(400).json({ message: 'XP inválido' });
+        if (amount <= 0) return res.status(400).json({ message: 'XP de concessão precisa ser maior que zero' });
+        if (!reason || reason.trim().length < 5) {
+            return res.status(400).json({ message: 'Justificativa de concessão (mínimo 5 caracteres) é obrigatória' });
+        }
 
-        let rpg = await prisma.visitorRPG.findFirst({ where: { visitorId, isActive: true } });
-        if (!rpg) {
-            rpg = await prisma.visitorRPG.create({
-                data: { visitorId, characterName: 'Explorador', characterClass: 'NOVATO', level: 1, currentXp: 0, nextLevelXp: 100, isActive: true }
+        const visitor = await prisma.visitor.findUnique({
+            where: { id }
+        });
+
+        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+
+        // Admin can only update visitor within same tenant
+        if (req.user!.role === Role.ADMIN && visitor.tenantId !== req.user!.tenantId) {
+            return res.status(403).json({ message: 'Acesso negado: visitante pertence a outro município/museu' });
+        }
+
+        const activeRPG = await prisma.visitorRPG.findFirst({
+            where: { visitorId: id, isActive: true }
+        });
+
+        // Atomic update and sync
+        const updatedVisitor = await prisma.$transaction(async (tx) => {
+            const v = await tx.visitor.update({
+                where: { id },
+                data: { xp: { increment: amount } }
             });
-        }
 
-        let newLevel = rpg.level;
-        let newXp = (rpg.currentXp || 0) + amount;
-        let nextLevelXp = rpg.nextLevelXp;
-        let leveledUp = false;
+            let nextLevelXp = 100;
+            let currentXp = v.xp;
+            let newLevel = 1;
+            let iterations = 0;
+            while (currentXp >= nextLevelXp && iterations < 1000) {
+                currentXp -= nextLevelXp;
+                newLevel += 1;
+                nextLevelXp = Math.floor(nextLevelXp * 1.3) || 100;
+                iterations++;
+            }
 
-        while (newXp >= nextLevelXp) {
-            newXp -= nextLevelXp;
-            newLevel += 1;
-            nextLevelXp = Math.floor(nextLevelXp * 1.3);
-            leveledUp = true;
-        }
+            let newClass = 'NOVATO';
+            for (const threshold of classThresholds) {
+                if (newLevel >= threshold.level) newClass = threshold.name;
+            }
 
-        let newClass = rpg.characterClass;
-        for (const threshold of classThresholds) {
-            if (newLevel >= threshold.level) newClass = threshold.name;
-        }
+            if (activeRPG) {
+                await tx.visitorRPG.update({
+                    where: { id: activeRPG.id },
+                    data: {
+                        currentXp,
+                        level: newLevel,
+                        nextLevelXp,
+                        characterClass: newClass
+                    }
+                });
+            }
 
-        // L1 Fix: Sync with main Visitor XP
-        await prisma.visitor.update({
-            where: { id: visitorId },
-            data: { xp: { increment: amount } }
+            // Create historic record
+            await tx.xpTransaction.create({
+                data: {
+                    visitorId: id,
+                    type: 'ADMIN_GRANT',
+                    amount,
+                    balanceAfter: v.xp,
+                    reason,
+                    createdById: req.user!.id
+                }
+            });
+
+            // Create AuditLog
+            await tx.auditLog.create({
+                data: {
+                    tenantId: visitor.tenantId,
+                    userId: req.user!.id,
+                    action: AuditAction.OTHER,
+                    entityType: 'Visitor',
+                    entityId: id,
+                    metadata: {
+                        grantedXp: amount,
+                        reason,
+                        balanceBefore: visitor.xp,
+                        balanceAfter: v.xp
+                    }
+                }
+            });
+
+            return v;
         });
 
-        await prisma.visitorRPG.updateMany({
-            where: { visitorId },
-            data: { currentXp: newXp, level: newLevel, nextLevelXp, characterClass: newClass }
-        });
-
-        const updated = await prisma.visitorRPG.findFirst({
-            where: { visitorId, isActive: true },
-            include: { characterBase: true }
-        });
-
-        res.json({ ...updated, leveledUp, xpAdded: amount });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Erro ao adicionar XP' });
+        res.json({ success: true, newXp: updatedVisitor.xp });
+    } catch (error: any) {
+        console.error("[RPG] Admin Grant XP error:", error);
+        res.status(500).json({ message: 'Erro ao conceder XP', error: error.message });
     }
 });
 
@@ -196,10 +249,10 @@ router.put('/customize', authMiddleware, async (req, res) => {
         if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
         const visitorId = visitor.id;
 
-        const { characterName, avatarUrl } = req.body;
+        const { characterName } = req.body; // Ignorar avatarUrl enviado pelo usuário
         await prisma.visitorRPG.updateMany({
             where: { visitorId, isActive: true },
-            data: { ...(characterName && { characterName }), ...(avatarUrl && { avatarUrl }) }
+            data: { ...(characterName && { characterName }) }
         });
         const updated = await prisma.visitorRPG.findFirst({
             where: { visitorId, isActive: true }
@@ -284,6 +337,15 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
 
         if (!rpg) return res.status(404).json({ message: 'Personagem não encontrado ou não pertence a você' });
 
+        if (!skinId) {
+            const updatedRPG = await prisma.visitorRPG.update({
+                where: { id: rpg.id },
+                data: { equippedSkinId: null },
+                include: { skin: true }
+            });
+            return res.json(updatedRPG);
+        }
+
         // 1. Verify skin ownership
         const ownership = await prisma.visitorSkin.findUnique({
             where: { visitorId_skinId: { visitorId: visitor.id, skinId } },
@@ -292,7 +354,7 @@ router.put('/equip-skin', authMiddleware, async (req, res) => {
         if (!ownership) return res.status(403).json({ message: 'Você não possui esta skin' });
 
         // 2. Verify skin compatibility with character
-        if (ownership.skin.characterBaseId && ownership.skin.characterBaseId !== rpg.selectedCharacterId) {
+        if (ownership.skin.compatibleCharacterBaseId && ownership.skin.compatibleCharacterBaseId !== rpg.selectedCharacterId) {
             return res.status(400).json({ message: 'Esta skin não serve para este personagem' });
         }
 
@@ -346,12 +408,18 @@ router.post('/retry-avatar', authMiddleware, async (req, res) => {
 router.post('/selfie', authMiddleware, upload.single('selfie'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Selfie obrigatória' });
-        if (!req.user?.email || !req.user?.tenantId) return res.status(401).json({ message: 'Não autorizado' });
+        if (!req.user?.email || !req.user?.tenantId) {
+            if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(401).json({ message: 'Não autorizado' });
+        }
 
         const visitor = await prisma.visitor.findFirst({ 
             where: { email: req.user.email.toLowerCase(), tenantId: req.user.tenantId } 
         });
-        if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
+        if (!visitor) {
+            if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(404).json({ message: 'Visitante não encontrado' });
+        }
 
         // Marcar VisitorRPG (o ativo) como GENERATING
         let activeRPG = await prisma.visitorRPG.findFirst({
@@ -392,6 +460,9 @@ router.post('/selfie', authMiddleware, upload.single('selfie'), async (req, res)
 
     } catch (err) {
         console.error('[AVATAR] Error starting generation:', err);
+        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
         res.status(500).json({ message: 'Erro ao processar selfie' });
     }
 });
@@ -439,7 +510,7 @@ router.post('/apply-skin/:skinId', authMiddleware, async (req, res) => {
 
         // Verificar cache
         const existing = await prisma.visitorAvatarCache.findUnique({
-            where: { visitorId_skinId: { visitorId: visitor.id, skinId } }
+            where: { visitorId_cacheKey: { visitorId: visitor.id, cacheKey: `SKIN:${skinId}` } }
         });
 
         if (existing?.status === 'READY') {
@@ -456,9 +527,9 @@ router.post('/apply-skin/:skinId', authMiddleware, async (req, res) => {
 
         // Criar/Atualizar entrada no cache
         await prisma.visitorAvatarCache.upsert({
-            where: { visitorId_skinId: { visitorId: visitor.id, skinId } },
+            where: { visitorId_cacheKey: { visitorId: visitor.id, cacheKey: `SKIN:${skinId}` } },
             update: { status: 'GENERATING' },
-            create: { visitorId: visitor.id, skinId, imageUrl: '', status: 'GENERATING' }
+            create: { visitorId: visitor.id, skinId, cacheKey: `SKIN:${skinId}`, imageUrl: '', status: 'GENERATING' }
         });
 
         res.json({ status: 'GENERATING', message: 'Aplicando skin via IA em background...' });
@@ -484,7 +555,7 @@ router.get('/skin-status/:skinId', authMiddleware, async (req, res) => {
         if (!visitor) return res.status(404).json({ message: 'Visitante não encontrado' });
 
         const cache = await prisma.visitorAvatarCache.findUnique({
-            where: { visitorId_skinId: { visitorId: visitor.id, skinId } }
+            where: { visitorId_cacheKey: { visitorId: visitor.id, cacheKey: `SKIN:${skinId}` } }
         });
 
         res.json({
@@ -516,9 +587,9 @@ async function generateAvatarBackground(visitorId: string, rpgId: string, selfie
 
         // Salvar cache base
         await prisma.visitorAvatarCache.upsert({
-            where: { visitorId_skinId: { visitorId, skinId: null as any } },
+            where: { visitorId_cacheKey: { visitorId, cacheKey: 'BASE' } },
             update: { imageUrl, status: 'READY' },
-            create: { visitorId, skinId: null as any, imageUrl, status: 'READY' }
+            create: { visitorId, skinId: null, cacheKey: 'BASE', imageUrl, status: 'READY' }
         });
 
         // Cleanup local selfie
@@ -544,7 +615,7 @@ async function applySkinBackground(visitorId: string, skinId: string, baseAvatar
 
         await prisma.$transaction([
             prisma.visitorAvatarCache.update({
-                where: { visitorId_skinId: { visitorId, skinId } },
+                where: { visitorId_cacheKey: { visitorId, cacheKey: `SKIN:${skinId}` } },
                 data: { imageUrl, status: 'READY' }
             }),
             prisma.visitorSkin.update({
@@ -558,7 +629,7 @@ async function applySkinBackground(visitorId: string, skinId: string, baseAvatar
     } catch (err) {
         console.error(`[SKIN_IA] ❌ Erro skin ${skinId} em ${visitorId}:`, err);
         await prisma.visitorAvatarCache.update({
-            where: { visitorId_skinId: { visitorId, skinId } },
+            where: { visitorId_cacheKey: { visitorId, cacheKey: `SKIN:${skinId}` } },
             data: { status: 'ERROR' }
         }).catch(() => {});
         if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);

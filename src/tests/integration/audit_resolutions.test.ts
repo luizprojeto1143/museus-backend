@@ -1,4 +1,3 @@
-// @ts-nocheck
 import request from 'supertest';
 import { app } from '../../index.js';
 import { prisma } from '../../prisma.js';
@@ -46,7 +45,7 @@ describe('Audit Resolutions Integration Tests', () => {
     let tenantId: string;
     let otherTenantId: string;
     let userToken: string;
-    let adminEmail = 'audit.admin@test.com';
+    const adminEmail = 'audit.admin@test.com';
 
     beforeAll(async () => {
         // Setup test tenants
@@ -91,7 +90,7 @@ describe('Audit Resolutions Integration Tests', () => {
             .post('/auth/login')
             .send({ email: adminEmail, password: 'password123' });
         
-        const cookies = login.headers['set-cookie'] as string[];
+        const cookies = login.headers['set-cookie'] as unknown as string[];
         const cookie = cookies?.find(c => c.startsWith('museus_token='));
         if (cookie) {
             userToken = cookie.split(';')[0].split('=')[1];
@@ -166,9 +165,10 @@ describe('Audit Resolutions Integration Tests', () => {
 
             // 5. Verify user is anonymized, password is valid bcrypt and active tokens are deleted
             const updatedUser = await prisma.user.findUnique({ where: { id: testUser.id } });
-            expect(updatedUser.name).toBe('Usuário Anonimizado (LGPD)');
-            expect(updatedUser.email).toContain(`anon-${testUser.id}`);
-            expect(updatedUser.password.startsWith('$2b$')).toBe(true);
+            expect(updatedUser).not.toBeNull();
+            expect(updatedUser!.name).toBe('Usuário Anonimizado (LGPD)');
+            expect(updatedUser!.email).toContain(`anon-${testUser.id}`);
+            expect(updatedUser!.password.startsWith('$2b$')).toBe(true);
 
             const activeRefresh = await prisma.refreshToken.findMany({ where: { userId: testUser.id } });
             expect(activeRefresh.length).toBe(0);
@@ -292,7 +292,10 @@ describe('Audit Resolutions Integration Tests', () => {
             const seat = await prisma.theaterSeatReservation.findUnique({
                 where: { eventId_seatId: { eventId: 'event-theater-test', seatId: 'A-1' } }
             });
-            expect(seat.status).toBe('RESERVED');
+            expect(seat).not.toBeNull();
+            expect(seat!.status).toBe('RESERVED');
         });
     });
 });
+
+

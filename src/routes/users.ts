@@ -196,6 +196,63 @@ router.put("/me/settings", authMiddleware, async (req, res) => {
   }
 });
 
+router.put("/me/password", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user!;
+    const { currentPassword, newPassword } = req.body as {
+      currentPassword?: string;
+      newPassword?: string;
+    };
+
+    if (!currentPassword || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: "Senha atual e nova senha valida sao obrigatorias" });
+    }
+
+    const current = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, email: true, password: true, tenantId: true }
+    });
+
+    if (!current) {
+      return res.status(404).json({ message: "Usuario nao encontrado" });
+    }
+
+    const passwordMatches = await bcrypt.compare(currentPassword, current.password);
+    if (!passwordMatches) {
+      return res.status(400).json({ message: "Senha atual incorreta" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: current.id },
+      data: { password: hashedPassword }
+    });
+
+    await prisma.refreshToken.updateMany({
+      where: { userId: current.id },
+      data: { revoked: true }
+    });
+
+    await createAuditLog(
+      'UPDATE_PASSWORD',
+      'User',
+      current.id,
+      current.id,
+      current.email,
+      current.tenantId || user.tenantId || 'self',
+      null,
+      { passwordChanged: true },
+      req
+    );
+
+    return res.json({ message: "Senha alterada com sucesso" });
+  } catch (err) {
+    console.error("Erro ao alterar senha", err);
+    return res.status(500).json({ message: "Erro ao alterar senha" });
+  }
+});
+
 router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), validate(updateUserSchema), async (req, res) => {
   try {
     const { id } = req.params;

@@ -152,12 +152,12 @@ async function handleUpload(req: Request, res: Response, type: string) {
         ContentType: file.mimetype
       }));
 
-      fs.unlinkSync(file.path); // Remove temp
+      try { fs.unlinkSync(file.path); } catch(e) {} // Remove temp
       url = `${publicBase.replace(/\/$/, "")}/${key}`;
     } else {
       // C5: Block upload if R2 is not configured to prevent data loss on ephemeral storage
       if (process.env.NODE_ENV === "production") {
-          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch(e) {}
           return res.status(503).json({ 
               message: "Armazenamento não configurado. Upload desabilitado para evitar perda de dados." 
           });
@@ -183,7 +183,7 @@ async function handleUpload(req: Request, res: Response, type: string) {
   } catch (err) {
     console.error("Erro upload", err);
     // Try cleanup temp file if exists
-    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch(e) {}
     return res.status(500).json({ message: "Erro ao processar upload", error: String(err) });
   }
 }
@@ -215,14 +215,14 @@ async function validateMagicBytes(
     const allowed  = MAGIC_BYTE_ALLOWED[category] || [];
 
     if (!detected || !allowed.includes(detected.mime)) {
-      fs.unlinkSync(file.path); // Apaga arquivo suspeito do disco
+      try { fs.unlinkSync(file.path); } catch(e) {} // Apaga arquivo suspeito do disco
       console.warn(`[Security] Magic bytes mismatch: declared=${file.mimetype} detected=${detected?.mime ?? 'unknown'} ip=${req.ip}`);
       res.status(400).json({ message: 'Arquivo recusado: conteúdo não corresponde ao tipo declarado.' });
       return;
     }
     next();
   } catch (e) {
-    if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    try { if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch(e) {}
     res.status(500).json({ message: 'Erro ao validar arquivo.' });
   }
 }
@@ -241,7 +241,7 @@ router.post("/", authMiddleware, uploadLimiter, uploadGeneric.single("file"),
     if (!file) return res.status(400).json({ message: "Arquivo é obrigatório" });
     const allAllowed = Object.values(ALLOWED_MIME_TYPES).flat();
     if (!allAllowed.includes(file.mimetype)) {
-      if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      try { if (file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch(e) {}
       return res.status(400).json({ message: `Tipo não permitido: ${file.mimetype}` });
     }
     next();

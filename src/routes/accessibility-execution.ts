@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { prisma } from "../prisma.js";
 import { authMiddleware, requireRole } from "../middleware/auth.js";
 import { Role, AccessibilityServiceType, PlatformFeeSource } from "@prisma/client";
@@ -7,6 +7,22 @@ import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.
 import { getPlatformFee } from "../services/fee.service.js";
 
 const router = Router();
+
+async function validateAccessibilityTargets(projectId: string | undefined, eventId: string | undefined, tenantId: string) {
+    if (projectId) {
+        const project = await prisma.culturalProject.findFirst({ where: { id: projectId, tenantId } });
+        if (!project) {
+            throw Object.assign(new Error("Projeto cultural nao encontrado neste tenant"), { status: 404 });
+        }
+    }
+
+    if (eventId) {
+        const event = await prisma.event.findFirst({ where: { id: eventId, tenantId, deletedAt: null } });
+        if (!event) {
+            throw Object.assign(new Error("Evento nao encontrado neste tenant"), { status: 404 });
+        }
+    }
+}
 
 // Lista execuções de acessibilidade do tenant
 router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
@@ -82,21 +98,80 @@ const requestSchema = z.object({
     projectId: z.string().optional(),
     eventId: z.string().optional(),
     requestNotes: z.string().optional(),
-    tenantId: z.string()
+    tenantId: z.string().optional(),
+    providerId: z.string().optional().nullable(),
+    approvedBudget: z.any().optional().nullable(),
+    status: z.string().optional(),
+    deliverables: z.any().optional().nullable(),
+    validationStatus: z.string().optional().nullable()
 });
 
-router.post("/request", authMiddleware, async (req, res) => {
+async function createAccessibilityExecution(req: any, res: any) {
     try {
         const data = requestSchema.parse(req.body);
         const targetTenantId = req.user!.role === Role.MASTER ? data.tenantId : req.user!.tenantId;
         if (!targetTenantId) return res.status(400).json({ message: "Tenant ID não encontrado" });
 
+        await validateAccessibilityTargets(data.projectId, data.eventId, targetTenantId);
+
         const execution = await prisma.accessibilityExecution.create({
-            data: { ...data, requestedBy: req.user!.id, tenantId: targetTenantId, status: "PENDING" } as any
+            data: {
+                serviceType: data.serviceType,
+                projectId: data.projectId || null,
+                eventId: data.eventId || null,
+                requestNotes: data.requestNotes,
+                providerId: data.providerId || null,
+                approvedBudget: data.approvedBudget ? Number(data.approvedBudget) : null,
+                deliverables: data.deliverables || undefined,
+                validationStatus: data.validationStatus || null,
+                requestedBy: req.user!.id,
+                tenantId: targetTenantId,
+                status: data.status || "PENDING"
+            } as any
         });
         return res.status(201).json(execution);
-    } catch (err) {
+    } catch (err: any) {
+        if (err instanceof z.ZodError) {
+            return res.status(400).json({ message: "Dados invalidos", errors: err.errors });
+        }
+        if (err.status) return res.status(err.status).json({ message: err.message });
         return res.status(500).json({ message: "Erro ao solicitar serviço" });
+    }
+}
+
+router.post("/", authMiddleware, createAccessibilityExecution);
+router.post("/request", authMiddleware, createAccessibilityExecution);
+
+router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
+    try {
+        const data = requestSchema.partial().parse(req.body);
+        await assertTenantOwnership({ model: 'accessibilityExecution', id: req.params.id, user: req.user! });
+
+        if (data.projectId || data.eventId) {
+            const targetTenantId = req.user!.role === Role.MASTER ? req.body.tenantId : req.user!.tenantId;
+            if (!targetTenantId) return res.status(400).json({ message: "Tenant ID não encontrado" });
+            await validateAccessibilityTargets(data.projectId || undefined, data.eventId || undefined, targetTenantId);
+        }
+
+        const updated = await prisma.accessibilityExecution.update({
+            where: { id: req.params.id },
+            data: {
+                serviceType: data.serviceType,
+                projectId: data.projectId === undefined ? undefined : data.projectId || null,
+                eventId: data.eventId === undefined ? undefined : data.eventId || null,
+                requestNotes: data.requestNotes,
+                providerId: data.providerId === undefined ? undefined : data.providerId || null,
+                approvedBudget: data.approvedBudget === undefined ? undefined : data.approvedBudget ? Number(data.approvedBudget) : null,
+                deliverables: data.deliverables === undefined ? undefined : data.deliverables,
+                validationStatus: data.validationStatus === undefined ? undefined : data.validationStatus,
+                status: data.status
+            } as any
+        });
+        return res.json(updated);
+    } catch (err: any) {
+        if (err instanceof z.ZodError) return res.status(400).json({ message: "Dados invalidos", errors: err.errors });
+        if (err.status) return res.status(err.status).json({ message: err.message });
+        return res.status(500).json({ message: "Erro ao atualizar execução" });
     }
 });
 
@@ -233,7 +308,7 @@ router.post("/:id/pay", authMiddleware, async (req, res) => {
             where: { id },
             data: { 
                 stripePaymentIntentId: session.id,
-                // Sprint 15 — fee snapshot
+                // Sprint 15 â€” fee snapshot
                 feeConfigId: feeResult.configId,
                 platformFeeAmountCents: platformFeeCents
             }
@@ -285,3 +360,4 @@ router.put("/:id/payment-receipt", authMiddleware, async (req, res) => {
 });
 
 export default router;
+

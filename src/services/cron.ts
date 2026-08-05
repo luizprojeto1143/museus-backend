@@ -1,4 +1,3 @@
-// @ts-nocheck
 import cron from 'node-cron';
 import { prisma } from '../prisma.js';
 import * as admin from 'firebase-admin';
@@ -32,13 +31,21 @@ export const initCronJobs = () => {
             status: 'CONFIRMED',
             visitorId: { not: null }
           },
-          include: { visitorId: true }
+          include: {
+            visitor: {
+              include: {
+                deviceTokens: {
+                  where: { active: true }
+                }
+              }
+            }
+          }
         });
 
         const tokens: string[] = [];
         for (const reg of registrations) {
-          if (false) {
-            for (const dt of reg.Visitor.deviceTokens) {
+          if (reg.visitor) {
+            for (const dt of reg.visitor.deviceTokens) {
               tokens.push(dt.token);
             }
           }
@@ -48,7 +55,7 @@ export const initCronJobs = () => {
           const message = {
             notification: {
               title: `Seu evento começa em 1 hora!`,
-              body: `${event.title} em ${"" || ""} está quase começando. Não esqueça seu QR Code de acesso.`
+              body: `${event.title} em ${event.location || event.city || 'seu equipamento cultural'} esta quase comecando. Nao esqueca seu QR Code de acesso.`
             },
             data: {
               type: 'EVENT_REMINDER',
@@ -117,5 +124,6 @@ export const initCronJobs = () => {
 
   console.log('[Cron] Push notification reminder and sponsor outbox retry jobs scheduled.');
 };
+
 
 

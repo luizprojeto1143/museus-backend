@@ -41,7 +41,7 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, res) => {
   try {
-    const { code, title, description, tenantId, xpReward, iconUrl, condition, autoTrigger, active } = req.body;
+    const { code, title, description, tenantId, xpReward, iconUrl, imageUrl, condition, autoTrigger, active } = req.body;
 
     if (!code || !title || !tenantId) {
       return res.status(400).json({ message: "code, title e tenantId são obrigatórios" });
@@ -54,7 +54,7 @@ router.post("/", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, r
         description: description || null,
         tenantId,
         xpReward: xpReward ? Number(xpReward) : 100,
-        iconUrl: iconUrl || null,
+        iconUrl: iconUrl || imageUrl || null,
         condition: condition || null,
         autoTrigger: autoTrigger ?? false,
         active: active ?? true
@@ -68,11 +68,11 @@ router.post("/", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, r
   }
 });
 
-router.put("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, res) => {
+const updateAchievement = async (req: any, res: any) => {
   try {
     const { id } = req.params;
     const user = req.user!;
-    const { code, title, description, xpReward, iconUrl, condition, autoTrigger, active } = req.body;
+    const { code, title, description, xpReward, iconUrl, imageUrl, condition, autoTrigger, active } = req.body;
 
     // IDOR Protection: Verify resource belongs to user's tenant
     const whereClause = user.role === "MASTER"
@@ -90,7 +90,7 @@ router.put("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req,
         ...(title && { title }),
         ...(description !== undefined && { description }),
         ...(xpReward !== undefined && { xpReward: Number(xpReward) }),
-        ...(iconUrl !== undefined && { iconUrl }),
+        ...((iconUrl !== undefined || imageUrl !== undefined) && { iconUrl: iconUrl !== undefined ? iconUrl : imageUrl }),
         ...(condition !== undefined && { condition }),
         ...(autoTrigger !== undefined && { autoTrigger }),
         ...(active !== undefined && { active })
@@ -102,7 +102,10 @@ router.put("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req,
     console.error("Erro ao atualizar conquista", err);
     return res.status(500).json({ message: "Erro ao atualizar conquista" });
   }
-});
+};
+
+router.put("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), updateAchievement);
+router.patch("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), updateAchievement);
 
 router.delete("/:id", authMiddleware, requireRole(["ADMIN", "MASTER"]), async (req, res) => {
   try {

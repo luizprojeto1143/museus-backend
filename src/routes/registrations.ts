@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import type { RequestHandler } from 'express';
 import { prisma } from '../prisma.js';
 import { z } from 'zod';
 import { authMiddleware, requireRole, softAuthMiddleware } from '../middleware/auth.js';
 import { mailService, sendCertificateEmail } from '../services/email.js';
 import { getPlatformFeeRate } from '../utils/fees.js';
 import crypto from 'crypto';
+import { deliverTenantWebhooks } from '../services/outboundWebhook.service.js';
 
 const router = Router();
 
@@ -212,6 +214,19 @@ router.post('/', authMiddleware, async (req, res) => {
             const eventLocation = eventData?.location || undefined;
 
             mailService.sendTicketEmail(guestEmail, eventTitle, guestName, code, eventDate, eventLocation);
+            if (tenantId) {
+                deliverTenantWebhooks(tenantId, "ticket.confirmed", {
+                    eventId,
+                    ticketId,
+                    quantity: 1,
+                    registrations: [{
+                        id: createdReg.id,
+                        code,
+                        guestName,
+                        guestEmail
+                    }]
+                }).catch(err => console.error("Ticket confirmed webhook delivery failed:", err));
+            }
         }
 
         return res.status(201).json({
@@ -228,11 +243,14 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 });
 
-// POST /:code/check-in (Validate and Check-in Ticket)
-router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER', 'OPERADOR']), async (req, res) => {
+const checkInRegistration: RequestHandler = async (req, res) => {
     try {
-        const { code } = req.params;
+        const code = req.params.code || req.body?.code;
         const user = req.user!;
+
+        if (!code) {
+            return res.status(400).json({ valid: false, message: 'Codigo do ingresso e obrigatorio.' });
+        }
 
         // 1. Find Registration
         const registration = await prisma.registration.findUnique({
@@ -290,6 +308,16 @@ router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER', '
             return up;
         });
 
+        deliverTenantWebhooks(registration.event.tenantId, "ticket.checked_in", {
+            registrationId: updated.id,
+            eventId: registration.eventId,
+            ticketId: registration.ticketId,
+            code: updated.code,
+            guestName: updated.guestName,
+            guestEmail: updated.guestEmail,
+            checkedInAt: updated.checkInDate
+        }).catch(err => console.error("Ticket checked-in webhook delivery failed:", err));
+
         // Optional: Trigger Automated Certificate
         if (!registration.event.certificateRequiresSurvey) {
             try {
@@ -331,7 +359,13 @@ router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER', '
         console.error("Check-in error:", error);
         res.status(500).json({ valid: false, message: 'Erro no servidor ao validar ingresso.' });
     }
-});
+};
+
+// POST /checkin (Validate and Check-in Ticket from body { code })
+router.post('/checkin', authMiddleware, requireRole(['ADMIN', 'MASTER', 'OPERADOR']), checkInRegistration);
+
+// POST /:code/check-in (Validate and Check-in Ticket)
+router.post('/:code/check-in', authMiddleware, requireRole(['ADMIN', 'MASTER', 'OPERADOR']), checkInRegistration);
 
 // GET / (List Registrations)
 router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER', 'OPERADOR']), async (req, res) => {

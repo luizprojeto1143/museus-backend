@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { prisma } from '../../prisma.js';
 import { authMiddleware, requireRole } from '../../middleware/auth.js';
 import { limiter } from '../../middleware/rateLimiter.js';
@@ -39,6 +39,10 @@ router.post('/', limiter, async (req, res) => {
             where: { id: data.tenantId },
             select: { stripeConnectId: true, name: true }
         });
+        if (!tenant?.stripeConnectId) {
+            await prisma.donation.delete({ where: { id: donation.id } });
+            return res.status(400).json({ error: 'Este museu nao possui conta Stripe Connect configurada.' });
+        }
 
         // 2. Integration with Stripe
         let stripePaymentData: any = null;
@@ -69,7 +73,7 @@ router.post('/', limiter, async (req, res) => {
                 customerId: stripeCustomerId,
                 amount: feeResult.buyerPaysCents, // BUYER paga base + taxa
                 description: `Doação para o Museu: ${tenant?.name || 'Cultura'}`,
-                connectedAccountId: tenant?.stripeConnectId || '', 
+                connectedAccountId: tenant.stripeConnectId, 
                 applicationFeeAmount: platformFeeCents,
                 successUrl: `${frontendUrl}/donations/success?id=${donation.id}`,
                 cancelUrl: `${frontendUrl}/donations/cancel?id=${donation.id}`
@@ -86,7 +90,7 @@ router.post('/', limiter, async (req, res) => {
                 data: {
                     platformFee: platformFeeCents / 100,
                     stripeCheckoutSessionId: session.id,
-                    // Sprint 15 — fee snapshot
+                    // Sprint 15 â€” fee snapshot
                     feeConfigId: feeResult.configId,
                     platformFeePercent: feeResult.percentage,
                     platformFeeAmountCents: platformFeeCents,
@@ -173,22 +177,23 @@ router.get('/wall', async (req, res) => {
 router.get('/stats', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
         const { tenantId } = req.query;
+        const targetTenantId = req.user!.role === 'MASTER' ? (tenantId as string | undefined) : req.user!.tenantId;
 
-        if (!tenantId) {
+        if (!targetTenantId) {
             return res.status(400).json({ message: 'tenantId é obrigatório' });
         }
 
         const [total, completed, pending] = await Promise.all([
             prisma.donation.aggregate({
-                where: { tenantId: tenantId as string, status: 'COMPLETED' },
+                where: { tenantId: targetTenantId, status: 'COMPLETED' },
                 _sum: { amount: true },
                 _count: true
             }),
             prisma.donation.count({
-                where: { tenantId: tenantId as string, status: 'COMPLETED' }
+                where: { tenantId: targetTenantId, status: 'COMPLETED' }
             }),
             prisma.donation.count({
-                where: { tenantId: tenantId as string, status: 'PENDING' }
+                where: { tenantId: targetTenantId, status: 'PENDING' }
             })
         ]);
 

@@ -13,6 +13,26 @@ const router = Router();
 
 import { softAuthMiddleware } from "../../middleware/auth.js";
 
+async function validateWorkRelations(tenantId: string, relations: { categoryId?: string | null; equipamentoId?: string | null }) {
+  if (relations.categoryId) {
+    const category = await prisma.category.findFirst({
+      where: { id: relations.categoryId, tenantId }
+    });
+    if (!category) {
+      throw Object.assign(new Error("Categoria nao encontrada neste tenant"), { status: 400 });
+    }
+  }
+
+  if (relations.equipamentoId) {
+    const equipamento = await prisma.equipamentoCultural.findFirst({
+      where: { id: relations.equipamentoId, tenantId }
+    });
+    if (!equipamento) {
+      throw Object.assign(new Error("Equipamento nao encontrado neste tenant"), { status: 400 });
+    }
+  }
+}
+
 // Lista obras públicas por tenant (com paginação)
 router.get("/", softAuthMiddleware, async (req, res) => {
   try {
@@ -202,6 +222,8 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
       }
     }
 
+    await validateWorkRelations(tenantId, { categoryId, equipamentoId });
+
     const work = await prisma.work.create({
       data: {
         title,
@@ -219,11 +241,11 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
         period,
         medium,
         dimensions,
-        latitude: latitude ? Number(latitude) : null,
-        longitude: longitude ? Number(longitude) : null,
+        latitude: latitude !== undefined && latitude !== null && latitude !== "" ? Number(latitude) : null,
+        longitude: longitude !== undefined && longitude !== null && longitude !== "" ? Number(longitude) : null,
         radius: radius ? Number(radius) : 5,
-        lat: lat ? Number(lat) : null,
-        lng: lng ? Number(lng) : null,
+        lat: lat !== undefined && lat !== null && lat !== "" ? Number(lat) : null,
+        lng: lng !== undefined && lng !== null && lng !== "" ? Number(lng) : null,
         captureRadiusM: captureRadiusM ? Number(captureRadiusM) : undefined,
         vestigeActive: vestigeActive === true || vestigeActive === "true", // L8 Fix
         vestigeType: vestigeType || undefined,
@@ -250,6 +272,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
 
     return res.status(201).json(work);
   } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error("Erro criar obra:", err);
     if (err.code === 'P2002' && err.meta?.target?.includes('code')) {
       return res.status(400).json({ message: "Este código já está em uso." });
@@ -338,6 +361,11 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       updateData.metadata = data.metadata;
     }
 
+    await validateWorkRelations(existing.tenantId, {
+      categoryId: data.categoryId || data.category,
+      equipamentoId: data.equipamentoId
+    });
+
     if (data.radius !== undefined) {
       updateData.radius = parseInt(data.radius) || 5;
     }
@@ -349,8 +377,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
     }
 
     // Handle optional geofencing if provided
-    if (data.latitude) updateData.latitude = parseFloat(data.latitude);
-    if (data.longitude) updateData.longitude = parseFloat(data.longitude);
+    if (data.latitude !== undefined) updateData.latitude = data.latitude === "" || data.latitude === null ? null : parseFloat(data.latitude);
+    if (data.longitude !== undefined) updateData.longitude = data.longitude === "" || data.longitude === null ? null : parseFloat(data.longitude);
 
     // Storage Cleanup: Delete old files if they were replaced
     const { deleteFromStorage } = await import("../../routes/upload.js");
@@ -363,8 +391,8 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
       where: { id },
       data: {
         ...updateData,
-        lat: data.lat !== undefined ? (data.lat ? Number(data.lat) : null) : undefined,
-        lng: data.lng !== undefined ? (data.lng ? Number(data.lng) : null) : undefined,
+        lat: data.lat !== undefined ? (data.lat !== "" && data.lat !== null ? Number(data.lat) : null) : undefined,
+        lng: data.lng !== undefined ? (data.lng !== "" && data.lng !== null ? Number(data.lng) : null) : undefined,
         captureRadiusM: data.captureRadiusM !== undefined ? (data.captureRadiusM ? Number(data.captureRadiusM) : null) : undefined,
         vestigeActive: data.vestigeActive !== undefined ? (data.vestigeActive === true || data.vestigeActive === "true") : undefined, // L8 Fix
         vestigeType: data.vestigeType !== undefined ? (data.vestigeType || null) : undefined,

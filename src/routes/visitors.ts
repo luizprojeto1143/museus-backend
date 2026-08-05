@@ -12,7 +12,9 @@ const router = Router();
 // Lista visitantes de um tenant (com paginação) - Protegido (Admin/Master only)
 router.get("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER]), async (req, res) => {
   try {
-    const tenantId = (req as any).tenantId || req.query.tenantId;
+    const tenantId = req.user!.role === Role.MASTER
+      ? ((req as any).tenantId || req.query.tenantId)
+      : req.user!.tenantId;
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const skip = (page - 1) * limit;
@@ -144,8 +146,13 @@ router.get("/me", authMiddleware, async (req, res) => {
 // Resumo do visitante atual (por email/tenantId)
 router.get("/me/summary", authMiddleware, async (req, res) => {
   try {
-    const { email } = req.query as { email?: string };
-    const tenantId = (req as any).tenantId || req.query.tenantId;
+    const requestedEmail = (req.query as { email?: string }).email;
+    const email = req.user?.role === Role.ADMIN || req.user?.role === Role.MASTER
+      ? requestedEmail || req.user?.email
+      : req.user?.email;
+    const tenantId = req.user?.role === Role.MASTER
+      ? ((req as any).tenantId || req.query.tenantId)
+      : req.user?.tenantId;
 
     if (!email || !tenantId) {
       return res.status(400).json({ message: "email e tenantId são obrigatórios" });
@@ -246,6 +253,146 @@ router.get("/me/summary", authMiddleware, async (req, res) => {
       message: "Erro ao buscar resumo",
       error: err instanceof Error ? err.message : String(err)
     });
+  }
+});
+
+async function getVisitorScope(req: any) {
+  const email = req.user?.email?.toLowerCase();
+  const tenantId = req.user?.role === Role.MASTER
+    ? (req.tenantId || req.query.tenantId)
+    : (req.user?.tenantId || req.tenantId || req.query.tenantId);
+
+  if (!email) return null;
+  return {
+    email,
+    visitorWhere: {
+      email,
+      ...(tenantId ? { tenantId: String(tenantId) } : {})
+    }
+  };
+}
+
+router.get("/me/recent-visits", authMiddleware, async (req, res) => {
+  try {
+    const scope = await getVisitorScope(req);
+    if (!scope) return res.status(400).json({ message: "email e obrigatorio" });
+
+    const limit = Math.min(Number(req.query.limit) || 5, 20);
+    const visitors = await prisma.visitor.findMany({
+      where: scope.visitorWhere,
+      select: { id: true }
+    });
+    const visitorIds = visitors.map(v => v.id);
+    if (visitorIds.length === 0) return res.json([]);
+
+    const visits = await prisma.visitorVisit.findMany({
+      where: { visitorId: { in: visitorIds } },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: {
+        tenant: { select: { name: true, slug: true } },
+        work: { select: { title: true, tenant: { select: { name: true, slug: true } }, equipamentoCultural: { select: { nome: true, slug: true, cidade: true } } } } as any,
+        trail: { select: { title: true, tenant: { select: { name: true, slug: true } } } },
+        event: { select: { title: true, tenant: { select: { name: true, slug: true } }, equipamentoCultural: { select: { nome: true, slug: true, cidade: true } } } as any }
+      } as any
+    });
+
+    return res.json(visits.map((visit: any) => {
+      const item = visit.work || visit.trail || visit.event;
+      const equipment = visit.work?.equipamentoCultural || visit.event?.equipamentoCultural;
+      const tenant = item?.tenant || visit.tenant;
+      return {
+        id: visit.id,
+        title: item?.title || "Visita cultural",
+        equipamentoName: equipment?.nome || tenant?.name || "Equipamento cultural",
+        cityName: equipment?.cidade || tenant?.name || "Cidade",
+        citySlug: tenant?.slug || "",
+        equipamentoSlug: equipment?.slug || tenant?.slug || "",
+        visitedAt: visit.createdAt
+      };
+    }));
+  } catch (err) {
+    console.error("Erro recent-visits:", err);
+    return res.status(500).json({ message: "Erro ao buscar visitas recentes" });
+  }
+});
+
+router.get("/me/active-tickets", authMiddleware, async (req, res) => {
+  try {
+    const scope = await getVisitorScope(req);
+    if (!scope) return res.status(400).json({ message: "email e obrigatorio" });
+
+    const limit = Math.min(Number(req.query.limit) || 5, 20);
+    const visitors = await prisma.visitor.findMany({
+      where: scope.visitorWhere,
+      select: { id: true }
+    });
+
+    const registrations = await prisma.registration.findMany({
+      where: {
+        status: { in: ["CONFIRMED", "PENDING"] },
+        event: { startDate: { gte: new Date() } },
+        OR: [
+          { guestEmail: scope.email },
+          ...(visitors.length ? [{ visitorId: { in: visitors.map(v => v.id) } }] : [])
+        ]
+      },
+      orderBy: { event: { startDate: "asc" } },
+      take: limit,
+      include: {
+        event: {
+          select: {
+            title: true,
+            startDate: true,
+            tenant: { select: { name: true } },
+            equipamentoCultural: { select: { nome: true } }
+          }
+        }
+      }
+    });
+
+    return res.json(registrations.map((registration: any) => ({
+      id: registration.id,
+      code: registration.code,
+      status: registration.status,
+      eventTitle: registration.event?.title || "Evento",
+      eventDate: registration.event?.startDate,
+      equipamentoName: registration.event?.equipamentoCultural?.nome || registration.event?.tenant?.name || "Equipamento cultural"
+    })));
+  } catch (err) {
+    console.error("Erro active-tickets:", err);
+    return res.status(500).json({ message: "Erro ao buscar ingressos ativos" });
+  }
+});
+
+router.get("/me/stats", authMiddleware, async (req, res) => {
+  try {
+    const scope = await getVisitorScope(req);
+    if (!scope) return res.status(400).json({ message: "email e obrigatorio" });
+
+    const visitors = await prisma.visitor.findMany({
+      where: scope.visitorWhere,
+      include: {
+        visitorVisits: true,
+        visitorAchievements: true
+      }
+    });
+
+    const xp = visitors.reduce((sum, visitor) => sum + visitor.xp, 0);
+    const visits = visitors.flatMap(visitor => visitor.visitorVisits);
+    const trailsCompleted = new Set(visits.filter(visit => visit.trailId).map(visit => visit.trailId)).size;
+    const badgesCount = visitors.reduce((sum, visitor) => sum + visitor.visitorAchievements.length, 0);
+
+    return res.json({
+      xp,
+      level: Math.max(1, Math.floor(xp / 1000) + 1),
+      visitsCount: visits.length,
+      badgesCount,
+      trailsCompleted
+    });
+  } catch (err) {
+    console.error("Erro me stats:", err);
+    return res.status(500).json({ message: "Erro ao buscar estatisticas" });
   }
 });
 
@@ -402,8 +549,10 @@ router.post("/track", authMiddleware, async (req, res) => {
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = (req as any).tenantId || req.query.tenantId;
     const user = req.user!;
+    const tenantId = user.role === Role.MASTER
+      ? ((req as any).tenantId || req.query.tenantId)
+      : user.tenantId;
 
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório para isolamento de dados" });
@@ -462,7 +611,8 @@ router.post("/visit-from-qr", async (req, res) => {
     }
 
     let finalCode = code;
-    const isProduction = process.env.NODE_ENV === "production";
+    const appEnv = process.env.APP_ENV?.toLowerCase();
+    const isProduction = process.env.NODE_ENV === "production" || appEnv === "production" || appEnv === "homologation";
     const parts = code.split('.');
 
     if (parts.length === 3) {
@@ -858,7 +1008,8 @@ router.get("/:visitorId/summary", authMiddleware, async (req, res) => {
 router.put("/me", authMiddleware, async (req, res) => {
   try {
     const user = req.user!;
-    const { tenantId, name, newEmail } = req.body;
+    const { name, newEmail } = req.body;
+    const tenantId = user.tenantId;
     const email = user.email; // Use authenticated user's email
 
     if (!tenantId) {
@@ -888,12 +1039,51 @@ router.put("/me", authMiddleware, async (req, res) => {
   }
 });
 
-// Listar skins adquiridas pelo visitante
+// Listar skins adquiridas pelo próprio visitante logado (Seguro contra IDOR)
+router.get("/me/skins", authMiddleware, async (req, res) => {
+  try {
+    const userEmail = req.user!.email.toLowerCase();
+    const tenantId = req.user!.tenantId || undefined;
+
+    const visitor = await prisma.visitor.findFirst({
+      where: { email: userEmail, tenantId }
+    });
+
+    if (!visitor) return res.status(404).json({ message: "Visitante não encontrado" });
+
+    const skins = await prisma.visitorSkin.findMany({
+      where: { visitorId: visitor.id, revokedAt: null },
+      include: { skin: true },
+      orderBy: { acquiredAt: "desc" }
+    });
+    return res.json(skins);
+  } catch (err) {
+    console.error("Erro ao listar minhas skins:", err);
+    return res.status(500).json({ message: "Erro ao buscar guarda-roupa" });
+  }
+});
+
+// Listar skins adquiridas por um visitante id (Acesso restrito para ADMIN/MASTER)
 router.get("/:id/skins", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+
+    const visitor = await prisma.visitor.findUnique({
+      where: { id }
+    });
+
+    if (!visitor) return res.status(404).json({ message: "Visitante não encontrado" });
+
+    // Validar propriedade: mesmo email de login ou admin/master com mesmo tenant
+    const isOwner = visitor.email && req.user!.email.toLowerCase() === visitor.email.toLowerCase();
+    const isAuthorizedAdmin = (req.user!.role === Role.ADMIN || req.user!.role === Role.MASTER) && req.user!.tenantId === visitor.tenantId;
+
+    if (!isOwner && !isAuthorizedAdmin) {
+      return res.status(403).json({ message: "Acesso negado: você não tem permissão para ver as skins deste perfil" });
+    }
+
     const skins = await prisma.visitorSkin.findMany({
-      where: { visitorId: id },
+      where: { visitorId: id, revokedAt: null },
       include: { skin: true },
       orderBy: { acquiredAt: "desc" }
     });
@@ -971,11 +1161,63 @@ router.get("/me/passport", authMiddleware, async (req, res) => {
 
     const stamps = await (prisma as any).passportStamp.findMany({
       where: { visitorId: visitor.id },
-      include: { work: { select: { title: true, artist: true, imageUrl: true } } },
+      include: {
+        work: {
+          select: {
+            id: true,
+            title: true,
+            artist: true,
+            imageUrl: true,
+            equipamentoCultural: {
+              select: {
+                id: true,
+                nome: true,
+                slug: true,
+                tipo: true,
+                cidade: true,
+                estado: true,
+                fotoCapaUrl: true,
+                logoUrl: true
+              }
+            }
+          }
+        }
+      },
       orderBy: { stampedAt: "desc" }
     });
 
-    res.json({ xp: visitor.xp, name: visitor.name, stamps });
+    const fragments = await prisma.visitorCard.findMany({
+      where: { visitorId: visitor.id },
+      include: {
+        collectibleCard: {
+          include: {
+            work: {
+              select: {
+                id: true,
+                title: true,
+                artist: true,
+                imageUrl: true,
+                equipamentoCultural: {
+                  select: {
+                    id: true,
+                    nome: true,
+                    slug: true,
+                    tipo: true,
+                    cidade: true,
+                    estado: true,
+                    fotoCapaUrl: true,
+                    logoUrl: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      orderBy: { earnedAt: "desc" }
+    });
+
+    res.json({ xp: visitor.xp, name: visitor.name, stamps, fragments });
   } catch (error) {
     res.status(500).json({ message: "Erro ao carregar passaporte" });
   }

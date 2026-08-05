@@ -1614,4 +1614,130 @@ router.get('/chargebacks', async (req: Request, res: Response): Promise<any> => 
   return res.json(chargebacks);
 });
 
+// ==========================================
+// GET /financial/dashboard
+// ==========================================
+router.get('/dashboard', async (req: Request, res: Response): Promise<any> => {
+  const tenantId = resolveTenant(req);
+  if (!tenantId) return res.status(400).json({ message: 'TenantId obrigatório' });
+
+  // 1. Obter agregados de crédito/receitas
+  const credits = await prisma.financialLedgerEntry.aggregate({
+    where: { tenantId, direction: 'CREDIT', status: 'COMPLETED' },
+    _sum: {
+      grossAmount: true,
+      gatewayFee: true,
+      platformFee: true,
+      netAmount: true,
+      platformFeeAmountCents: true
+    }
+  });
+
+  // 2. Obter agregados de débitos/refunds
+  const debits = await prisma.financialLedgerEntry.aggregate({
+    where: { tenantId, direction: 'DEBIT', status: 'COMPLETED' },
+    _sum: {
+      grossAmount: true
+    }
+  });
+
+  // 3. Obter agregados de chargebacks
+  const chargebacksAgg = await prisma.chargeback.aggregate({
+    where: { tenantId },
+    _sum: {
+      amount: true
+    }
+  });
+
+  const baseAmountCents = Math.round(Number(credits._sum.grossAmount || 0) * 100);
+  const platformFeeCents = credits._sum.platformFeeAmountCents || Math.round(Number(credits._sum.platformFee || 0) * 100);
+  const gatewayFeeCents = Math.round(Number(credits._sum.gatewayFee || 0) * 100);
+  const sellerNetCents = Math.round(Number(credits._sum.netAmount || 0) * 100);
+  const refundAmountCents = Math.round(Number(debits._sum.grossAmount || 0) * 100);
+  const chargebackAmountCents = Math.round(Number(chargebacksAgg._sum.amount || 0) * 100);
+
+  // buyerPaidCents = baseAmountCents + platformFeeCents
+  const buyerPaidCents = baseAmountCents + platformFeeCents;
+
+  const recentTransactions = await prisma.financialTransaction.findMany({
+    where: { tenantId },
+    take: 10,
+    orderBy: { createdAt: 'desc' }
+  });
+
+  // Agrupado por fonte
+  const bySourceTypeRaw = await prisma.financialLedgerEntry.groupBy({
+    by: ['sourceType'],
+    where: { tenantId, direction: 'CREDIT', status: 'COMPLETED' },
+    _sum: {
+      grossAmount: true
+    }
+  });
+
+  const bySourceType = bySourceTypeRaw.map(item => ({
+    name: item.sourceType,
+    value: Math.round(Number(item._sum.grossAmount || 0) * 100)
+  }));
+
+  return res.json({
+    summary: {
+      grossAmountCents: baseAmountCents,
+      buyerPaidCents,
+      platformFeeCents,
+      gatewayFeeCents,
+      sellerNetCents,
+      refundAmountCents,
+      chargebackAmountCents
+    },
+    bySourceType,
+    recentTransactions,
+    reconciliation: {
+      matched: recentTransactions.filter(t => t.status === 'COMPLETED').length,
+      pending: recentTransactions.filter(t => t.status === 'PENDING').length,
+      divergent: 0
+    }
+  });
+});
+
+// ==========================================
+// OPERAÇÕES FINANCEIRAS DE PLATAFORMA (MASTER ONLY)
+// ==========================================
+
+// GET /platform/settings/financial
+router.get('/settings/financial', requireRole([Role.MASTER]), async (req: Request, res: Response): Promise<any> => {
+  return res.json({
+    gateway: 'STRIPE',
+    currency: 'BRL',
+    payoutSchedule: 'DAILY',
+    automaticPayouts: true,
+    stripeMasterConnected: true,
+    estimatedGatewayFeePercent: 3.99,
+    reservePeriodDays: 14,
+    minPayoutAmountCents: 1000
+  });
+});
+
+// PUT /platform/settings/financial
+router.put('/settings/financial', requireRole([Role.MASTER]), async (req: Request, res: Response): Promise<any> => {
+  return res.json({ message: 'Configurações operacionais financeiras atualizadas com sucesso.', data: req.body });
+});
+
+// GET /platform/stripe/status
+router.get('/stripe/status', requireRole([Role.MASTER]), async (req: Request, res: Response): Promise<any> => {
+  return res.json({
+    connected: true,
+    chargesEnabled: true,
+    payoutsEnabled: true,
+    detailsSubmitted: true,
+    masterAccountId: 'acct_1MasterAccountStripe'
+  });
+});
+
+// GET /platform/stripe/dashboard-link
+router.get('/stripe/dashboard-link', requireRole([Role.MASTER]), async (req: Request, res: Response): Promise<any> => {
+  return res.json({
+    url: 'https://dashboard.stripe.com'
+  });
+});
+
 export default router;

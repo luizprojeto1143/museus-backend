@@ -121,7 +121,7 @@ router.get('/dashboard', authMiddleware, requireRole(['ADMIN', 'MASTER']), async
 router.get('/dre', authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.SECRETARIA]), async (req, res) => {
     try {
         const user = req.user!;
-        let tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
+        const tenantId = user.role === Role.MASTER && req.query.tenantId ? (req.query.tenantId as string) : user.tenantId;
 
         if (!tenantId) {
             return res.status(400).json({ message: 'TenantID obrigatório' });

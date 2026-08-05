@@ -13,10 +13,15 @@ router.get("/", authMiddleware, async (req, res) => {
     try {
         const { year, month, tenantId } = req.query;
         const userRole = req.user?.role;
+        const targetTenantId = userRole === Role.MASTER ? (tenantId as string | undefined) : req.user?.tenantId;
+
+        if (!targetTenantId) {
+            return res.status(400).json({ message: "Tenant Id inválido" });
+        }
 
         // Se não for admin, filtrar apenas os próprios agendamentos do usuário (fallback) ou exigir tenantId
         const where: any = {
-            tenantId: tenantId as string,
+            tenantId: targetTenantId,
             status: { not: "CANCELLED" }
         };
 
@@ -296,6 +301,13 @@ router.put("/:id", authMiddleware, validate(updateBookingSchema), async (req, re
         const newSpaceId = spaceId || booking.spaceId;
         const newStart = startTime ? new Date(startTime) : booking.startTime;
         const newEnd = endTime ? new Date(endTime) : booking.endTime;
+
+        if (spaceId) {
+            const space = await prisma.space.findUnique({ where: { id: spaceId } });
+            if (!space || space.tenantId !== booking.tenantId) {
+                return res.status(404).json({ message: "Espaço não encontrado." });
+            }
+        }
 
         if (newSpaceId && newStart && newEnd) {
             const conflicts = await prisma.booking.count({

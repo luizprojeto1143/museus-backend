@@ -110,6 +110,134 @@ router.get("/public/:id/results", async (req, res) => {
     }
 });
 
+// Transparência pública do ciclo do edital
+router.get("/public/:id/transparency", async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const notice = await prisma.publicNotice.findUnique({
+            where: { id },
+            include: {
+                tenant: { select: { id: true, name: true, slug: true, logoUrl: true } },
+                culturalProjects: {
+                    orderBy: [{ finalScore: "desc" }, { createdAt: "asc" }],
+                    include: {
+                        user: { select: { name: true } },
+                        appeals: {
+                            select: {
+                                id: true,
+                                type: true,
+                                status: true,
+                                reason: true,
+                                requestedAdjustment: true,
+                                response: true,
+                                counterResponse: true,
+                                reviewedAt: true,
+                                createdAt: true
+                            },
+                            orderBy: { createdAt: "asc" }
+                        },
+                        terms: {
+                            where: { status: "SIGNED" },
+                            select: {
+                                id: true,
+                                title: true,
+                                documentUrl: true,
+                                signedDocumentUrl: true,
+                                signedAt: true
+                            },
+                            orderBy: { signedAt: "desc" }
+                        },
+                        accountabilities: {
+                            where: { status: { in: ["APPROVED", "UNDER_REVIEW", "ADJUSTMENTS_REQUIRED"] } },
+                            select: {
+                                id: true,
+                                status: true,
+                                periodStart: true,
+                                periodEnd: true,
+                                executionSummary: true,
+                                audienceReached: true,
+                                amountSpent: true,
+                                submittedAt: true,
+                                reviewedAt: true,
+                                reviewNotes: true
+                            },
+                            orderBy: { createdAt: "desc" }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!notice || notice.status === "DRAFT") {
+            return res.status(404).json({ message: "Edital não encontrado" });
+        }
+
+        if (!["RESULTS_PUBLISHED", "FINISHED"].includes(notice.status)) {
+            return res.status(404).json({ message: "Transparência disponível após publicação dos resultados" });
+        }
+
+        const projects = notice.culturalProjects.map(project => ({
+            id: project.id,
+            title: project.title,
+            proponentName: project.user?.name || "Não informado",
+            status: project.status,
+            culturalCategory: project.culturalCategory,
+            targetRegion: project.targetRegion,
+            requestedBudget: project.requestedBudget,
+            approvedBudget: project.approvedBudget,
+            expectedAudience: project.expectedAudience,
+            actualAudience: project.actualAudience,
+            finalScore: notice.showScoresInResults ? project.finalScore : null,
+            reviewedAt: project.reviewedAt,
+            appeals: project.appeals,
+            signedTerms: project.terms,
+            accountabilities: project.accountabilities
+        }));
+
+        const totals = projects.reduce((acc, project) => {
+            acc.projects += 1;
+            if (project.status === "APPROVED" || project.status === "IN_EXECUTION" || project.status === "COMPLETED") acc.approved += 1;
+            acc.requestedBudget += Number(project.requestedBudget || 0);
+            acc.approvedBudget += Number(project.approvedBudget || 0);
+            acc.audience += Number(project.actualAudience || project.expectedAudience || 0);
+            acc.appeals += project.appeals.length;
+            acc.signedTerms += project.signedTerms.length;
+            acc.accountabilities += project.accountabilities.length;
+            return acc;
+        }, {
+            projects: 0,
+            approved: 0,
+            requestedBudget: 0,
+            approvedBudget: 0,
+            audience: 0,
+            appeals: 0,
+            signedTerms: 0,
+            accountabilities: 0
+        });
+
+        return res.json({
+            notice: {
+                id: notice.id,
+                title: notice.title,
+                description: notice.description,
+                status: notice.status,
+                totalBudget: notice.totalBudget,
+                inscriptionStart: notice.inscriptionStart,
+                inscriptionEnd: notice.inscriptionEnd,
+                resultsDate: notice.resultsDate,
+                executionEnd: notice.executionEnd,
+                tenant: notice.tenant
+            },
+            totals,
+            projects
+        });
+    } catch (err) {
+        console.error("Erro ao buscar transparência do edital", err);
+        return res.status(500).json({ message: "Erro ao buscar transparência do edital" });
+    }
+});
+
 // ========== ADMIN ENDPOINTS ==========
 
 // Lista todos os editais do tenant (admin)

@@ -1,8 +1,8 @@
-// @ts-nocheck
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { prisma } from '../prisma.js';
 import axios from 'axios';
+import { randomUUID } from 'crypto';
 
 export class CertificateService {
     /**
@@ -24,9 +24,9 @@ export class CertificateService {
         const cert = await prisma.certificate.findUnique({
             where: { id: certificateId },
             include: {
-                Visitor: true,
-                Tenant: true,
-                CertificateTemplate: true
+                visitor: true,
+                tenant: true,
+                certificateTemplate: true
             }
         });
 
@@ -44,11 +44,11 @@ export class CertificateService {
         const buildPdf = async () => {
             try {
                 // Check for Template
-                if (cert.template) {
+                if (cert.certificateTemplate) {
                     // 1. Background
-                    if (cert.template.backgroundUrl) {
+                    if (cert.certificateTemplate.backgroundUrl) {
                         try {
-                            const bgResponse = await axios.get(cert.template.backgroundUrl, { responseType: 'arraybuffer' });
+                            const bgResponse = await axios.get(cert.certificateTemplate.backgroundUrl, { responseType: 'arraybuffer' });
                             doc.image(bgResponse.data, 0, 0, { width: 841.89, height: 595.28 });
                         } catch (e) {
                             console.error("Failed to load template background", e);
@@ -59,13 +59,13 @@ export class CertificateService {
                     }
 
                     // 2. Elements
-                    const elements = cert.template.elements as any[];
+                    const elements = cert.certificateTemplate.elements as any[];
                     if (Array.isArray(elements)) {
                         for (const el of elements) {
                             let text = el.text || '';
 
                             // Variable Replacement
-                            text = text.replace('{{nome_visitante}}', cert.Visitor?.name || 'Visitante');
+                            text = text.replace('{{nome_visitante}}', cert.visitor?.name || 'Visitante');
                             text = text.replace('{{data_conclusao}}', cert.generatedAt.toLocaleDateString('pt-BR'));
                             text = text.replace('{{code}}', cert.code);
 
@@ -97,7 +97,7 @@ export class CertificateService {
                 } else {
                     // --- FALLBACK TO DEFAULT LAYOUT ---
                     // 1. Background
-                    let backgroundUrl = cert.Tenant?.certificateBackgroundUrl;
+                    let backgroundUrl = cert.tenant?.certificateBackgroundUrl;
 
                     // Override if event specific
                     if (cert.type === 'EVENT' && cert.relatedId) {
@@ -131,7 +131,7 @@ export class CertificateService {
                         .text('Certificamos que', 0, 180, { align: 'center' });
 
                     doc.font('Helvetica-Bold').fontSize(35).fillColor('#000000')
-                        .text(cert.Visitor?.name || 'Visitante', 0, 220, { align: 'center' });
+                        .text(cert.visitor?.name || 'Visitante', 0, 220, { align: 'center' });
 
                     // Generate description based on type
                     let description = 'concluiu com êxito a participação nas atividades culturais.';
@@ -152,7 +152,7 @@ export class CertificateService {
 
                     // 3. Metadata (Date, Tenant)
                     doc.fontSize(14).text(`Data: ${cert.generatedAt.toLocaleDateString('pt-BR')}`, 100, 400);
-                    doc.text(`Emissor: ${cert.Tenant?.name}`, 100, 420);
+                    doc.text(`Emissor: ${cert.tenant?.name}`, 100, 420);
                     doc.text(`Código: ${cert.code}`, 100, 440);
 
                     // 4. QR Code
@@ -219,7 +219,7 @@ export class CertificateService {
                 const hasResponse = await prisma.surveyResponse.findFirst({
                     where: {
                         visitorId: visitorId,
-                        SurveyQuestion: { eventId: relatedId }
+                        surveyQuestion: { eventId: relatedId }
                     }
                 });
 
@@ -245,7 +245,7 @@ export class CertificateService {
                 const code = this.generateCode();
                 cert = await prisma.certificate.create({
                     data: {
-                        id: require('crypto').randomUUID(), code, visitorId,
+                        id: randomUUID(), code, visitorId,
                         tenantId,
                         type,
                         relatedId,

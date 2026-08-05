@@ -12,10 +12,11 @@ export class BadgeService {
             include: {
                 visitor: {
                     include: {
-                        vRPGs: {
+                        visitorRPGs: {
                             where: { isActive: true },
-                            include: { equippedSkin: true }
-                        }
+                            include: { skin: true, characterBase: true }
+                        },
+                        visitorSkins: true
                     }
                 },
                 tenant: true
@@ -33,10 +34,40 @@ export class BadgeService {
             margin: 0
         });
 
-        const avatarUrl = request.skinImageUrl || 'https://museus.app/default_avatar.png';
+        // Safe Avatar Fallback Logic
+        const activeRPG = request.visitor?.visitorRPGs?.[0];
+        const equippedSkinId = activeRPG?.equippedSkinId;
+        
+        let resolvedAvatarUrl = "";
+        
+        if (equippedSkinId) {
+            const visitorSkin = request.visitor?.visitorSkins?.find((vs: any) => vs.skinId === equippedSkinId);
+            resolvedAvatarUrl = visitorSkin?.generatedAvatarUrl || "";
+        }
+        
+        if (!resolvedAvatarUrl) {
+            resolvedAvatarUrl = activeRPG?.baseAvatarUrl || "";
+        }
+        
+        if (!resolvedAvatarUrl) {
+            resolvedAvatarUrl = activeRPG?.skin?.imageUrl || "";
+        }
+        
+        if (!resolvedAvatarUrl) {
+            resolvedAvatarUrl = activeRPG?.characterBase?.imageUrl || "";
+        }
+        
+        if (!resolvedAvatarUrl) {
+            resolvedAvatarUrl = request.skinImageUrl || "";
+        }
+        
+        if (!resolvedAvatarUrl) {
+            resolvedAvatarUrl = 'https://museus.app/default_avatar.png';
+        }
+
         let avatarData: any = null;
         try {
-            const avatarRes = await axios.get(avatarUrl, { responseType: 'arraybuffer' });
+            const avatarRes = await axios.get(resolvedAvatarUrl, { responseType: 'arraybuffer' });
             avatarData = avatarRes.data;
         } catch (e) {
             console.error("Failed to load badge avatar", e);

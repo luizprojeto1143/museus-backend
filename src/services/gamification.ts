@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { prisma } from "../prisma.js";
 
 export class GamificationService {
@@ -57,7 +56,7 @@ export class GamificationService {
             xpReward: 100, // Standardize XP reward or make it dynamic if schema supported it
             date: clue.createdAt,
             // Hint: If work has a room, maybe use it as a hint?
-            hint: {}?.room ? `Local: ${{}?.room}` : undefined,
+            hint: clue.work?.room ? `Local: ${clue.work.room}` : undefined,
             isActive: true // Backward compatibility
         }));
     }

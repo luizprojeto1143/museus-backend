@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
 // POST /heritage — Create (admin)
 router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
     try {
-        const tenantId = req.user!.tenantId;
+        const tenantId = req.user!.role === 'MASTER' ? (req.body.tenantId as string | undefined) : req.user!.tenantId;
         if (!tenantId) return res.status(400).json({ message: 'tenantId obrigatório' });
         const { title, description, category, status, imageUrl, videoUrl, holders, region } = req.body;
         const item = await prisma.intangibleHeritage.create({

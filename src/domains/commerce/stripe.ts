@@ -12,7 +12,7 @@ const router = Router();
 router.get('/onboarding-link', authMiddleware, async (req, res) => {
     try {
         const user = req.user!;
-        const { type, id } = req.query; // type: 'PROVIDER' | 'MUSEUM'
+        const { type, id } = req.query; // type: 'PROVIDER' | 'MUSEUM' | 'MASTER'
         
         let stripeConnectId: string | undefined = undefined;
         let accountName = '';
@@ -33,6 +33,16 @@ router.get('/onboarding-link', authMiddleware, async (req, res) => {
             stripeConnectId = tenant.stripeConnectId || undefined;
             accountName = tenant.name;
             dbUpdate = (newId: string) => prisma.tenant.update({ where: { id: tenant.id }, data: { stripeConnectId: newId } });
+        } else if (type === 'MASTER') {
+            if (user.role !== 'MASTER') {
+                return res.status(403).json({ message: 'Acesso negado. Apenas o Master da plataforma pode gerenciar a conta principal.' });
+            }
+            const masterUser = await prisma.user.findUnique({ where: { id: user.id } });
+            if (!masterUser) return res.status(404).json({ message: 'Usuário Master não encontrado' });
+            
+            stripeConnectId = masterUser.stripeConnectId || undefined;
+            accountName = 'Cultura Viva - Conta Principal';
+            dbUpdate = (newId: string) => prisma.user.update({ where: { id: masterUser.id }, data: { stripeConnectId: newId } });
         } else if (type === 'PRODUCER') {
             const producer = await prisma.user.findUnique({ where: { id: user.id } });
             if (!producer) return res.status(404).json({ message: 'Produtor não encontrado' });
@@ -60,7 +70,15 @@ router.get('/onboarding-link', authMiddleware, async (req, res) => {
         }
 
         const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-        const returnUrl = type === 'MUSEUM' ? `${frontendUrl}/admin/settings?tab=financeiro` : type === 'PRODUCER' ? `${frontendUrl}/producer/finance?stripe=success` : `${frontendUrl}/provider/dashboard?stripe=success`;
+        let returnUrl = `${frontendUrl}/provider/dashboard?stripe=success`;
+        
+        if (type === 'MUSEUM') {
+            returnUrl = `${frontendUrl}/admin/settings?tab=financeiro`;
+        } else if (type === 'PRODUCER') {
+            returnUrl = `${frontendUrl}/producer/finance?stripe=success`;
+        } else if (type === 'MASTER') {
+            returnUrl = `${frontendUrl}/master/financeiro?stripe=success`;
+        }
         
         // Generate Onboarding Link
         const accountLink = await stripeService.createAccountLink(
@@ -97,6 +115,12 @@ router.get('/dashboard-link', authMiddleware, async (req, res) => {
             }
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId as string } });
             connectedId = tenant?.stripeConnectId || '';
+        } else if (type === 'MASTER') {
+            if (user.role !== 'MASTER') {
+                return res.status(403).json({ message: 'Acesso negado.' });
+            }
+            const masterUser = await prisma.user.findUnique({ where: { id: user.id } });
+            connectedId = masterUser?.stripeConnectId || '';
         } else if (type === 'PRODUCER') {
             const producer = await prisma.user.findUnique({ where: { id: req.user!.id } });
             connectedId = producer?.stripeConnectId || '';
@@ -146,6 +170,12 @@ router.get('/balance', authMiddleware, async (req, res) => {
             }
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId as string } });
             connectedId = tenant?.stripeConnectId || '';
+        } else if (type === 'MASTER') {
+            if (user.role !== 'MASTER') {
+                return res.status(403).json({ message: 'Acesso negado.' });
+            }
+            const masterUser = await prisma.user.findUnique({ where: { id: user.id } });
+            connectedId = masterUser?.stripeConnectId || '';
         } else if (type === 'PRODUCER') {
             const producer = await prisma.user.findUnique({ where: { id: req.user!.id } });
             connectedId = producer?.stripeConnectId || '';
@@ -196,6 +226,12 @@ router.post('/payout', authMiddleware, async (req, res) => {
             if (!tenantId) return res.status(400).json({ message: 'Tenant ID não encontrado' });
             const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
             connectedId = tenant?.stripeConnectId || '';
+        } else if (type === 'MASTER') {
+            if (user.role !== 'MASTER') {
+                return res.status(403).json({ message: 'Acesso negado.' });
+            }
+            const masterUser = await prisma.user.findUnique({ where: { id: user.id } });
+            connectedId = masterUser?.stripeConnectId || '';
         } else if (type === 'PRODUCER') {
             const producer = await prisma.user.findUnique({ where: { id: user.id } });
             connectedId = producer?.stripeConnectId || '';

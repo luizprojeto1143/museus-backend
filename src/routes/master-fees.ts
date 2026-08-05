@@ -22,6 +22,7 @@ import {
   FEE_SOURCE_LABELS
 } from "../services/fee.service.js";
 import { createAuditLog } from "../services/audit.service.js";
+import { z } from "zod";
 
 const router = Router();
 
@@ -34,6 +35,43 @@ function getPagination(req: Request) {
   const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit || "20"), 10)));
   const skip = (page - 1) * limit;
   return { page, limit, skip };
+}
+
+const feeConfigBaseSchema = z.object({
+  tenantId: z.string().uuid().nullable().optional(),
+  sourceType: z.nativeEnum(PlatformFeeSource),
+  name: z.string().trim().min(1).max(160).nullable().optional(),
+  percentage: z.coerce.number().min(0).max(100),
+  fixedFee: z.coerce.number().min(0).nullable().optional(),
+  feePaidBy: z.nativeEnum(FeePaidBy).optional(),
+  isActive: z.boolean().optional(),
+  startsAt: z.string().datetime().nullable().optional(),
+  endsAt: z.string().datetime().nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  priority: z.coerce.number().int().min(-1000).max(1000).optional()
+});
+
+const feeConfigSchema = feeConfigBaseSchema.refine((data) => {
+  if (!data.startsAt || !data.endsAt) return true;
+  return new Date(data.startsAt).getTime() <= new Date(data.endsAt).getTime();
+}, {
+  message: "startsAt deve ser anterior ou igual a endsAt.",
+  path: ["endsAt"]
+});
+
+const feeConfigPatchSchema = feeConfigBaseSchema.partial().refine((data) => {
+  if (!data.startsAt || !data.endsAt) return true;
+  return new Date(data.startsAt).getTime() <= new Date(data.endsAt).getTime();
+}, {
+  message: "startsAt deve ser anterior ou igual a endsAt.",
+  path: ["endsAt"]
+}).refine((data) => Object.keys(data).length > 0, {
+  message: "Envie ao menos um campo para atualizar."
+});
+
+function dateOrNull(value: string | null | undefined, fallback?: Date | null) {
+  if (value === undefined) return fallback ?? null;
+  return value ? new Date(value) : null;
 }
 
 // ==========================================

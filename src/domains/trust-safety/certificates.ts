@@ -52,18 +52,17 @@ router.post('/generate', authMiddleware, limiter, async (req, res) => {
 router.get('/mine', authMiddleware, async (req, res) => {
     try {
         const user = req.user!;
-        const { tenantId } = req.query;
+        const targetTenantId = user.role === 'MASTER'
+            ? (req.query.tenantId as string | undefined)
+            : user.tenantId;
+        if (!targetTenantId) return res.status(400).json({ message: "tenantId obrigatorio" });
 
         // CRITICAL FIX: Find visitor by user's email
-        const whereClause: { email: string; tenantId?: string } = {
-            email: user.email.toLowerCase()
-        };
-        if (tenantId) {
-            whereClause.tenantId = tenantId as string;
-        }
-
         const visitor = await prisma.visitor.findFirst({
-            where: whereClause
+            where: {
+                email: user.email.toLowerCase(),
+                tenantId: targetTenantId
+            }
         });
 
         if (!visitor) {

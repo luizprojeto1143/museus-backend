@@ -8,12 +8,30 @@ import { createAuditLog } from "../governance/audit.js";
 
 const router = Router();
 
+async function validateTrailWorks(tenantId: string, workIds: string[]) {
+  if (!workIds.length) return;
+
+  const works = await prisma.work.findMany({
+    where: {
+      id: { in: workIds },
+      tenantId,
+      published: true,
+      deletedAt: null
+    },
+    select: { id: true }
+  });
+
+  if (works.length !== new Set(workIds).size) {
+    throw Object.assign(new Error("Uma ou mais obras nao pertencem a este tenant ou nao estao publicadas"), { status: 400 });
+  }
+}
+
 // Lista trilhas por tenant
 router.get("/", async (req, res) => {
   try {
     const tenantId = (req as any).tenantId || (req.query.tenantId as string);
     const equipamentoId = req.query.equipamentoId as string;
-    const ownerId = req.query.ownerId as string;
+    const ownerId = undefined;
 
     if (!tenantId) {
       return res.status(400).json({ message: "tenantId é obrigatório" });
@@ -76,7 +94,12 @@ router.get("/:id", async (req, res) => {
     }
     // carregar obras desta trilha
     const works = await prisma.work.findMany({
-      where: { id: { in: trail.workIds } }
+      where: {
+        id: { in: trail.workIds },
+        tenantId: String(tenantId),
+        published: true,
+        deletedAt: null
+      }
     });
     return res.json({ ...trail, works });
   } catch (err) {
@@ -138,12 +161,17 @@ router.post("/generate", formLimiter, async (req, res) => {
 // SAVE: Persist a Smart Route
 router.post("/save", authMiddleware, async (req, res) => {
   try {
-    const { title, description, workIds, duration, tenantId } = req.body;
+    const { title, description, workIds, duration } = req.body;
     const user = req.user!;
+    const tenantId = user.role === Role.MASTER ? req.body.tenantId : user.tenantId;
 
     if (!workIds || !Array.isArray(workIds) || workIds.length === 0) {
       return res.status(400).json({ message: "Roteiro deve ter obras." });
     }
+    if (!tenantId) {
+      return res.status(400).json({ message: "tenantId obrigatorio" });
+    }
+    await validateTrailWorks(tenantId, workIds);
 
     // Link to visitor if they are the one saving
     const ownerId = user.role === Role.VISITOR ? user.id : null;
@@ -191,6 +219,7 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.COLL
     });
 
     const data = trailSchema.parse(req.body);
+    await validateTrailWorks(tenantId, data.workIds);
 
     const trail = await prisma.trail.create({
       data: {
@@ -241,6 +270,9 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.CO
       videoUrl?: string;
       active?: boolean;
     };
+    if (workIds !== undefined) {
+      await validateTrailWorks(existing.tenantId, workIds);
+    }
     // Storage Cleanup: Delete old files if they were replaced
     const { deleteFromStorage } = await import("../../routes/upload.js");
     if (imageUrl && imageUrl !== existing.imageUrl && existing.imageUrl) deleteFromStorage(existing.imageUrl).catch(console.error);
@@ -253,7 +285,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.CO
         title,
         description,
         duration,
-        workIds: workIds || [],
+        workIds: workIds !== undefined ? workIds : undefined,
         imageUrl,
         audioUrl,
         videoUrl,

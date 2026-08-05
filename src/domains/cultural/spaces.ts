@@ -19,6 +19,7 @@ const spaceSchema = z.object({
         isBookable: z.boolean().optional(),
         imageUrl: z.string().url().optional().nullable(),
         equipamentoId: z.string().optional().nullable(),
+        tenantId: z.string().optional(),
         theaterLayout: z.any().optional()
     })
 });
@@ -29,6 +30,16 @@ const updateSpaceSchema = z.object({
     }),
     body: spaceSchema.shape.body.partial()
 });
+
+async function validateSpaceEquipment(tenantId: string, equipamentoId?: string | null) {
+    if (!equipamentoId) return;
+    const equipment = await prisma.equipamentoCultural.findFirst({
+        where: { id: equipamentoId, tenantId }
+    });
+    if (!equipment) {
+        throw Object.assign(new Error("Equipamento nao encontrado neste tenant"), { status: 400 });
+    }
+}
 
 // List Spaces
 router.get("/", authMiddleware, async (req, res) => {
@@ -69,6 +80,9 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
     try {
         const user = req.user!;
         const { name, description, capacity, type, resources, isBookable, imageUrl } = req.body;
+        const tenantId = user.role === Role.MASTER ? req.body.tenantId : user.tenantId;
+        if (!tenantId) return res.status(400).json({ message: "tenantId obrigatorio" });
+        await validateSpaceEquipment(tenantId, req.body.equipamentoId);
 
         const space = await prisma.space.create({
             data: {
@@ -79,13 +93,14 @@ router.post("/", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PROD
                 resources: resources ?? Prisma.DbNull,
                 isBookable: isBookable ?? true,
                 imageUrl: imageUrl ?? undefined,
-                tenantId: user.tenantId as string,
+                tenantId,
                 equipamentoId: req.body.equipamentoId || null
             }
         });
 
         return res.status(201).json(space);
-    } catch (err) {
+    } catch (err: any) {
+        if (err.status) return res.status(err.status).json({ message: err.message });
         console.error("Error creating space", err);
         return res.status(500).json({ message: "Erro ao criar espaço" });
     }
@@ -99,6 +114,7 @@ router.put("/:id", authMiddleware, requireRole([Role.ADMIN, Role.MASTER, Role.PR
         const { name, description, capacity, type, resources, isBookable, imageUrl } = req.body;
 
         const spaceData = await assertTenantOwnership({ model: 'space', id, user });
+        await validateSpaceEquipment(spaceData.tenantId, req.body.equipamentoId);
 
         const space = await prisma.space.update({
             where: { id },

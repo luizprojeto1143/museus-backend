@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { TriggerType, CertificateType } from '@prisma/client';
 import { CertificateService } from './certificate.js';
 import { prisma } from '../prisma.js';
@@ -24,7 +23,7 @@ export class CertificateEngine {
                 triggerType: trigger,
                 active: true
             },
-            include: { actionTemplate: true }
+            include: { certificateTemplate: true }
         });
 
         if (rules.length === 0) return;

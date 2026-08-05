@@ -8,6 +8,62 @@ import { checkEntityOwnership, assertTenantOwnership } from "../utils/ownership.
 
 const router = Router();
 
+async function validateQrReference(type: QRType, referenceId: string | undefined, tenantId: string) {
+  const needsReference = new Set<QRType>([
+    QRType.EQUIPMENT,
+    QRType.WORK,
+    QRType.EVENT,
+    QRType.TRAIL,
+    QRType.ROOM,
+    QRType.MAP,
+    QRType.TICKET,
+    QRType.COUPON,
+    QRType.SHOP
+  ]);
+
+  if (!needsReference.has(type)) return;
+  if (!referenceId) {
+    throw Object.assign(new Error("referenceId e obrigatorio para este tipo de QR Code"), { status: 400 });
+  }
+
+  let exists = false;
+  switch (type) {
+    case QRType.EQUIPMENT:
+      exists = !!(await prisma.equipamentoCultural.findFirst({ where: { id: referenceId, tenantId } }));
+      break;
+    case QRType.WORK:
+      exists = !!(await prisma.work.findFirst({ where: { id: referenceId, tenantId, deletedAt: null } }));
+      break;
+    case QRType.EVENT:
+      exists = !!(await prisma.event.findFirst({ where: { id: referenceId, tenantId, deletedAt: null } }));
+      break;
+    case QRType.TRAIL:
+      exists = !!(await prisma.trail.findFirst({ where: { id: referenceId, tenantId } }));
+      break;
+    case QRType.ROOM:
+      exists = !!(await prisma.space.findFirst({ where: { id: referenceId, tenantId } }));
+      break;
+    case QRType.MAP:
+      exists = !!(await prisma.floorPlan.findFirst({ where: { id: referenceId, tenantId } }));
+      break;
+    case QRType.TICKET:
+      exists = !!(await prisma.ticket.findFirst({ where: { id: referenceId, event: { tenantId } } }));
+      break;
+    case QRType.COUPON:
+      exists = !!(await prisma.coupon.findFirst({ where: { id: referenceId, tenantId } }));
+      break;
+    case QRType.SHOP:
+      exists = !!(await prisma.product.findFirst({ where: { id: referenceId, tenantId } }));
+      break;
+    default:
+      exists = true;
+  }
+
+  if (!exists) {
+    throw Object.assign(new Error("Referencia nao encontrada neste tenant"), { status: 404 });
+  }
+}
+
 // Lista QR Codes de um tenant
 router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (req, res) => {
   try {
@@ -27,7 +83,7 @@ router.get("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (r
       orderBy: { createdAt: "desc" }
     });
     return res.json(qrs);
-  } catch (err) {
+  } catch (err: any) {
     console.error("Erro listar QR Codes", err);
     return res.status(500).json({ message: "Erro ao listar QR Codes" });
   }
@@ -57,6 +113,8 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
       return res.status(400).json({ message: "tenantId é obrigatório" });
     }
 
+    await validateQrReference(data.type, data.referenceId, tenantId);
+
     // Se customCode foi enviado, verificar unicidade
     if (data.code) {
       const existing = await prisma.qRCode.findUnique({ where: { code: data.code } });
@@ -78,9 +136,12 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
     });
 
     return res.status(201).json(qr);
-  } catch (err) {
+  } catch (err: any) {
     if (err instanceof z.ZodError) {
       return res.status(400).json({ message: "Dados inválidos", errors: err.errors });
+    }
+    if (err.status) {
+      return res.status(err.status).json({ message: err.message });
     }
     console.error("Erro criar QR Code", err);
     return res.status(500).json({ message: "Erro ao criar QR Code" });
@@ -119,10 +180,14 @@ router.get("/:code/resolve", async (req, res) => {
     let citySlug = qr.tenant.slug;
     let equipmentSlug = qr.tenant.slug; 
 
-    // Locate Equipment Slug if available
-    const equipamento = await prisma.equipamentoCultural.findFirst({
-       where: { tenantId: qr.tenantId }
-    });
+    // Locate the referenced equipment first so entrance QR Codes always land in the right visitor panel.
+    const equipamento = qr.type === QRType.EQUIPMENT && qr.referenceId
+      ? await prisma.equipamentoCultural.findFirst({
+          where: { id: qr.referenceId, tenantId: qr.tenantId }
+        })
+      : await prisma.equipamentoCultural.findFirst({
+          where: { tenantId: qr.tenantId }
+        });
     
     if (qr.tenant.type === 'CITY' || qr.tenant.type === 'SECRETARIA') {
         citySlug = qr.tenant.slug;
@@ -173,10 +238,13 @@ router.get("/:code/resolve", async (req, res) => {
       title: qr.title,
       trackScan: true,
       xpReward: qr.xpReward,
-      requiresAuth: false,
+      requiresAuth: qr.type === QRType.EQUIPMENT,
+      tenantId: qr.tenantId,
+      tenantName: qr.tenant.name,
+      equipmentId: equipamento?.id || null,
       expiresAt: null
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Erro ao resolver QR", err);
     return res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao resolver QR Code" });
   }
@@ -223,6 +291,13 @@ router.post("/:code/scan", authMiddleware, async (req, res) => {
     // Anti-cheat: verificar se já capturou esse item (para WORK, único por obra)
     let alreadyStamped = false;
     if (qr.type === "WORK" && qr.referenceId) {
+      const work = await prisma.work.findFirst({
+        where: { id: qr.referenceId, tenantId: qr.tenantId, deletedAt: null }
+      });
+      if (!work) {
+        return res.status(404).json({ error: "WORK_NOT_FOUND", message: "Obra vinculada ao QR Code nao encontrada." });
+      }
+
       const existingStamp = await prisma.passportStamp.findUnique({
         where: {
           visitorId_workId: { visitorId: visitor.id, workId: qr.referenceId }
@@ -336,7 +411,7 @@ router.post("/:code/scan", authMiddleware, async (req, res) => {
       achievementsUnlocked
     });
 
-  } catch (err) {
+  } catch (err: any) {
     console.error("Erro ao registrar scan do QR", err);
     return res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao registrar leitura" });
   }

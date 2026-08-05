@@ -42,16 +42,35 @@ export async function syncLedgerEntry(
   } else if (tx.registrations && tx.registrations.length > 0) {
     sourceType = 'REGISTRATION';
     sourceId = tx.registrations[0].id;
-    platformFee = Number(tx.fee || 0);
-    gatewayFee = 0;
+    platformFee = tx.platformFeeAmountCents ? tx.platformFeeAmountCents / 100 : Number(tx.fee || 0);
+    gatewayFee = tx.platformFeeAmountCents ? Number(tx.fee || 0) : 0;
   } else if (tx.source === 'SPONSORSHIP') {
     sourceType = 'SPONSORSHIP';
-    platformFee = Number(tx.fee || 0);
+    platformFee = tx.platformFeeAmountCents ? tx.platformFeeAmountCents / 100 : Number(tx.fee || 0);
     gatewayFee = 0;
   } else if (tx.source === 'THEATER') {
     sourceType = 'THEATER';
-    platformFee = Number(tx.fee || 0);
+    platformFee = tx.platformFeeAmountCents ? tx.platformFeeAmountCents / 100 : Number(tx.fee || 0);
     gatewayFee = 0;
+  } else if (tx.source === 'ACCESSIBILITY') {
+    sourceType = 'ACCESSIBILITY';
+    platformFee = tx.platformFeeAmountCents ? tx.platformFeeAmountCents / 100 : 0;
+    gatewayFee = Number(tx.fee || 0);
+  } else if (tx.source === 'SERVICE') {
+    sourceType = 'SERVICE';
+    platformFee = tx.platformFeeAmountCents ? tx.platformFeeAmountCents / 100 : 0;
+    gatewayFee = Number(tx.fee || 0);
+  } else if (tx.source === 'MEMBERSHIP') {
+    sourceType = 'MEMBERSHIP';
+    platformFee = tx.platformFeeAmountCents ? tx.platformFeeAmountCents / 100 : 0;
+    gatewayFee = Number(tx.fee || 0);
+  }
+
+  // Se a taxa foi paga pelo comprador (BUYER), ela não reduz a receita líquida do recebedor
+  const feePaidBy = tx.feePaidBy || 'SELLER';
+  let netAmount = Number(tx.netAmount);
+  if (feePaidBy === 'BUYER') {
+    netAmount = Number(tx.amount) - gatewayFee;
   }
 
   // 3. Upsert do lançamento principal (CREDIT)
@@ -70,7 +89,7 @@ export async function syncLedgerEntry(
       grossAmount: tx.amount,
       gatewayFee: gatewayFee,
       platformFee: platformFee,
-      netAmount: tx.netAmount,
+      netAmount: netAmount,
       currency: 'BRL',
       status: mainStatus,
       paymentMethod: tx.paymentMethod,
@@ -78,16 +97,22 @@ export async function syncLedgerEntry(
       stripeChargeId: tx.stripeChargeId,
       idempotencyKey: mainEntryKey,
       competenceDate: tx.createdAt,
-      settlementDate: tx.status === 'COMPLETED' ? tx.updatedAt : null
+      settlementDate: tx.status === 'COMPLETED' ? tx.updatedAt : null,
+      feeConfigId: tx.feeConfigId,
+      platformFeeAmountCents: tx.platformFeeAmountCents,
+      feePaidBy: tx.feePaidBy
     },
     update: {
       status: mainStatus,
       gatewayFee: gatewayFee,
       platformFee: platformFee,
-      netAmount: tx.netAmount,
+      netAmount: netAmount,
       stripePaymentIntentId: tx.stripePaymentIntentId,
       stripeChargeId: tx.stripeChargeId,
-      settlementDate: tx.status === 'COMPLETED' ? tx.updatedAt : null
+      settlementDate: tx.status === 'COMPLETED' ? tx.updatedAt : null,
+      feeConfigId: tx.feeConfigId,
+      platformFeeAmountCents: tx.platformFeeAmountCents,
+      feePaidBy: tx.feePaidBy
     }
   });
 

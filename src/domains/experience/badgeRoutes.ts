@@ -104,6 +104,36 @@ router.get("/queue", authenticate, authorize(["MASTER"]), async (req, res) => {
 router.put("/:id/status", authenticate, authorize(["MASTER"]), async (req, res) => {
   try {
     const { status, trackingCode } = req.body;
+    
+    // 1. Validar Enum
+    const validStatuses = ["PENDING", "APPROVED", "SHIPPED", "DELIVERED", "REJECTED"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Status inválido. Permitidos: ${validStatuses.join(", ")}` });
+    }
+
+    const currentRequest = await (prisma as any).badgeRequest.findUnique({
+      where: { id: req.params.id }
+    });
+
+    if (!currentRequest) {
+      return res.status(404).json({ error: "Solicitação de crachá não encontrada" });
+    }
+
+    const current = currentRequest.status;
+
+    // 2. Regras de Transição de Estado Rígidas
+    if (["DELIVERED", "REJECTED"].includes(current)) {
+      return res.status(400).json({ error: `Impossível alterar o status. O crachá já se encontra no estado final: ${current}` });
+    }
+
+    if (current === "SHIPPED" && ["PENDING", "APPROVED"].includes(status)) {
+      return res.status(400).json({ error: "Fluxo inválido. Não é possível retornar um crachá já enviado para pendente ou aprovado." });
+    }
+
+    if (current === "APPROVED" && status === "PENDING") {
+      return res.status(400).json({ error: "Fluxo inválido. Não é possível retornar um crachá aprovado para pendente." });
+    }
+
     const request = await (prisma as any).badgeRequest.update({
       where: { id: req.params.id },
       data: { 

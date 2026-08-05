@@ -39,7 +39,7 @@ const ticketSchema = z.object({
 });
 
 // GET /tickets - List all tickets for the authenticated user's tenant
-router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, res) => {
+router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER', 'PRODUCER']), async (req, res) => {
     try {
         const user = req.user!;
         const tenantId = user.tenantId;
@@ -68,7 +68,7 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
             prisma.ticket.count({ where })
         ]);
 
-        res.json({
+        const payload = {
             data: tickets,
             meta: {
                 total,
@@ -76,10 +76,35 @@ router.get('/', authMiddleware, requireRole(['ADMIN', 'MASTER']), async (req, re
                 limit,
                 totalPages: Math.ceil(total / limit)
             }
-        });
+        };
+
+        res.json(req.user!.role === 'PRODUCER' ? tickets : payload);
     } catch (error) {
         console.error("Error fetching tickets", error);
         res.status(500).json({ error: 'Failed to fetch tickets' });
+    }
+});
+
+// POST /tickets - Compatibility route used by the producer panel.
+router.post('/', authMiddleware, requireRole(['ADMIN', 'MASTER', 'PRODUCER']), async (req, res) => {
+    const { eventId } = req.body;
+    if (!eventId) return res.status(400).json({ error: 'eventId is required' });
+
+    try {
+        await assertTenantOwnership({ model: 'event', id: eventId, user: req.user! });
+        const data = ticketSchema.parse({ ...req.body, type: req.body.type || 'FREE' });
+        const ticket = await prisma.ticket.create({
+            data: {
+                ...data,
+                eventId,
+                salesStartDate: data.salesStartDate ? new Date(data.salesStartDate) : null,
+                salesEndDate: data.salesEndDate ? new Date(data.salesEndDate) : null,
+            } as any
+        });
+        return res.status(201).json(ticket);
+    } catch (error: any) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        return res.status(400).json({ error: 'Invalid data', details: error });
     }
 });
 
