@@ -3,7 +3,7 @@ import IORedis from 'ioredis';
 import { logger } from '../logger/pino.logger.js';
 
 const redisUrl = process.env.REDIS_URL || '';
-const hasRedis = !!process.env.REDIS_URL;
+const hasRedis = !!redisUrl && (redisUrl.startsWith('redis://') || redisUrl.startsWith('rediss://'));
 
 // Conexão Redis compartilhada
 export const redisConnection = hasRedis ? new IORedis(redisUrl, {
