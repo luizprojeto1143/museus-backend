@@ -54,7 +54,7 @@ export function getCsrfToken(req: Request, res: Response): string {
   res.cookie(CSRF_COOKIE_NAME, token, {
     httpOnly: false,   // Precisa ser false para o JS do frontend poder lê-lo
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: CSRF_COOKIE_TTL * 1000,
     path: '/'
   });
