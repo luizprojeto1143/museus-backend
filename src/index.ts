@@ -233,9 +233,12 @@ app.get("/auth/debug-users", async (req, res) => {
 app.post("/auth/seed-prod", async (req, res) => {
   try {
     const { execSync } = await import('child_process');
-    execSync('npx tsx prisma/seed.ts', { stdio: 'pipe' });
+    execSync('npx tsx prisma/seed.ts', { stdio: 'pipe', env: { ...process.env, I_AM_SURE_RESET_PRODUCTION: 'true' } });
     res.json({ success: true, message: 'Seed executed in production' });
   } catch (err: any) {
+    res.status(500).json({ error: err.message, stdout: err.stdout?.toString(), stderr: err.stderr?.toString() });
+  }
+});
     res.status(500).json({ error: err.message, stdout: err.stdout?.toString(), stderr: err.stderr?.toString() });
   }
 });
