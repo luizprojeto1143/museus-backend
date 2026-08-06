@@ -251,6 +251,29 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLL
   }
 });
 
+// Get equipment details for management
+router.get("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLLABORATOR]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user!;
+    
+    const equipment = await prisma.equipamentoCultural.findUnique({
+      where: { id }
+    });
+    
+    if (!equipment) return res.status(404).json({ message: "Equipamento não encontrado" });
+    
+    if (user.role !== Role.MASTER && equipment.tenantId !== user.tenantId) {
+      return res.status(403).json({ message: "Sem permissão" });
+    }
+    
+    return res.json(equipment);
+  } catch (err) {
+    console.error("Erro ao carregar equipamento:", err);
+    return res.status(500).json({ message: "Erro interno" });
+  }
+});
+
 // Update equipment
 router.put("/:id", authMiddleware, requireRole([Role.MASTER, Role.ADMIN, Role.COLLABORATOR]), async (req, res) => {
   try {

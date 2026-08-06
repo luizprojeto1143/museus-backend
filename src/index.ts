@@ -239,9 +239,6 @@ app.post("/auth/seed-prod", async (req, res) => {
     res.status(500).json({ error: err.message, stdout: err.stdout?.toString(), stderr: err.stderr?.toString() });
   }
 });
-    res.status(500).json({ error: err.message, stdout: err.stdout?.toString(), stderr: err.stderr?.toString() });
-  }
-});
 
 app.post("/auth/reset-master", async (req, res) => {
   try {
