@@ -504,7 +504,7 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
 
     // S-07: Grant welcome skin for new visitors
     try {
-      if (userRole === Role.VISITOR) {
+      if (userRole === Role.VISITOR && newTenantId) {
         // Ensure visitor record exists (usually created by profile logic, but we need it now)
         let visitor = await prisma.visitor.findFirst({
           where: { email: user.email.toLowerCase(), tenantId: newTenantId }
@@ -515,7 +515,7 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
             data: { 
               name: user.name, 
               email: user.email.toLowerCase(), 
-              tenantId: newTenantId || '', // fallback to empty if null (shouldn't happen for visitor)
+              tenantId: newTenantId,
               xp: 0,
               age: age ? Number(age) : null,
               isTeacher: !!isTeacher
@@ -547,6 +547,8 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
           });
         }
       }
+      // If no tenantId (platform-level signup), the Visitor record will be created
+      // when the user first accesses a museum (lazy creation).
     } catch (skinErr) {
       console.error("[AUTH] Failed to grant welcome skin:", skinErr);
     }
