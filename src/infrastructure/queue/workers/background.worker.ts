@@ -94,6 +94,6 @@ async function handleIncrementViews(data: { eventId?: string, spaceId?: string, 
 // Tratamento de erros do Worker (Falhas de conexão com Redis, etc)
 if (backgroundWorker) {
   backgroundWorker.on('error', (err: any) => {
-    logger.error(err, '[Worker] Fatal error:');
+    logger.warn('[Worker] Redis connection warning: ' + (err.message || err));
   });
 }

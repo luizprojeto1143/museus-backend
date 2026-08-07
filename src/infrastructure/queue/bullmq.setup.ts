@@ -3,11 +3,25 @@ import IORedis from 'ioredis';
 import { logger } from '../logger/pino.logger.js';
 
 const redisUrl = process.env.REDIS_URL || '';
-const hasRedis = !!redisUrl && (redisUrl.startsWith('redis://') || redisUrl.startsWith('rediss://'));
+const isLocalhostRedis = redisUrl.includes('127.0.0.1') || redisUrl.includes('localhost');
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
-// Conexão Redis compartilhada
+// Evaluate if a real Redis instance is configured
+const hasRedis = !!redisUrl && 
+  (redisUrl.startsWith('redis://') || redisUrl.startsWith('rediss://')) &&
+  (!isLocalhostRedis || !isProduction || process.env.FORCE_REDIS === 'true');
+
+// Conexão Redis compartilhada com resiliência
 export const redisConnection = hasRedis ? new IORedis(redisUrl, {
   maxRetriesPerRequest: null,
+  enableOfflineQueue: false,
+  retryStrategy(times) {
+    if (times > 3) {
+      logger.warn('[Redis] Connection failed repeatedly. Disabling Redis retries.');
+      return null; // Stop retrying to prevent crashing or log spamming
+    }
+    return Math.min(times * 200, 2000);
+  }
 }) : null;
 
 if (redisConnection) {
