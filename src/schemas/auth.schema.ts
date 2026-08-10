@@ -4,8 +4,13 @@ import { z } from 'zod';
 const emailField = z.string().email({ message: "E-mail inválido" }).toLowerCase();
 
 const passwordField = z.string()
-    .min(10, { message: "A senha deve ter no mínimo 10 caracteres" })
+    .min(6, { message: "A senha deve ter no mínimo 6 caracteres" })
     .max(128, { message: "Senha demasiado longa" });
+
+const optionalUuidOrString = z.string().optional().nullable().transform(v => {
+    if (!v || v === 'null' || v === 'undefined' || v.trim() === '') return null;
+    return v.trim();
+});
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 export const loginSchema = z.object({
@@ -25,14 +30,14 @@ export const registerSchema = z.object({
         email: emailField,
         password: passwordField,
         role: z.enum(["VISITOR", "PRODUCER"]).optional().default("VISITOR"),
-        tenantId: z.string().uuid().optional().nullable(),
+        tenantId: optionalUuidOrString,
         cpf: z.string().max(20).optional(),
         phone: z.string().max(30).optional(),
         bio: z.string().max(500).optional(),
         website: z.string().max(200).optional().nullable().or(z.literal("")),
         isTeacher: z.boolean().optional(),
         age: z.coerce.number().optional(),
-        parentTenantId: z.string().uuid().optional().nullable(),
+        parentTenantId: optionalUuidOrString,
     }),
 });
 
