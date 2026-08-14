@@ -90,12 +90,15 @@ router.get("/me", authMiddleware, async (req, res) => {
     const email = req.user?.email;
     const tenantId = (req as any).tenantId;
 
-    if (!email || !tenantId) {
-      return res.status(400).json({ message: "email e tenantId são obrigatórios" });
+    if (!email) {
+      return res.status(400).json({ message: "email e obrigatorio" });
     }
 
+    const whereClause: any = { email: email.toLowerCase() };
+    if (tenantId) whereClause.tenantId = tenantId;
+
     let visitor = await prisma.visitor.findFirst({
-      where: { email: email.toLowerCase(), tenantId },
+      where: whereClause,
       include: {
         visitorVisits: {
           include: {
@@ -121,19 +124,21 @@ router.get("/me", authMiddleware, async (req, res) => {
     });
 
     if (!visitor) {
-      // Criação automática do perfil de visitante ao primeiro acesso logado neste museu
-      visitor = await prisma.visitor.create({
-        data: {
-          email: email.toLowerCase(),
-          tenantId,
-          name: req.user?.name || "Visitante",
-          xp: 0
-        },
-        include: {
-          visitorVisits: true,
-          visitorAchievements: true
-        }
-      }) as any;
+      const defaultTenant = tenantId || (await prisma.tenant.findFirst({ select: { id: true } }))?.id || null;
+      if (defaultTenant) {
+        visitor = await prisma.visitor.create({
+          data: {
+            email: email.toLowerCase(),
+            tenantId: defaultTenant,
+            name: req.user?.name || "Visitante",
+            xp: 0
+          },
+          include: {
+            visitorVisits: true,
+            visitorAchievements: true
+          }
+        }) as any;
+      }
     }
 
     return res.json(visitor);
@@ -154,8 +159,8 @@ router.get("/me/summary", authMiddleware, async (req, res) => {
       ? ((req as any).tenantId || req.query.tenantId)
       : req.user?.tenantId;
 
-    if (!email || !tenantId) {
-      return res.status(400).json({ message: "email e tenantId são obrigatórios" });
+    if (!email) {
+      return res.status(400).json({ message: "email e obrigatorio" });
     }
 
     // Permitir se for o próprio usuário, ou se for admin/master
@@ -163,8 +168,11 @@ router.get("/me/summary", authMiddleware, async (req, res) => {
       return res.status(403).json({ message: "Acesso negado." });
     }
 
+    const whereClause: any = { email: email.toLowerCase() };
+    if (tenantId) whereClause.tenantId = tenantId;
+
     const visitor = await prisma.visitor.findFirst({
-      where: { email: email.toLowerCase(), tenantId },
+      where: whereClause,
       include: {
         visitorVisits: {
           orderBy: { createdAt: "desc" },
@@ -1143,17 +1151,61 @@ router.get("/public-passport/:id", async (req, res) => {
 });
 
 
+router.get("/stamps", authMiddleware, async (req, res) => {
+  try {
+    const email = req.user?.email;
+    if (!email) return res.json([]);
+
+    const tenantId = req.user?.tenantId;
+    const whereClause: any = { email: email.toLowerCase() };
+    if (tenantId) whereClause.tenantId = tenantId;
+
+    const visitor = await prisma.visitor.findFirst({
+      where: whereClause,
+      select: { id: true }
+    });
+
+    if (!visitor) return res.json([]);
+
+    const stamps = await (prisma as any).passportStamp.findMany({
+      where: { visitorId: visitor.id },
+      include: {
+        work: {
+          select: {
+            id: true,
+            title: true,
+            imageUrl: true
+          }
+        }
+      },
+      orderBy: { stampedAt: "desc" }
+    });
+
+    return res.json(stamps.map((s: any) => ({
+      id: s.id,
+      name: s.work?.title || "Selo Cultural",
+      icon: s.work?.imageUrl || undefined,
+      stampedAt: s.stampedAt
+    })));
+  } catch (err) {
+    return res.json([]);
+  }
+});
+
 router.get("/me/passport", authMiddleware, async (req, res) => {
   try {
     const email = req.user?.email;
     const tenantId = req.user?.tenantId;
 
-    if (!email || !tenantId) {
-      return res.status(400).json({ message: "email e tenantId sao obrigatorios" });
+    if (!email) {
+      return res.status(400).json({ message: "email e obrigatorio" });
     }
 
+    const whereClause: any = { email: email.toLowerCase() };
+    if (tenantId) whereClause.tenantId = tenantId;
+
     const visitor = await prisma.visitor.findFirst({
-      where: { email: email.toLowerCase(), tenantId },
+      where: whereClause,
       select: { id: true, xp: true, name: true }
     });
 
