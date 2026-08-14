@@ -458,6 +458,14 @@ router.post('/selfie', authMiddleware, upload.single('selfie'), async (req, res)
             console.log(`[RPG] Auto-created hero for visitor ${visitor.id}`);
         }
 
+        // 1-Selfie Guard: Prevent re-uploading selfie if avatar status is already READY or GENERATING
+        if (activeRPG.avatarStatus === 'READY' || activeRPG.avatarStatus === 'GENERATING') {
+            if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return res.status(400).json({ 
+                message: 'Seu avatar base já foi criado! Visite o Guarda-Roupa ou Marketplace para adquirir e equipar novas skins.' 
+            });
+        }
+
         await prisma.visitorRPG.update({
             where: { id: activeRPG.id },
             data: { 
