@@ -34,22 +34,38 @@ const classThresholds = [
 // GET /rpg/me — Get visitor's RPG profiles
 router.get('/me', authMiddleware, async (req, res) => {
     try {
-        if (!req.user?.email || !req.user?.tenantId) {
-            return res.status(401).json({ message: 'Autenticação inválida no token' });
+        if (!req.user?.email) {
+            return res.status(401).json({ message: 'Autenticacao invalida no token' });
         }
 
         const userEmail = req.user.email.toLowerCase();
         const tenantId = req.user.tenantId;
-        console.log(`[RPG] Fetching profile for ${userEmail} in tenant ${tenantId}`);
 
-        const visitor = await prisma.visitor.findFirst({ 
-            where: { email: userEmail, tenantId },
+        const whereClause: any = { email: userEmail };
+        if (tenantId) whereClause.tenantId = tenantId;
+
+        let visitor = await prisma.visitor.findFirst({ 
+            where: whereClause,
             select: { id: true, xp: true }
         });
 
         if (!visitor) {
-            console.warn(`[RPG] Visitor not found for ${userEmail} in tenant ${tenantId}`);
-            return res.status(404).json({ message: 'Visitante não encontrado neste museu' });
+            const defaultTenant = tenantId || (await prisma.tenant.findFirst({ select: { id: true } }))?.id || null;
+            if (defaultTenant) {
+                visitor = await prisma.visitor.create({
+                    data: {
+                        email: userEmail,
+                        tenantId: defaultTenant,
+                        name: req.user?.name || "Heroi",
+                        xp: 0
+                    },
+                    select: { id: true, xp: true }
+                });
+            }
+        }
+
+        if (!visitor) {
+            return res.status(404).json({ message: 'Visitante não encontrado' });
         }
 
         const visitorId = visitor.id;
