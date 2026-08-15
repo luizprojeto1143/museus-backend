@@ -481,6 +481,22 @@ router.post("/register", authLimiter, validate(registerSchema), async (req: Requ
         }
       });
       newTenantId = newTenant.id;
+    } else if (role === Role.PATROCINADOR || role === "PATROCINADOR" || role === "SPONSOR") {
+      userRole = Role.PATROCINADOR;
+      const parentTenantId = req.body.parentTenantId || null;
+      const newTenant = await prisma.tenant.create({
+        data: {
+          name: name,
+          type: "PRODUCER",
+          slug: name.toLowerCase().replace(/ /g, "-").replace(/[^\w-]+/g, "") + "-" + Date.now().toString().slice(-4),
+          parentId: parentTenantId,
+          featureProjects: true,
+          featureServices: false,
+          featureTickets: false,
+          featureGamification: false
+        }
+      });
+      newTenantId = newTenant.id;
     }
 
     const hash = await bcrypt.hash(password, 10);

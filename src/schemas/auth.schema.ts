@@ -29,7 +29,7 @@ export const registerSchema = z.object({
             .trim(),
         email: emailField,
         password: passwordField,
-        role: z.enum(["VISITOR", "PRODUCER"]).optional().default("VISITOR"),
+        role: z.enum(["VISITOR", "PRODUCER", "PATROCINADOR", "SPONSOR"]).optional().default("VISITOR"),
         tenantId: optionalUuidOrString,
         cpf: z.string().max(20).optional(),
         phone: z.string().max(30).optional(),
