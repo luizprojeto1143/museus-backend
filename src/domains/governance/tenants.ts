@@ -440,7 +440,7 @@ router.post("/", authMiddleware, requireRole([Role.MASTER, Role.ADMIN]), async (
             {
               nome: `Sede - ${name}`,
               slug: `${slug}-sede`,
-              tipo: type === TenantType.PRODUCER ? 'produtora' : type === TenantType.CULTURAL_SPACE ? 'espaço' : 'museu',
+              tipo: type === TenantType.PRODUCER ? 'produtora' : type === TenantType.THEATER ? 'teatro' : type === TenantType.CULTURAL_SPACE ? 'espaço' : 'museu',
               endereco: 'Endereço Principal',
               cidade: 'Sua Cidade',
               estado: 'BR',
