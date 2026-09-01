@@ -137,6 +137,7 @@ const corsOrigin = (() => {
       process.exit(1);
     }
     const baseUrls = process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''));
+    // Return both with and without trailing slash to be safe
     const allUrls = [...baseUrls, ...baseUrls.map(u => `${u}/`)];
     return allUrls.length === 1 ? allUrls[0] : allUrls;
   }
