@@ -491,7 +491,7 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
             where: { id: { in: result.registrations.map(r => r.id) } },
             data: { status: "CANCELED" }
           });
-          return res.status(400).json({ 
+          return res.status(400).json({
             message: "Este evento não possui uma conta Stripe Connect vinculada para receber pagamentos." 
           });
         }
@@ -549,8 +549,8 @@ router.post("/:id/register", authMiddleware, async (req, res) => {
       }
     }
 
-    return res.status(201).json({ 
-      message: "Inscrição realizada!", 
+    return res.status(201).json({
+      message: "Inscrição realizada!",
       registration: result.registrations[0],
       registrations: result.registrations
     });
