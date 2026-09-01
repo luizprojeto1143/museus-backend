@@ -114,3 +114,70 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     return res.status(500).json({ message: "Erro ao buscar obras" });
   }
 });
+
+// Detalhe da obra
+router.get("/:id", softAuthMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenantId = (req as any).tenantId || req.query.tenantId;
+
+    const work = await prisma.work.findFirst({ 
+      where: { 
+        id, 
+        tenantId: tenantId ? String(tenantId) : undefined,
+        deletedAt: null 
+      },
+      include: { 
+        category: true,
+        collectibleCards: true
+      }
+    });
+
+    if (!work) {
+      return res.status(404).json({ message: "Obra não encontrada" });
+    }
+
+    const qrCode = await prisma.qRCode.findFirst({
+      where: { referenceId: id, type: QRType.WORK }
+    });
+
+    if (!work.published) {
+      const user = req.user;
+      const isMaster = user?.role === Role.MASTER;
+      const isTenantAdmin = user && (user.role === Role.ADMIN || user.role === Role.PRODUCER || user.role === Role.COLLABORATOR) && user.tenantId === work.tenantId;
+
+      if (!isMaster && !isTenantAdmin) {
+        return res.status(404).json({ message: "Obra não encontrada ou indisponível" });
+      }
+    }
+    return res.json({ ...work, qrCode });
+  } catch (err: any) {
+    console.error("Erro ao buscar obra:", err);
+    return res.status(500).json({ message: "Erro ao buscar obra" });
+  }
+});
+
+// Obras relacionadas
+router.get("/:id/related", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tenantId, visitorEmail } = req.query;
+
+    const relatedWorks = await WorkService.getRelatedWorks(
+      id,
+      tenantId as string,
+      visitorEmail as string
+    );
+
+    return res.json(relatedWorks);
+
+  } catch (err: any) {
+    if (err.message === "Obra não encontrada") {
+      return res.status(404).json({ message: "Obra não encontrada" });
+    }
+    console.error("Erro ao buscar obras relacionadas", err);
+    return res.json([]);
+  }
+});
+
+export default router;
