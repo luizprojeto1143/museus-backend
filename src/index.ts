@@ -137,7 +137,6 @@ const corsOrigin = (() => {
       process.exit(1);
     }
     const baseUrls = process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/$/, ''));
-    // Return both with and without trailing slash to be safe
     const allUrls = [...baseUrls, ...baseUrls.map(u => `${u}/`)];
     return allUrls.length === 1 ? allUrls[0] : allUrls;
   }
@@ -216,46 +215,6 @@ app.get("/", (_req, res) => {
 app.get("/auth/csrf-token", (req, res) => {
   const token = getCsrfToken(req, res);
   res.json({ csrfToken: token });
-});
-
-// TEST ONLY: Endpoint temporrio para depurar se os usurios existem em produo
-app.get("/auth/debug-users", async (req, res) => {
-  try {
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();
-    const users = await prisma.user.findMany({ select: { email: true, role: true } });
-    res.json({ users, db_url_check: !!process.env.DATABASE_URL });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/auth/seed-prod", async (req, res) => {
-  try {
-    const { execSync } = await import('child_process');
-    execSync('npx tsx prisma/seed.ts', { stdio: 'pipe', env: { ...process.env, I_AM_SURE_RESET_PRODUCTION: 'true' } });
-    res.json({ success: true, message: 'Seed executed in production' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message, stdout: err.stdout?.toString(), stderr: err.stderr?.toString() });
-  }
-});
-
-app.post("/auth/reset-master", async (req, res) => {
-  try {
-    const { PrismaClient } = await import('@prisma/client');
-    const bcrypt = await import('bcrypt');
-    const prisma = new PrismaClient();
-    const hashedPassword = await bcrypt.hash('Museu$2026!', 10);
-    
-    await prisma.user.updateMany({
-      where: { email: 'admin@museu.com' },
-      data: { password: hashedPassword }
-    });
-    
-    res.json({ success: true, message: 'Master password reset to Museu$2026!' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 import sponsorPortalRoutes, { municipalSponsorRouter } from "./routes/sponsor-portal.js";
