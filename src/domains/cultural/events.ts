@@ -3,6 +3,9 @@ import crypto from "crypto";
 import { prisma } from "../../prisma.js";
 import { authMiddleware, softAuthMiddleware, requireRole, requirePermission } from "../../middleware/auth.js";
 import { resolveCatalogTenantId } from "../../utils/catalogTenant.js";
+import { registerEventCrud } from "./events.crud.js";
+import { registerEventAttendance } from "./events.attendance.js";
+import { registerEventOps } from "./events.ops.js";
 import { Role, PlatformFeeSource } from "@prisma/client";
 import { getPlatformFee } from "../../services/fee.service.js";
 import { sendCertificateEmail, generateCertificateBuffer } from "../../services/email.js";
@@ -135,3 +138,48 @@ router.get("/", softAuthMiddleware, async (req, res) => {
     return res.status(500).json({ message: "Erro ao listar eventos" });
   }
 });
+
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const catalogTenant = await resolveCatalogTenantId(req);
+    if (!catalogTenant.ok) {
+      return res.status(catalogTenant.status).json({ message: catalogTenant.message });
+    }
+    const tenantId = catalogTenant.tenantId;
+
+    const event = await prisma.event.findFirst({
+      where: { id, tenantId: String(tenantId), deletedAt: null },
+      include: {
+        tenant: {
+          select: { id: true, name: true, slug: true }
+        },
+        _count: {
+          select: {
+            registrations: { where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } } }
+          }
+        }
+      }
+    });
+
+    if (!event) {
+      return res.status(404).json({ message: "Evento não encontrado ou acesso não autorizado" });
+    }
+
+    const responseData = {
+      ...event,
+      confirmedCount: event._count.registrations
+    };
+
+    return res.json(responseData);
+  } catch (err) {
+    console.error("Erro ao buscar evento", err);
+    return res.status(500).json({ message: "Erro ao buscar evento" });
+  }
+});
+
+registerEventCrud(router);
+registerEventAttendance(router);
+registerEventOps(router);
+
+export default router;
