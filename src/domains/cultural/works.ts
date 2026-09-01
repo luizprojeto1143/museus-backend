@@ -8,6 +8,7 @@ import { createWorkSchema, updateWorkSchema } from "../../schemas/work.schema.js
 import { WorkService } from "../../services/work.js";
 import { assertTenantOwnership } from "../../utils/ownership.js";
 import { createAuditLog } from "../governance/audit.js";
+import { resolveCatalogTenantId } from "../../utils/catalogTenant.js";
 
 const router = Router();
 
@@ -36,16 +37,16 @@ async function validateWorkRelations(tenantId: string, relations: { categoryId?:
 // Lista obras públicas por tenant (com paginação)
 router.get("/", softAuthMiddleware, async (req, res) => {
   try {
-    const tenantId = (req as any).tenantId || req.query.tenantId as string | undefined;
+    const catalogTenant = await resolveCatalogTenantId(req);
+    if (!catalogTenant.ok) {
+      return res.status(catalogTenant.status).json({ message: catalogTenant.message });
+    }
+    const tenantId = catalogTenant.tenantId;
     const equipamentoId = req.query.equipamentoId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const skip = (page - 1) * limit;
     const search = (req.query.search as string | undefined)?.trim();
-
-    if (!tenantId) {
-      return res.status(400).json({ message: "tenantId é obrigatório" });
-    }
 
     // Default filter: Published and not deleted
     const whereClause: any = { tenantId, published: true, deletedAt: null };
@@ -118,12 +119,16 @@ router.get("/", softAuthMiddleware, async (req, res) => {
 router.get("/:id", softAuthMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const tenantId = (req as any).tenantId || req.query.tenantId;
+    const catalogTenant = await resolveCatalogTenantId(req);
+    if (!catalogTenant.ok) {
+      return res.status(catalogTenant.status).json({ message: catalogTenant.message });
+    }
+    const tenantId = catalogTenant.tenantId;
 
     const work = await prisma.work.findFirst({ 
       where: { 
         id, 
-        tenantId: tenantId ? String(tenantId) : undefined, // Preferred: scope it if provided
+        tenantId: String(tenantId),
         deletedAt: null 
       },
       include: { 
